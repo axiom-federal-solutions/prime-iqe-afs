@@ -13,7 +13,19 @@ jobs:
         with:
           node-version: '20'
       - run: npm install
-      - name: Run SCOUT
+      - name: Debug SAM.gov connectivity
+        env:
+          SAM_API_KEY: ${{ secrets.SAM_API_KEY }}
+        run: |
+          echo "=== Testing api.sam.gov connectivity ==="
+          KEY_LEN=${#SAM_API_KEY}
+          echo "API Key length: $KEY_LEN"
+          echo "First 4 chars: ${SAM_API_KEY:0:4}"
+          echo "=== curl test (no key) ==="
+          curl -si --max-time 10 "https://api.sam.gov/opportunities/v2/search?limit=1&postedFrom=01/01/2026&postedTo=04/26/2026" | head -30
+          echo "=== curl test (with key, masked) ==="
+          curl -si --max-time 10 "https://api.sam.gov/opportunities/v2/search?api_key=${SAM_API_KEY}&limit=1&postedFrom=01/01/2026&postedTo=04/26/2026" | head -40
+            - name: Run SCOUT
         env:
           SAM_API_KEY: ${{ secrets.SAM_API_KEY }}
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
