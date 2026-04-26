@@ -79,8 +79,9 @@ async function scanSAM() {
     // Build the search URL with filters
     const params = new URLSearchParams({
       api_key: process.env.SAM_API_KEY,   // Your SAM API key (stored in GitHub Secrets)
-      naicsCode: naics,
-      postedFrom: getYesterdayISO(),       // Only get jobs posted since yesterday
+      ncode: naics,                        // NAICS code filter (correct param per GSA docs)
+      postedFrom: getPostedFromDate(),     // Start of date range (30 days back)
+      postedTo: getTodayDate(),            // End of date range (today)
       limit: 100,                          // Get up to 100 results per request
       offset: 0,
     });
@@ -195,13 +196,23 @@ async function detectBidBond(opp) {
 // HELPER: Get yesterday's date in ISO format (YYYY-MM-DD)
 // SAM.gov uses this format for date filters
 // ----------------------------------------------------------
-function getYesterdayISO() {
+function getPostedFromDate() {
+  // 30 days back in MM/DD/YYYY format (required by SAM.gov API)
   const d = new Date();
   d.setDate(d.getDate() - 30);
   const month = String(d.getMonth() + 1).padStart(2, '0');
   const day = String(d.getDate()).padStart(2, '0');
   const year = d.getFullYear();
-  return `${month}/${day}/${year}`;
+  return month + '/' + day + '/' + year;
+}
+
+function getTodayDate() {
+  // Today in MM/DD/YYYY format (required by SAM.gov API as postedTo)
+  const d = new Date();
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  const year = d.getFullYear();
+  return month + '/' + day + '/' + year;
 }
 
 // ----------------------------------------------------------h
