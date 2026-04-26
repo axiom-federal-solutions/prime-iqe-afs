@@ -19,7 +19,10 @@ jobs:
         run: |
           echo "SAM_API_KEY length: ${#SAM_API_KEY}"
           echo "SAM_API_KEY first 4 chars: ${SAM_API_KEY:0:4}"
-          curl -si --max-time 10 "https://api.sam.gov/" | head -10 || echo "curl error"
+          echo "=== Testing prod endpoint ==="
+          curl -si --max-time 10 "https://api.sam.gov/" | head -10 || echo "prod curl error"
+          echo "=== Testing alpha endpoint ==="
+          curl -si --max-time 10 "https://api-alpha.sam.gov/" | head -10 || echo "alpha curl error"
       - name: Run SCOUT
         env:
           SAM_API_KEY: ${{ secrets.SAM_API_KEY }}
