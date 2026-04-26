@@ -77,26 +77,34 @@ async function scanSAM() {
     console.log('SCOUT: Scanning NAICS ' + naics + '...');
 
     // Build the search URL with filters
-    const params = new URLSearchParams({
-      api_key: process.env.SAM_API_KEY,   // Your SAM API key (stored in GitHub Secrets)
-      ncode: naics,                        // NAICS code filter (correct param per GSA docs)
-      postedFrom: getPostedFromDate(),     // Start of date range (30 days back)
-      postedTo: getTodayDate(),            // End of date range (today)
-      limit: 100,                          // Get up to 100 results per request
-      offset: 0,
+      // Call sam-proxy Edge Function (SAM.gov blocks GitHub Actions IPs directly)
+    const edgeFnUrl = (process.env.SUPABASE_URL || '').replace(/\/$/, '') + '/functions/v1/sam-proxy';
+    const proxyRes = await fetch(edgeFnUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Sam-Api-Key': process.env.SAM_API_KEY,
+      },
+      body: JSON.stringify({
+        ncode: naics,
+        postedFrom: getPostedFromDate(),
+        postedTo: getTodayDate(),
+        limit: 100,
+        offset: 0,
+      }),
     });
+    if (!proxyRes.ok) {
+      const errTxt = await proxyRes.text();
+      console.warn('SCOUT: Edge Function error for NAICS ' + naics + ': ' + errTxt.substring(0, 200));
+      continue;
+    }
+    const proxyData = await proxyRes.json();
+    if (proxyData.samStatus !== 200) {
+      console.warn('SCOUT: SAM.gov returned ' + proxyData.samStatus + ' for NAICS ' + naics + ' Body: ' + String(proxyData.samBody).substring(0, 300));
+      continue;
+    }
+    const data = JSON.parse(proxyData.samBody);
 
-    try {
-      const res = await fetch(SAM_API + '?' + params);
-
-      // If the request failed, skip this NAICS and keep going
-      if (!res.ok) {
-        const errBody = await res.text();
-        console.warn('SCOUT: SAM API returned ' + res.status + ' for NAICS ' + naics + ' Body: ' + errBody.substring(0, 300));
-        continue;
-      }
-
-      const data = await res.json();
       const opportunities = data.opportunitiesData || [];
       console.log('SCOUT: Found ' + opportunities.length + ' results for NAICS ' + naics);
 
