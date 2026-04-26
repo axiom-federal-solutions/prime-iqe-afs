@@ -77,6 +77,7 @@ async function scanSAM() {
     console.log('SCOUT: Scanning NAICS ' + naics + '...');
 
     // Build the search URL with filters
+    try {
       // Call sam-proxy Edge Function (SAM.gov blocks GitHub Actions IPs directly)
     const edgeFnUrl = (process.env.SUPABASE_URL || '').replace(/\/$/, '') + '/functions/v1/sam-proxy';
     const proxyRes = await fetch(edgeFnUrl, {
