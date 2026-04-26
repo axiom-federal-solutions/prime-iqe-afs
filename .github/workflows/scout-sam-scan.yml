@@ -23,6 +23,11 @@ jobs:
           curl -si --max-time 10 "https://api.sam.gov/" | head -10 || echo "prod curl error"
           echo "=== Testing alpha endpoint ==="
           curl -si --max-time 10 "https://api-alpha.sam.gov/" | head -10 || echo "alpha curl error"
+      echo "=== Testing sam-proxy directly ==="
+      curl -s -X POST "https://lsgaifejjoxqudjhkeev.supabase.co/functions/v1/sam-proxy" \
+        -H "Content-Type: application/json" \
+        -d "{\"naicsCode\": \"541511\", \"postedFrom\": \"03/27/2026\", \"apiKey\": \"$SAM_API_KEY\"}" \
+        | python3 -c "import sys,json; d=json.load(sys.stdin); print('samStatus:', d.get('samStatus')); b=d.get('samBody',''); data=json.loads(b) if b else {}; print('totalRecords:', data.get('totalRecords')); print('body_preview:', b[:300])" || echo "proxy parse error"
       - name: Run SCOUT
         env:
           SAM_API_KEY: ${{ secrets.SAM_API_KEY }}
