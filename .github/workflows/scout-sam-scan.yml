@@ -1,0 +1,28 @@
+name: SCOUT - SAM.gov Scan
+on:
+  schedule:
+    - cron: '0 5,11,17,23 * * *'
+  workflow_dispatch:
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - run: npm install
+      - name: Run SCOUT
+        env:
+          SAM_API_KEY: ${{ secrets.SAM_API_KEY }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+          SAM_UEI: ${{ secrets.SAM_UEI }}
+        run: node agents/scout.js
+      - name: Run JUDGE
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+        run: node agents/judge.js
