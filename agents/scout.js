@@ -196,11 +196,14 @@ async function detectBidBond(opp) {
 // ----------------------------------------------------------
 function getYesterdayISO() {
   const d = new Date();
-  d.setDate(d.getDate() - 1);
-  return d.toISOString().split('T')[0];
+  d.setDate(d.getDate() - 30);
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  const year = d.getFullYear();
+  return `${month}/${day}/${year}`;
 }
 
-// ----------------------------------------------------------
+// ----------------------------------------------------------h
 // HELPER: Wait a set number of milliseconds
 // Used to slow down API requests so we don't get blocked
 // ----------------------------------------------------------
