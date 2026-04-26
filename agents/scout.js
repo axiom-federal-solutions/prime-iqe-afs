@@ -84,14 +84,11 @@ async function scanSAM() {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'X-Sam-Api-Key': process.env.SAM_API_KEY,
       },
       body: JSON.stringify({
-        ncode: naics,
+        naicsCode: naics,
         postedFrom: getPostedFromDate(),
-        postedTo: getTodayDate(),
-        limit: 100,
-        offset: 0,
+        apiKey: process.env.SAM_API_KEY,
       }),
     });
     if (!proxyRes.ok) {
