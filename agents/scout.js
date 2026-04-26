@@ -90,7 +90,8 @@ async function scanSAM() {
 
       // If the request failed, skip this NAICS and keep going
       if (!res.ok) {
-        console.warn('SCOUT: SAM API returned ' + res.status + ' for NAICS ' + naics);
+        const errBody = await res.text();
+        console.warn('SCOUT: SAM API returned ' + res.status + ' for NAICS ' + naics + ' Body: ' + errBody.substring(0, 300));
         continue;
       }
 
