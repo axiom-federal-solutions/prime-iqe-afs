@@ -1,0 +1,32 @@
+name: JUDGE - Opportunity Scoring
+
+# JUDGE triggers automatically after each SCOUT scan completes.
+# Also can be run manually from the GitHub Actions UI.
+on:
+  workflow_run:
+    workflows: ["SCOUT - SAM.gov Scan"]
+    types: [completed]
+  workflow_dispatch:
+
+jobs:
+  score:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run JUDGE
+        run: node agents/judge.js
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}

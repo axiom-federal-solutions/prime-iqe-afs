@@ -1,0 +1,94 @@
+# =============================================================
+# SCOUT-SAM.YML — SAM.gov Opportunity Scanner Workflow
+# JOB: Run SCOUT 4 times a day to find new federal contracts
+#      Also resets the daily SAM.gov API call counter at midnight
+# SCHEDULE: 6 AM, 12 PM, 6 PM, 11 PM Central Time (UTC offsets)
+# COST: $0 — GitHub Actions free tier covers this easily
+# =============================================================
+
+name: SCOUT — SAM.gov Scanner
+
+on:
+  schedule:
+    # 6 AM CT = 11:00 UTC (CST) / 12:00 UTC (CDT — summer)
+    - cron: '0 11 * * *'
+    # 12 PM CT = 17:00 UTC
+    - cron: '0 17 * * *'
+    # 6 PM CT = 23:00 UTC
+    - cron: '0 23 * * *'
+    # 11 PM CT = 4:00 UTC next day
+    - cron: '0 4 * * *'
+
+  # Allow manual trigger from GitHub Actions tab — useful for testing
+  workflow_dispatch:
+    inputs:
+      reason:
+        description: 'Reason for manual trigger'
+        required: false
+        default: 'Manual scan'
+
+jobs:
+  scout-scan:
+    name: Scan SAM.gov for New Opportunities
+    runs-on: ubuntu-latest
+    timeout-minutes: 15  # Kill the job if it takes more than 15 minutes
+
+    steps:
+      - name: Checkout PRIME codebase
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Reset SAM.gov daily call counter (midnight run only)
+        # Only reset the counter on the midnight run (4 AM UTC = 11 PM CT)
+        if: github.event.schedule == '0 4 * * *'
+        run: node -e "
+          const { setConfig } = require('./lib/supabase');
+          setConfig('SAM_CALLS_TODAY', '0').then(() => {
+            console.log('SAM call counter reset for new day');
+            process.exit(0);
+          });
+        "
+        env:
+          SUPABASE_URL:              ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+
+      - name: Run SCOUT — SAM.gov scanner
+        run: node agents/scout.js
+        env:
+          SUPABASE_URL:              ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          SAM_API_KEY:               ${{ secrets.SAM_API_KEY }}
+          CAGE_CODE:                 ${{ secrets.CAGE_CODE }}
+
+      - name: Run SCOUT — State portal scanner
+        run: node agents/scout-state.js
+        env:
+          SUPABASE_URL:              ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        # Continue even if state scanner fails — SAM.gov is the priority
+        continue-on-error: true
+
+      - name: Run JUDGE — Score new opportunities
+        run: node agents/judge.js
+        env:
+          SUPABASE_URL:              ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          ANTHROPIC_API_KEY:         ${{ secrets.ANTHROPIC_API_KEY }}
+
+      - name: Check for STRONG BID alerts
+        run: node agents/brandi.js alert
+        env:
+          SUPABASE_URL:              ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          SENDGRID_API_KEY:          ${{ secrets.SENDGRID_API_KEY }}
+          FROM_EMAIL:                ${{ secrets.FROM_EMAIL }}
+        # Continue even if no alerts to send — this is normal
+        continue-on-error: true

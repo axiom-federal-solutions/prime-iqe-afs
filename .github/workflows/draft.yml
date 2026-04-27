@@ -1,0 +1,36 @@
+name: DRAFT - Proposal Generator
+
+# On-demand only — triggered after BID ENGINE prices a bid
+# Mr. Kemp triggers this from GitHub Actions UI with the bid_id
+on:
+  workflow_dispatch:
+    inputs:
+      bid_id:
+        description: 'Bid UUID from the bids table (run BID ENGINE first)'
+        required: true
+        type: string
+
+jobs:
+  generate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20  # Sonnet takes time to write full proposals
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Run DRAFT
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          CAGE_CODE: ${{ secrets.CAGE_CODE }}
+          SAM_UEI: ${{ secrets.SAM_UEI }}
+        run: node agents/draft.js "${{ github.event.inputs.bid_id }}"

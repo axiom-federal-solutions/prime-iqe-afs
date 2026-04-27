@@ -1,0 +1,49 @@
+# =============================================================
+# VAULT.YML — Daily Compliance Check Workflow
+# JOB: Run VAULT every morning at 5:30 AM CT so compliance
+#      issues are detected BEFORE BRANDI sends the 6 AM brief
+# SCHEDULE: 5:30 AM CT = 10:30 UTC (CST) / 11:30 UTC (CDT — summer)
+# COST: $0 — no AI calls, pure database reads and rule checks
+# =============================================================
+
+name: VAULT — Daily Compliance Check
+
+on:
+  schedule:
+    # 5:30 AM CT (CST) = 10:30 UTC
+    - cron: '30 10 * * *'
+
+  # Allow manual trigger for testing or after any compliance change
+  workflow_dispatch:
+    inputs:
+      reason:
+        description: 'Reason for manual trigger'
+        required: false
+        default: 'Manual compliance check'
+
+jobs:
+  vault-check:
+    name: Run Compliance Gate Check
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout PRIME codebase
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run VAULT — System and bid compliance check
+        run: node agents/vault.js
+        env:
+          SUPABASE_URL:              ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          CAGE_CODE:                 ${{ secrets.CAGE_CODE }}
+          BONDING_COMPANY:           ${{ secrets.BONDING_COMPANY }}

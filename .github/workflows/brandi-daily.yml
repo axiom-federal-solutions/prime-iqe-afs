@@ -1,0 +1,90 @@
+# =============================================================
+# BRANDI-DAILY.YML — Morning Brief + Weekly Supply Digest
+# JOB: BRANDI sends Mr. Kemp a curated daily brief at 6 AM CT
+#      On Mondays, also sends the weekly supply opportunities digest at 7 AM
+# SCHEDULE: Daily 6 AM CT + Monday 7 AM CT supply digest
+# COST: ~$0.50/month (SendGrid free tier, minimal Claude Haiku)
+# =============================================================
+
+name: BRANDI — Daily Brief & Supply Digest
+
+on:
+  schedule:
+    # Daily brief — 6 AM CT (CST) = 11:00 UTC
+    - cron: '0 11 * * *'
+    # Monday supply digest — 7 AM CT (CST) = 12:00 UTC, Mondays only
+    - cron: '0 12 * * 1'
+
+  # Allow manual trigger to test the brief without waiting until 6 AM
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: 'Brief mode: daily, supply, or alert'
+        required: true
+        default: 'daily'
+        type: choice
+        options:
+          - daily
+          - supply
+          - alert
+
+jobs:
+  send-daily-brief:
+    name: Send BRANDI Morning Brief
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    # Only run the daily brief job on the 11 AM UTC schedule (6 AM CT)
+    if: github.event.schedule == '0 11 * * *' || github.event_name == 'workflow_dispatch'
+
+    steps:
+      - name: Checkout PRIME codebase
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Send BRANDI daily brief
+        run: node agents/brandi.js ${{ github.event.inputs.mode || 'daily' }}
+        env:
+          SUPABASE_URL:              ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          SENDGRID_API_KEY:          ${{ secrets.SENDGRID_API_KEY }}
+          FROM_EMAIL:                ${{ secrets.FROM_EMAIL }}
+          FROM_NAME:                 ${{ secrets.FROM_NAME }}
+          ANTHROPIC_API_KEY:         ${{ secrets.ANTHROPIC_API_KEY }}
+
+  send-supply-digest:
+    name: Send Monday Supply Digest
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    # Only run supply digest job on the Monday 12 UTC schedule (7 AM CT)
+    if: github.event.schedule == '0 12 * * 1'
+
+    steps:
+      - name: Checkout PRIME codebase
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Send Monday supply digest
+        run: node agents/brandi.js supply
+        env:
+          SUPABASE_URL:              ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          SENDGRID_API_KEY:          ${{ secrets.SENDGRID_API_KEY }}
+          FROM_EMAIL:                ${{ secrets.FROM_EMAIL }}
+          FROM_NAME:                 ${{ secrets.FROM_NAME }}
+          ANTHROPIC_API_KEY:         ${{ secrets.ANTHROPIC_API_KEY }}

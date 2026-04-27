@@ -1,0 +1,33 @@
+name: EXEC - Retainage Monitor
+
+# Runs every Monday at 6 AM UTC (1 AM CT)
+# Checks retainage balances on all active projects.
+# Drafts release requests for completed projects.
+# Escalates to URGENT if no release after 30 days.
+on:
+  schedule:
+    - cron: '0 6 * * 1'
+  workflow_dispatch:
+
+jobs:
+  monitor:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run EXEC Retainage Monitor
+        run: node agents/exec-retainage.js
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}

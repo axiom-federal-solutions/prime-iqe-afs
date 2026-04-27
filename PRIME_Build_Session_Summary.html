@@ -1,0 +1,352 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PRIME Build — Session Summary</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: 'Inter', Arial, sans-serif; font-size: 13px; color: #1a1a2e; background: #f4f6fa; }
+  .page { max-width: 960px; margin: 32px auto; background: white; box-shadow: 0 4px 24px rgba(0,0,0,0.10); border-radius: 8px; overflow: hidden; }
+  /* Header */
+  .doc-header { background: linear-gradient(135deg, #1a3a5c 0%, #2e5f8a 100%); color: white; padding: 48px 56px 36px; }
+  .doc-header h1 { font-size: 42px; font-weight: 700; letter-spacing: -1px; margin-bottom: 6px; }
+  .doc-header .subtitle { font-size: 18px; font-weight: 300; opacity: 0.85; margin-bottom: 6px; }
+  .doc-header .meta { font-size: 12px; opacity: 0.65; margin-top: 12px; }
+  /* Content */
+  .content { padding: 48px 56px; }
+  h2 { font-size: 20px; font-weight: 700; color: #1a3a5c; margin: 36px 0 10px; padding-bottom: 6px; border-bottom: 2px solid #e0e8f4; }
+  h3 { font-size: 15px; font-weight: 600; color: #2e5f8a; margin: 22px 0 8px; }
+  p { line-height: 1.7; color: #333; margin-bottom: 10px; }
+  ul { margin: 8px 0 12px 20px; }
+  li { line-height: 1.75; color: #333; margin-bottom: 3px; }
+  li strong { color: #1a3a5c; }
+  /* Status badges */
+  .badge { display: inline-block; padding: 2px 10px; border-radius: 20px; font-size: 11px; font-weight: 600; }
+  .badge-done { background: #d4edda; color: #1a6b35; }
+  .badge-progress { background: #fff3cd; color: #856404; }
+  .badge-pending { background: #f8d7da; color: #721c24; }
+  .badge-built { background: #cce5ff; color: #004085; }
+  /* Tables */
+  table { width: 100%; border-collapse: collapse; margin: 14px 0 20px; font-size: 12.5px; }
+  th { background: #1a3a5c; color: white; padding: 10px 14px; text-align: left; font-weight: 600; font-size: 12px; }
+  td { padding: 9px 14px; border-bottom: 1px solid #e8ecf2; vertical-align: top; line-height: 1.5; }
+  tr:nth-child(even) td { background: #f8fafc; }
+  tr:last-child td { border-bottom: none; }
+  td.label { font-weight: 600; color: #1a3a5c; width: 30%; }
+  td.green { background: #eafaf1 !important; }
+  td.yellow { background: #fffbea !important; }
+  td.red { background: #fef2f2 !important; }
+  td.code { font-family: 'Courier New', monospace; font-size: 11.5px; color: #1a6b99; }
+  /* Priority table */
+  .priority-num { font-weight: 700; font-size: 14px; color: #1a3a5c; }
+  /* Alert box */
+  .alert { border-left: 4px solid; padding: 12px 16px; border-radius: 0 6px 6px 0; margin: 14px 0; }
+  .alert-warning { border-color: #f59e0b; background: #fffbea; color: #92400e; }
+  .alert-success { border-color: #10b981; background: #ecfdf5; color: #065f46; }
+  .alert-error { border-color: #ef4444; background: #fef2f2; color: #991b1b; }
+  .alert strong { display: block; margin-bottom: 4px; }
+  /* Divider */
+  .divider { border: none; border-top: 1px solid #e0e8f4; margin: 28px 0; }
+  /* Footer */
+  .doc-footer { background: #1a3a5c; color: rgba(255,255,255,0.6); text-align: center; padding: 18px; font-size: 11px; }
+  /* Print */
+  @media print {
+    body { background: white; }
+    .page { box-shadow: none; border-radius: 0; margin: 0; }
+  }
+</style>
+</head>
+<body>
+<div class="page">
+
+  <!-- ── HEADER ── -->
+  <div class="doc-header">
+    <h1>PRIME BUILD</h1>
+    <div class="subtitle">Government Contracting Acquisition Platform</div>
+    <div class="subtitle" style="font-size:14px;">Noble Erne, LLC — Build Session Summary</div>
+    <div class="meta">April 26, 2026 &nbsp;|&nbsp; Confidential &nbsp;|&nbsp; Mr. Kemp</div>
+  </div>
+
+  <div class="content">
+
+    <!-- ── 1. PROJECT OVERVIEW ── -->
+    <h2>1. Project Overview</h2>
+    <p>PRIME is a fully autonomous <strong>9-agent AI system</strong> built for Noble Erne, LLC to find, score, price, and bid on federal government contracts — with zero manual intervention once running. The platform integrates <strong>SAM.gov, Supabase, Anthropic Claude API, and GitHub Actions</strong> into a continuous pipeline that operates 24/7.</p>
+    <p><strong>Core value proposition:</strong></p>
+    <ul>
+      <li>Automatically scans SAM.gov for opportunities matching Noble Erne's NAICS codes</li>
+      <li>AI scores each contract for win probability using the JUDGE agent</li>
+      <li>Prices bids intelligently using VAULT (cost library) + BID ENGINE</li>
+      <li>Drafts proposal documents automatically via the DRAFT agent</li>
+      <li>Tracks wins, losses, and revenue in LEDGER</li>
+      <li>Sends executive alerts and daily digests via EXEC + BRANDI</li>
+    </ul>
+
+    <!-- ── 2. SYSTEM ARCHITECTURE ── -->
+    <h2>2. System Architecture — The 9 Agents</h2>
+    <p>Each agent runs as an independent Node.js script, triggered by GitHub Actions on its own schedule or as part of a multi-agent chain.</p>
+    <table>
+      <thead>
+        <tr><th>Agent</th><th>Code</th><th>Role</th><th>Status</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><strong>Scout</strong></td>
+          <td class="code">SCOUT</td>
+          <td>Scans SAM.gov every 6 hours for matching opportunities by NAICS code</td>
+          <td><span class="badge badge-progress">In Progress</span></td>
+        </tr>
+        <tr>
+          <td><strong>Judge</strong></td>
+          <td class="code">JUDGE</td>
+          <td>AI scores each opportunity 0–100 for win probability using Claude API</td>
+          <td><span class="badge badge-progress">In Progress</span></td>
+        </tr>
+        <tr>
+          <td><strong>Vault</strong></td>
+          <td class="code">VAULT</td>
+          <td>Maintains cost library: labor rates, overhead, G&amp;A, profit margins</td>
+          <td><span class="badge badge-built">Built</span></td>
+        </tr>
+        <tr>
+          <td><strong>Recon</strong></td>
+          <td class="code">RECON</td>
+          <td>Research agent: pulls incumbent data, agency spend history, competition intel</td>
+          <td><span class="badge badge-built">Built</span></td>
+        </tr>
+        <tr>
+          <td><strong>Draft</strong></td>
+          <td class="code">DRAFT</td>
+          <td>Writes full proposal documents from opportunity data + templates</td>
+          <td><span class="badge badge-built">Built</span></td>
+        </tr>
+        <tr>
+          <td><strong>Bid Engine</strong></td>
+          <td class="code">BID ENGINE</td>
+          <td>Calculates optimal bid price using VAULT rates + win probability score</td>
+          <td><span class="badge badge-built">Built</span></td>
+        </tr>
+        <tr>
+          <td><strong>Ledger</strong></td>
+          <td class="code">LEDGER</td>
+          <td>Tracks all bids, wins, losses, and revenue projections</td>
+          <td><span class="badge badge-built">Built</span></td>
+        </tr>
+        <tr>
+          <td><strong>Exec</strong></td>
+          <td class="code">EXEC</td>
+          <td>Sends executive summary emails and alerts via SendGrid</td>
+          <td><span class="badge badge-built">Built</span></td>
+        </tr>
+        <tr>
+          <td><strong>Brandi</strong></td>
+          <td class="code">BRANDI</td>
+          <td>Brand &amp; marketing agent: LinkedIn posts, capability statements</td>
+          <td><span class="badge badge-built">Built</span></td>
+        </tr>
+      </tbody>
+    </table>
+
+    <!-- ── 3. INFRASTRUCTURE ── -->
+    <h2>3. Infrastructure Stack</h2>
+    <table>
+      <thead><tr><th>Layer</th><th>Technology / Details</th></tr></thead>
+      <tbody>
+        <tr><td class="label">Compute</td><td>GitHub Actions — free CI/CD runners for all agent workflows</td></tr>
+        <tr><td class="label">Database</td><td>Supabase (prime-db) — Project ID: <span class="code" style="display:inline">lsgaifejjoxqudjhkeev</span>, hosted PostgreSQL</td></tr>
+        <tr><td class="label">Proxy Layer</td><td>Supabase Edge Function: <code>sam-proxy</code> — routes SAM.gov requests to avoid IP blocks</td></tr>
+        <tr><td class="label">AI Engine</td><td>Anthropic Claude API — powers JUDGE scoring and DRAFT writing</td></tr>
+        <tr><td class="label">Data Source</td><td>SAM.gov Opportunities API v2 — federal contract listings</td></tr>
+        <tr><td class="label">Email</td><td>SendGrid API — executive alerts and daily digests via EXEC agent</td></tr>
+        <tr><td class="label">Repository</td><td>GitHub: <code>axiom-federal-solutions/prime-system</code> (private)</td></tr>
+        <tr><td class="label">Secrets</td><td>SAM_API_KEY, SUPABASE_URL, SUPABASE_SERVICE_KEY, ANTHROPIC_API_KEY, SENDGRID_API_KEY, SAM_UEI</td></tr>
+      </tbody>
+    </table>
+
+    <!-- ── 4. KEY TECHNICAL DISCOVERIES ── -->
+    <h2>4. Key Technical Discoveries This Session</h2>
+
+    <h3>4.1 SAM.gov IP Blocking</h3>
+    <p>SAM.gov's Istio gateway blocks GitHub Actions runners (AWS EC2 IPs) with HTTP/2 404 responses in under 1ms — meaning the block happens at the network gateway before the request even reaches the API. Direct fetch calls from GitHub Actions are completely non-functional.</p>
+    <div class="alert alert-success">
+      <strong>Solution Applied</strong>
+      Route all SAM.gov requests through a Supabase Edge Function (<code>sam-proxy</code>) deployed in Deno. Supabase Edge Functions run on Deno Deploy's infrastructure, which has IPs that SAM.gov does not block. The Edge Function accepts the NAICS code, date range, and API key — calls SAM.gov — and returns the raw response wrapped in a JSON envelope: <code>{ samStatus, samHeaders, samBody }</code>.
+    </div>
+
+    <h3>4.2 Two Supabase Accounts — Critical Discovery</h3>
+    <p>The build revealed two separate Supabase accounts were in play, causing workflow failures:</p>
+    <ul>
+      <li><strong>MCP / task-dashboard account:</strong> Project <code>yazxnngcceygviveiqsg</code> — where sam-proxy was initially deployed (wrong target)</li>
+      <li><strong>prime-db account:</strong> Project <code>lsgaifejjoxqudjhkeev</code> (axiom-federal-solutions org) — the <strong>CORRECT</strong> project for PRIME</li>
+    </ul>
+    <div class="alert alert-warning">
+      <strong>Key Rule</strong>
+      sam-proxy must be deployed to prime-db (<code>lsgaifejjoxqudjhkeev</code>), and all GitHub secrets must reference that project's URL and service_role key.
+    </div>
+
+    <h3>4.3 GitHub Actions Secret Mismatch (Run #16 Failure)</h3>
+    <p>After switching SUPABASE_URL to the MCP project to locate sam-proxy, the SUPABASE_SERVICE_KEY still belonged to prime-db — causing JUDGE to fail with "Invalid API key." Both URL and key must point to the same Supabase project.</p>
+
+    <h3>4.4 CodeMirror 6 In-Browser Code Editing</h3>
+    <p>GitHub's online editor uses CodeMirror 6, requiring programmatic edits via the CM view dispatch API. All in-browser edits used: <code>document.querySelector('.cm-content').cmTile.view</code> and <code>view.dispatch({changes: {from, to, insert}})</code> for precise character-level replacements.</p>
+
+    <!-- ── 5. WORKFLOW RUNS ── -->
+    <h2>5. GitHub Actions Workflow Run History</h2>
+    <p>Workflow: <code>scout-sam-scan.yml</code> — runs SCOUT then JUDGE sequentially.</p>
+    <table>
+      <thead><tr><th style="width:80px">Run #</th><th style="width:130px">Result</th><th>Root Cause / Fix</th></tr></thead>
+      <tbody>
+        <tr>
+          <td><strong>1 – 13</strong></td>
+          <td class="red"><span class="badge badge-pending">FAILED</span></td>
+          <td>Various: SAM.gov IP blocks, missing dependencies, syntax errors during proxy integration</td>
+        </tr>
+        <tr>
+          <td><strong>14</strong></td>
+          <td class="red"><span class="badge badge-pending">FAILED</span></td>
+          <td><code>SyntaxError: Unexpected token 'catch'</code> at scout.js:117 — missing <code>try {</code> block was deleted by a prior CodeMirror dispatch that over-selected the range</td>
+        </tr>
+        <tr>
+          <td><strong>15</strong></td>
+          <td class="yellow"><span class="badge badge-progress">PARTIAL</span></td>
+          <td>SCOUT passed syntax. Edge Function returned NOT_FOUND — sam-proxy was deployed to the wrong Supabase project (MCP account instead of prime-db)</td>
+        </tr>
+        <tr>
+          <td><strong>16</strong></td>
+          <td class="yellow"><span class="badge badge-progress">PARTIAL</span></td>
+          <td>SCOUT passed (4s). JUDGE failed "Invalid API key" — SUPABASE_URL pointed to MCP project but SUPABASE_SERVICE_KEY belonged to prime-db (key mismatch)</td>
+        </tr>
+        <tr>
+          <td><strong>17</strong></td>
+          <td><span class="badge" style="background:#e8ecf2;color:#444">PENDING</span></td>
+          <td>Target: complete end-to-end — SCOUT writes contracts, JUDGE scores them, both write to prime-db</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <!-- ── 6. CURRENT STATUS ── -->
+    <h2>6. Current Status</h2>
+
+    <h3>✅ Completed</h3>
+    <ul>
+      <li>All 9 agent files created and committed to GitHub repo</li>
+      <li>GitHub Actions workflows created for all 9 agents</li>
+      <li><code>lib/supabase.js</code> and <code>lib/claude.js</code> helper libraries created</li>
+      <li><code>package.json</code> with all npm dependencies configured</li>
+      <li><code>sam-proxy</code> Edge Function written (deployed to MCP project — needs re-deploy to prime-db)</li>
+      <li>SCOUT.js rewritten to route through sam-proxy instead of direct SAM.gov calls</li>
+      <li>try/catch syntax error in scout.js identified and fixed (Run #14 → #15)</li>
+      <li>SUPABASE_URL GitHub secret updated to <code>https://lsgaifejjoxqudjhkeev.supabase.co</code></li>
+    </ul>
+
+    <h3>🔴 Pending — Blockers for Run #17</h3>
+    <ul>
+      <li><strong>Update SUPABASE_SERVICE_KEY</strong> GitHub secret with prime-db service_role JWT</li>
+      <li><strong>Deploy sam-proxy Edge Function</strong> to prime-db (<code>lsgaifejjoxqudjhkeev</code>)</li>
+      <li><strong>Create database tables</strong> in prime-db: <code>opportunities</code>, <code>scores</code>, <code>bids</code>, <code>audit_log</code></li>
+    </ul>
+
+    <h3>🟡 Upcoming</h3>
+    <ul>
+      <li>Trigger Run #17 and verify SCOUT + JUDGE complete successfully</li>
+      <li>Remove debug step from workflow YAML once pipeline is confirmed</li>
+      <li>Build PRIME dashboard (live artifact showing contract pipeline)</li>
+      <li>Complete remaining chapters: VAULT pricing, BID ENGINE, DRAFT proposals</li>
+    </ul>
+
+    <!-- ── 7. SECRETS REFERENCE ── -->
+    <h2>7. GitHub Secrets Reference</h2>
+    <p>Location: <code>github.com/axiom-federal-solutions/prime-system/settings/secrets/actions</code></p>
+    <table>
+      <thead><tr><th>Secret Name</th><th>Value / Notes</th><th>Status</th></tr></thead>
+      <tbody>
+        <tr>
+          <td class="label">SUPABASE_URL</td>
+          <td><code>https://lsgaifejjoxqudjhkeev.supabase.co</code></td>
+          <td class="green"><span class="badge badge-done">✔ Updated</span></td>
+        </tr>
+        <tr>
+          <td class="label">SUPABASE_SERVICE_KEY</td>
+          <td>service_role JWT from prime-db — 219 chars, starts <code>eyJhbGciOiJIUzI1NiIs</code></td>
+          <td class="red"><span class="badge badge-pending">⚠ Needs Update</span></td>
+        </tr>
+        <tr>
+          <td class="label">SAM_API_KEY</td>
+          <td>SAM.gov API key for Noble Erne UEI</td>
+          <td class="green"><span class="badge badge-done">✔ Set</span></td>
+        </tr>
+        <tr>
+          <td class="label">ANTHROPIC_API_KEY</td>
+          <td>Claude API key for JUDGE + DRAFT agents</td>
+          <td class="green"><span class="badge badge-done">✔ Set</span></td>
+        </tr>
+        <tr>
+          <td class="label">SENDGRID_API_KEY</td>
+          <td>SendGrid key for EXEC email alerts</td>
+          <td class="green"><span class="badge badge-done">✔ Set</span></td>
+        </tr>
+        <tr>
+          <td class="label">SAM_UEI</td>
+          <td>Noble Erne LLC's Unique Entity Identifier</td>
+          <td class="green"><span class="badge badge-done">✔ Set</span></td>
+        </tr>
+      </tbody>
+    </table>
+
+    <!-- ── 8. SUPABASE REFERENCE ── -->
+    <h2>8. Supabase Projects Reference</h2>
+    <table>
+      <thead><tr><th>Project</th><th>Project ID</th><th>Purpose</th></tr></thead>
+      <tbody>
+        <tr>
+          <td class="green"><strong>prime-db ✔ CORRECT</strong></td>
+          <td class="code">lsgaifejjoxqudjhkeev</td>
+          <td>PRIME platform database + Edge Functions (axiom-federal-solutions org)</td>
+        </tr>
+        <tr>
+          <td style="color:#888">task-dashboard (MCP)</td>
+          <td class="code" style="color:#aaa">yazxnngcceygviveiqsg</td>
+          <td style="color:#888">Cowork MCP tools — NOT for PRIME. sam-proxy was mistakenly deployed here.</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <!-- ── 9. NEXT ACTIONS ── -->
+    <h2>9. Immediate Next Actions (to reach Run #17)</h2>
+    <table>
+      <thead><tr><th style="width:50px">#</th><th>Action</th><th style="width:200px">Where</th></tr></thead>
+      <tbody>
+        <tr>
+          <td class="red priority-num">1</td>
+          <td><strong>Update SUPABASE_SERVICE_KEY</strong> with prime-db service_role JWT<br><small>Navigate: Supabase → prime-db → Settings → API Keys → Legacy → Reveal service_role → Copy → GitHub secret</small></td>
+          <td>GitHub Actions Secrets</td>
+        </tr>
+        <tr>
+          <td class="yellow priority-num">2</td>
+          <td><strong>Deploy sam-proxy</strong> Edge Function to prime-db (<code>lsgaifejjoxqudjhkeev</code>)<br><small>Via Supabase Dashboard → Edge Functions → New Function, paste the TypeScript code</small></td>
+          <td>Supabase Dashboard</td>
+        </tr>
+        <tr>
+          <td class="yellow priority-num">3</td>
+          <td><strong>Create database tables</strong>: opportunities, scores, bids, audit_log<br><small>Run SQL migration in Supabase SQL Editor for prime-db</small></td>
+          <td>Supabase SQL Editor</td>
+        </tr>
+        <tr>
+          <td style="background:#eafaf1" class="priority-num">4</td>
+          <td><strong>Trigger Run #17</strong> and verify SCOUT writes contracts + JUDGE scores them</td>
+          <td>GitHub Actions</td>
+        </tr>
+      </tbody>
+    </table>
+
+  </div><!-- /content -->
+
+  <div class="doc-footer">
+    Noble Erne, LLC &nbsp;|&nbsp; PRIME Build — Session Summary &nbsp;|&nbsp; Confidential &nbsp;|&nbsp; April 26, 2026
+  </div>
+
+</div><!-- /page -->
+</body>
+</html>
