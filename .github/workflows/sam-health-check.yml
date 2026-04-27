@@ -1,0 +1,21 @@
+name: VAULT - SAM Health Check
+on:
+  schedule:
+    - cron: '0 5 1 * *'
+  workflow_dispatch:
+jobs:
+  vault-sam-health:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - run: npm ci
+      - run: node agents/vault-sam-health.js
+        env:
+          SAM_API_KEY: ${{ secrets.SAM_API_KEY }}
+          SAM_UEI: ${{ secrets.SAM_UEI }}
+          CAGE_CODE: ${{ secrets.CAGE_CODE }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
