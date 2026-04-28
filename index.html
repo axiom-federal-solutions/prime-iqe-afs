@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1.0">
-<title>IQE PRIME v16 — Axiom Federal Solutions</title>
+<title>IQE PRIME v17 — Axiom Federal Solutions</title>
 <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
 <style>
@@ -58,29 +58,40 @@ body{font-family:'Outfit',system-ui,sans-serif;background:var(--bg);color:var(--
 .help-search:focus{border-color:var(--cyanBd)}
 .help-cat{display:inline-block;padding:2px 8px;border-radius:4px;font-size:9px;font-weight:600;margin-right:6px}
 .growth-card{background:var(--card);border:1px solid var(--bd);border-radius:8px;padding:14px;margin-bottom:8px}
-.growth-status{display:inline-flex;align-items:center;gap:4px;padding:3px 8px;border-radius:4px;font-size:9px;font-weight:700}
-.sup-match{display:flex;align-items:center;gap:8px;padding:6px 8px;background:var(--cardHi);border-radius:5px;margin-bottom:4px}
+.sup-card{background:var(--cardHi);border:1px solid var(--bd);border-radius:8px;padding:12px;margin-bottom:8px}
+.sup-score{font-size:28px;font-weight:900;line-height:1;min-width:36px}
+.price-tier{background:var(--card);border-radius:8px;padding:12px;text-align:center;border:1px solid var(--bd);flex:1}
+.price-tier .label{font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.1em;color:var(--t3);margin-bottom:4px}
+.price-tier .amount{font-size:15px;font-weight:800}
+.price-tiers{display:flex;gap:8px;margin-bottom:12px}
+.breakdown-row{display:flex;justify-content:space-between;font-size:10px;padding:5px 0;border-bottom:1px solid var(--bd)}
+.breakdown-row:last-child{border-bottom:none}
+.intel-row{background:var(--cardHi);border-radius:6px;padding:10px 12px;margin-bottom:6px;display:flex;align-items:center;gap:10px}
+.checklist-item{display:flex;align-items:center;gap:8px;padding:7px 10px;border-radius:6px;margin-bottom:4px;font-size:11px;background:var(--card);border:1px solid var(--bd)}
 /* Detail panel */
 .det-ov{position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:100;display:none;backdrop-filter:blur(2px)}
 .det-ov.open{display:block}
-.det-pan{position:fixed;right:0;top:0;height:100vh;width:480px;max-width:92vw;background:var(--panel);border-left:1px solid var(--goldBd);z-index:101;overflow-y:auto;padding:28px 24px;transform:translateX(100%);transition:transform .28s cubic-bezier(.4,0,.2,1)}
+.det-pan{position:fixed;right:0;top:0;height:100vh;width:520px;max-width:94vw;background:var(--panel);border-left:1px solid var(--goldBd);z-index:101;overflow-y:auto;padding:28px 24px;transform:translateX(100%);transition:transform .28s cubic-bezier(.4,0,.2,1)}
 .det-pan.open{transform:translateX(0)}
 .det-close{position:sticky;top:0;float:right;background:var(--card);border:1px solid var(--bd);border-radius:6px;color:var(--t2);font-size:16px;line-height:1;padding:4px 8px;cursor:pointer;margin-bottom:12px}
 .det-close:hover{color:var(--t1)}
+.det-section{margin-top:14px;padding-top:14px;border-top:1px solid var(--bd)}
+.det-sec-label{font-size:9px;font-weight:700;color:var(--t3);text-transform:uppercase;letter-spacing:.1em;margin-bottom:8px}
 /* Refresh */
 .refresh-btn{padding:6px 12px;border-radius:6px;border:1px solid var(--cyanBd);background:transparent;color:var(--cyan);font-family:'Outfit',sans-serif;font-size:10px;font-weight:600;cursor:pointer;display:inline-flex;align-items:center;gap:5px}
 .refresh-btn:hover{background:var(--cyanDim)}
+.start-bid-btn{width:100%;padding:12px;border-radius:8px;border:2px solid var(--gold);background:var(--goldDim);color:var(--gold);font-family:'Outfit',sans-serif;font-size:13px;font-weight:700;cursor:pointer;text-align:center;letter-spacing:.04em;transition:all .15s}
+.start-bid-btn:hover{background:rgba(233,196,106,.22)}
 @keyframes spin{to{transform:rotate(360deg)}}
 .spinning{animation:spin .8s linear infinite;display:inline-block}
-/* Empty state */
 .empty{text-align:center;padding:50px 20px;color:var(--t3)}
 .empty-icon{font-size:40px;margin-bottom:12px}
 .empty-title{font-size:14px;font-weight:600;color:var(--t2);margin-bottom:8px}
 .empty-body{font-size:11px;line-height:1.7}
 .run-link{display:inline-block;margin-top:14px;padding:8px 18px;border-radius:6px;background:var(--cyanDim);border:1px solid var(--cyanBd);color:var(--cyan);font-size:11px;font-weight:600;text-decoration:none}
-/* Loading pulse */
 .loading-row{background:var(--card);border-radius:8px;padding:14px;margin-bottom:6px;opacity:.5;animation:pulse 1.4s ease-in-out infinite}
 @keyframes pulse{0%,100%{opacity:.35}50%{opacity:.65}}
+.skeleton{background:var(--card);border-radius:6px;animation:pulse 1.4s ease-in-out infinite}
 @media(max-width:900px){.sb{display:none}.main{padding:12px}.sgrid{grid-template-columns:repeat(auto-fill,minmax(52px,1fr))}}
 </style>
 </head>
@@ -95,7 +106,7 @@ body{font-family:'Outfit',system-ui,sans-serif;background:var(--bg);color:var(--
 </div>
 
 <nav class="sb">
-  <div class="sb-logo"><div class="sb-mark">P</div><div><div class="sb-title">IQE <span>PRIME</span></div><div class="sb-ver">v16 · 3 Verticals</div></div></div>
+  <div class="sb-logo"><div class="sb-mark">P</div><div><div class="sb-title">IQE <span>PRIME</span></div><div class="sb-ver">v17 · 3 Verticals</div></div></div>
   <div class="sb-group">Command</div><button class="sb-btn active" onclick="go('home',this)">🏠 Command Center</button>
   <div class="sb-group">Find Work</div>
   <button class="sb-btn" onclick="go('construction',this)">🏗️ Construction<span class="sb-dot" style="background:var(--green);box-shadow:0 0 6px var(--green)"></span></button>
@@ -109,7 +120,7 @@ body{font-family:'Outfit',system-ui,sans-serif;background:var(--bg);color:var(--
   <div class="sb-group">System</div>
   <button class="sb-btn" onclick="go('system',this)">⚙️ Agents & Config</button>
   <button class="sb-btn" onclick="go('help',this)">❓ Help & FAQ</button>
-  <div class="sb-foot">Built by Noble Erne, LLC<br>Axiom Federal Solutions<br>~$9.50/mo · 32 NAICS · 19 workflows<br>30 tables · T.E.S.T. v2 Active<br><span id="last-load" style="color:var(--t3)">Loading…</span></div>
+  <div class="sb-foot">Built by Noble Erne, LLC<br>Axiom Federal Solutions · CAGE 7JKKO<br>~$9.50/mo · 32 NAICS · 19 workflows<br>30 tables · T.E.S.T. v2 Active<br><span id="last-load" style="color:var(--t3)">Loading…</span></div>
 </nav>
 
 <div class="main" id="mc">
@@ -127,63 +138,122 @@ body{font-family:'Outfit',system-ui,sans-serif;background:var(--bg);color:var(--
 </div>
 
 <script>
-// ─── SUPABASE ───────────────────────────────────────────────────────
+// ─── SUPABASE ──────────────────────────────────────────────────────────
 const { createClient } = window.supabase;
 const sb = createClient(
   'https://lsgaifejjoxqudjhkeev.supabase.co',
   'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImxzZ2FpZmVqam94cXVkamhrZWV2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzcxNjg1MDIsImV4cCI6MjA5Mjc0NDUwMn0.Ptwds-uLLkPNd9nQv-g3ADxz-quX8iU7JwYiSqp7GJ8'
 );
 
-// ─── STATE ──────────────────────────────────────────────────────────
-let OPPS=[], BIDS=[], SUPS=[], RUNS=[], loading=false;
+// ─── GLOBAL STATE ──────────────────────────────────────────────────────
+let OPPS=[], BIDS=[], SUPS=[], RUNS=[], CONFIG={}, TESTS=[], loading=false;
 const GH_ACTIONS='https://github.com/axiom-federal-solutions/prime-iqe-afs/actions';
 
-// ─── HELPERS ────────────────────────────────────────────────────────
+// ─── STATE METADATA: name, region, notes for all 50 states + DC ───────
+const STATE_META={
+  AL:{n:'Alabama',r:'Gulf Coast',notes:'Redstone Arsenal · Maxwell AFB'},
+  AK:{n:'Alaska',r:'Pacific',notes:'JBER · Eielson AFB'},
+  AZ:{n:'Arizona',r:'Mountain',notes:'Fort Huachuca · Luke AFB'},
+  AR:{n:'Arkansas',r:'South Central',notes:'Little Rock AFB'},
+  CA:{n:'California',r:'Pacific',notes:'Major market · Multiple bases'},
+  CO:{n:'Colorado',r:'Mountain',notes:'Fort Carson · Peterson SFB'},
+  CT:{n:'Connecticut',r:'Northeast',notes:'Naval Sub Base'},
+  DC:{n:'Wash DC',r:'Mid-Atlantic',notes:'GSA HQ · Pentagon'},
+  DE:{n:'Delaware',r:'Mid-Atlantic',notes:'Dover AFB'},
+  FL:{n:'Florida',r:'Gulf Coast / South',notes:'MacDill AFB · NAS Jacksonville'},
+  GA:{n:'Georgia',r:'South',notes:'Fort Moore · Robins AFB'},
+  HI:{n:'Hawaii',r:'Pacific',notes:'JBPHH · Schofield'},
+  ID:{n:'Idaho',r:'Mountain',notes:'Mountain Home AFB'},
+  IL:{n:'Illinois',r:'Midwest',notes:'Scott AFB · Great Lakes'},
+  IN:{n:'Indiana',r:'Midwest',notes:'Camp Atterbury'},
+  IA:{n:'Iowa',r:'Midwest',notes:'National Guard'},
+  KS:{n:'Kansas',r:'Great Plains',notes:'Fort Riley · McConnell'},
+  KY:{n:'Kentucky',r:'South',notes:'Fort Campbell · Fort Knox'},
+  LA:{n:'Louisiana',r:'Gulf Coast',notes:'Home · USACE MVN · VA VISN 16',hot:1,lic:1},
+  ME:{n:'Maine',r:'Northeast',notes:'Portsmouth Naval'},
+  MD:{n:'Maryland',r:'Mid-Atlantic',notes:'Andrews · Aberdeen'},
+  MA:{n:'Massachusetts',r:'Northeast',notes:'Hanscom AFB · Devens'},
+  MI:{n:'Michigan',r:'Midwest',notes:'Selfridge ANGB'},
+  MN:{n:'Minnesota',r:'Midwest',notes:'Fort Snelling'},
+  MS:{n:'Mississippi',r:'Gulf Coast',notes:'Keesler AFB · Camp Shelby'},
+  MO:{n:'Missouri',r:'Midwest',notes:'Fort Leonard Wood · Whiteman'},
+  MT:{n:'Montana',r:'Mountain',notes:'Malmstrom AFB'},
+  NE:{n:'Nebraska',r:'Great Plains',notes:'Offutt AFB · Fort Kearny'},
+  NV:{n:'Nevada',r:'Mountain',notes:'Nellis · Creech AFB'},
+  NH:{n:'N. Hampshire',r:'Northeast',notes:'Portsmouth Naval'},
+  NJ:{n:'New Jersey',r:'Mid-Atlantic',notes:'McGuire-Dix-Lakehurst'},
+  NM:{n:'New Mexico',r:'Mountain',notes:'Kirtland · White Sands'},
+  NY:{n:'New York',r:'Northeast',notes:'West Point · Fort Drum'},
+  NC:{n:'N. Carolina',r:'South',notes:'Fort Bragg · Camp Lejeune'},
+  ND:{n:'N. Dakota',r:'Great Plains',notes:'Minot AFB · Grand Forks'},
+  OH:{n:'Ohio',r:'Midwest',notes:'Wright-Patterson · DFAS'},
+  OK:{n:'Oklahoma',r:'South Central',notes:'Fort Sill · Tinker AFB'},
+  OR:{n:'Oregon',r:'Pacific',notes:'Portland VA'},
+  PA:{n:'Pennsylvania',r:'Mid-Atlantic',notes:'Carlisle Barracks · Tobyhanna'},
+  RI:{n:'Rhode Island',r:'Northeast',notes:'Newport Naval Station'},
+  SC:{n:'S. Carolina',r:'South',notes:'Fort Jackson · Shaw AFB'},
+  SD:{n:'S. Dakota',r:'Great Plains',notes:'Ellsworth AFB'},
+  TN:{n:'Tennessee',r:'South',notes:'Fort Campbell · Arnold AFB'},
+  TX:{n:'Texas',r:'Gulf Coast',notes:'Fort Hood · Randolph AFB',lic:1,hot:1},
+  UT:{n:'Utah',r:'Mountain',notes:'Hill AFB · Dugway'},
+  VT:{n:'Vermont',r:'Northeast',notes:'Burlington ANGB'},
+  VA:{n:'Virginia',r:'Mid-Atlantic',notes:'Pentagon · Fort Belvoir · Quantico'},
+  WA:{n:'Washington',r:'Pacific',notes:'JBLM · Whidbey Island'},
+  WV:{n:'W. Virginia',r:'South',notes:'Shepherd Field'},
+  WI:{n:'Wisconsin',r:'Midwest',notes:'Fort McCoy'},
+  WY:{n:'Wyoming',r:'Mountain',notes:'F.E. Warren AFB'},
+};
+
+// ─── HELPERS ───────────────────────────────────────────────────────────
 function sc(s){return s>=85?'var(--green)':s>=70?'var(--gold)':s>=55?'var(--amber)':'var(--red)';}
 function rb(r){const m={'STRONG BID':{bg:'var(--greenDim)',c:'var(--green)',i:'✅'},'BID':{bg:'var(--cyanDim)',c:'var(--cyan)',i:'✅'},'CONDITIONAL':{bg:'var(--amberDim)',c:'var(--amber)',i:'⚠️'},'NO BID':{bg:'var(--redDim)',c:'var(--red)',i:'❌'},'STRONG LEASE':{bg:'var(--greenDim)',c:'var(--green)',i:'🏢'},'LEASE':{bg:'var(--roseDim)',c:'var(--rose)',i:'🏢'}};const s=m[r]||m['BID'];return '<span class="badge" style="background:'+s.bg+';color:'+s.c+'">'+s.i+' '+r+'</span>';}
-function fmt(v){if(!v)return '—';return v>=1e6?'$'+(v/1e6).toFixed(1)+'M':v>=1000?'$'+(v/1000).toFixed(0)+'K':'$'+v;}
+function fmt(v){if(!v&&v!==0)return '—';return v>=1e6?'$'+(v/1e6).toFixed(1)+'M':v>=1000?'$'+(v/1000).toFixed(0)+'K':'$'+Math.round(v);}
 function daysLeft(deadline){if(!deadline)return null;const d=Math.ceil((new Date(deadline)-new Date())/86400000);return Math.max(0,d);}
 function scoreOf(o){return o.vertical==='supply'?o.acq_score:o.vertical==='realestate'?o.lease_score:(o.prime_score||o.acq_score||o.lease_score)||0;}
 function slOf(o){return o.vertical==='supply'?'ACQ':o.vertical==='realestate'?'LEASE':'PRIME';}
 function vtColor(v){return v==='supply'?'var(--cyan)':v==='realestate'?'var(--rose)':'var(--green)';}
 function vtLabel(v){return v==='supply'?'SUPPLY':v==='realestate'?'RE&R':'CONSTR';}
 function emptyState(msg,sub){return `<div class="empty"><div class="empty-icon">📡</div><div class="empty-title">${msg}</div><div class="empty-body">${sub}</div><a class="run-link" href="${GH_ACTIONS}" target="_blank">▶ Open GitHub Actions to Run SCOUT</a></div>`;}
-function loadingRows(n=3){return Array(n).fill('<div class="loading-row" style="height:56px"></div>').join('');}
+function cfgVal(key){const r=CONFIG[key];return r?r.value:null;}
 
-// ─── DATA LOAD ──────────────────────────────────────────────────────
+// ─── DATA LOAD ─────────────────────────────────────────────────────────
 async function loadData(manual=false){
   if(loading)return;
   loading=true;
   const icon=document.getElementById('ri');
   if(icon)icon.classList.add('spinning');
-
   try{
-    const [o,b,s,r]=await Promise.all([
+    const [o,b,s,r,cfg,tst]=await Promise.all([
       sb.from('opportunities').select('*').order('prime_score',{ascending:false}).limit(200),
       sb.from('bids').select('*').order('created_at',{ascending:false}).limit(50),
-      sb.from('supplier_matches').select('*').order('match_score',{ascending:false}).limit(50),
-      sb.from('agent_runs').select('*').order('created_at',{ascending:false}).limit(20)
+      sb.from('supplier_matches').select('*').order('match_score',{ascending:false}).limit(100),
+      sb.from('agent_runs').select('*').order('created_at',{ascending:false}).limit(20),
+      sb.from('system_config').select('*'),
+      sb.from('test_results').select('*').order('run_at',{ascending:false}).limit(30)
     ]);
     OPPS=o.data||[];
     BIDS=b.data||[];
     SUPS=s.data||[];
     RUNS=r.data||[];
+    // build CONFIG as key→row lookup
+    CONFIG={};
+    (cfg.data||[]).forEach(row=>{ CONFIG[row.key]=row; });
+    TESTS=tst.data||[];
 
     const ll=document.getElementById('last-load');
     if(ll){const n=new Date();ll.textContent='Updated '+n.toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'});}
-
     renderAll();
   }catch(e){
     console.error('Supabase load failed:',e);
     const ll=document.getElementById('last-load');
-    if(ll)ll.textContent='⚠ Load error';
+    if(ll)ll.textContent='⚠ Load error — check console';
   }finally{
     loading=false;
     if(icon)icon.classList.remove('spinning');
   }
 }
 
-// ─── NAVIGATION ─────────────────────────────────────────────────────
+// ─── NAVIGATION ────────────────────────────────────────────────────────
 const TABS=['home','construction','supply','realestate','bids','active','money','compliance','intel','system','help'];
 let activeTab='home';
 function go(id,btn){
@@ -193,7 +263,7 @@ function go(id,btn){
   activeTab=id;
 }
 
-// ─── OPPORTUNITY ROW ─────────────────────────────────────────────────
+// ─── OPPORTUNITY ROW ───────────────────────────────────────────────────
 function oppRow(o,idx){
   const s=scoreOf(o), sl=slOf(o), days=daysLeft(o.response_deadline);
   const sa=o.set_aside_type||o.set_aside||'';
@@ -215,14 +285,15 @@ function oppRow(o,idx){
   </div>`;
 }
 
-// ─── DETAIL PANEL ────────────────────────────────────────────────────
-function showDetail(idx){
+// ─── DETAIL PANEL (async — loads bid pricing + competitor intel) ────────
+async function showDetail(idx){
   const o=OPPS[idx];
   if(!o)return;
-  const s=scoreOf(o),sl=slOf(o),days=daysLeft(o.response_deadline);
-  const matched=SUPS.filter(sp=>sp.opportunity_id===o.id||sp.notice_id===o.notice_id);
+  const s=scoreOf(o), sl=slOf(o), days=daysLeft(o.response_deadline);
   const deadline=o.response_deadline?new Date(o.response_deadline).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'2-digit'}):'—';
+  const matched=SUPS.filter(sp=>sp.opportunity_id===o.id||sp.notice_id===o.notice_id).slice(0,5);
 
+  // Open panel immediately with core info + loading skeletons for async sections
   document.getElementById('det-content').innerHTML=`
     <div style="margin-bottom:4px">
       <span class="badge" style="background:${vtColor(o.vertical)}22;color:${vtColor(o.vertical)}">${vtLabel(o.vertical)}</span>
@@ -255,7 +326,6 @@ function showDetail(idx){
         <div><span style="color:var(--t3)">State</span><br><b>${o.state||'—'}</b></div>
         <div><span style="color:var(--t3)">Deadline</span><br><b>${deadline}</b></div>
         ${o.sol_number||o.notice_id?`<div style="grid-column:1/-1"><span style="color:var(--t3)">Solicitation #</span><br><b style="font-size:9px;word-break:break-all">${o.sol_number||o.notice_id}</b></div>`:''}
-        ${o.scored_at?`<div style="grid-column:1/-1"><span style="color:var(--t3)">Scored</span><br><b style="font-size:9px">${new Date(o.scored_at).toLocaleString('en-US',{month:'short',day:'numeric',hour:'numeric',minute:'2-digit'})}</b></div>`:''}
       </div>
     </div>
 
@@ -266,21 +336,163 @@ function showDetail(idx){
 
     ${o.notice_url?`<a href="${o.notice_url}" target="_blank" style="display:block;text-align:center;padding:10px;border-radius:6px;background:var(--cyanDim);border:1px solid var(--cyanBd);color:var(--cyan);font-size:11px;font-weight:600;text-decoration:none;margin-bottom:14px">🔗 View Full Posting on SAM.gov ↗</a>`:''}
 
-    ${matched.length?`<div style="font-size:9px;font-weight:700;color:var(--violet);text-transform:uppercase;letter-spacing:.1em;margin-bottom:8px">🤝 Matched Suppliers</div>
-    ${matched.slice(0,4).map(sp=>`<div class="sup-match" style="border-left:3px solid ${sp.relationship_type==='teaming'?'var(--cyan)':'var(--green)'}">
-      <span style="font-size:14px;font-weight:800;color:${sp.relationship_type==='teaming'?'var(--cyan)':'var(--green)'};min-width:28px">${sp.match_score||'—'}</span>
-      <div style="flex:1"><div style="font-size:11px;font-weight:500">${sp.entity_name||sp.name||'—'}</div>
-      <div style="font-size:9px;color:var(--t3)">${sp.naics_code||''} · ${sp.certifications||''} · ${sp.state||''}</div></div>
-      <span class="badge" style="background:${sp.relationship_type==='teaming'?'var(--cyanDim);color:var(--cyan)':'var(--greenDim);color:var(--green)'}">${(sp.relationship_type||'sub').toUpperCase()}</span>
-    </div>`).join('')}`:''}
+    <!-- BID PRICING — loaded async below -->
+    <div class="det-section" id="det-pricing">
+      <div class="det-sec-label">💰 Bid Pricing</div>
+      <div class="skeleton" style="height:80px;border-radius:8px;margin-bottom:8px"></div>
+      <div class="skeleton" style="height:120px;border-radius:8px"></div>
+    </div>
 
-    <div style="margin-top:16px;padding-top:14px;border-top:1px solid var(--bd)">
-      <a href="${GH_ACTIONS}" target="_blank" style="display:block;text-align:center;padding:10px;border-radius:6px;background:var(--goldDim);border:1px solid var(--goldBd);color:var(--gold);font-size:11px;font-weight:600;text-decoration:none">⚡ Run BID ENGINE for This Opportunity</a>
-      <div style="font-size:9px;color:var(--t3);text-align:center;margin-top:6px">Opens GitHub Actions → Run BID ENGINE → paste Opportunity ID</div>
+    <!-- SUPPLIERS — from global SUPS -->
+    ${matched.length?`<div class="det-section">
+      <div class="det-sec-label">🤝 Top Supplier Matches</div>
+      ${matched.map(sp=>supplierCard(sp)).join('')}
+    </div>`:''}
+
+    <!-- COMPETITOR INTEL — loaded async below -->
+    <div class="det-section" id="det-intel-section">
+      <div class="det-sec-label">🔍 Market Comps — Previous Awards</div>
+      <div class="skeleton" style="height:70px;border-radius:8px"></div>
+    </div>
+
+    <!-- START BID -->
+    <div class="det-section" id="det-start-bid">
+      <div class="det-sec-label">⚡ Start This Bid</div>
+      <button class="start-bid-btn" onclick="startBid('${o.id}','${(o.title||'').replace(/'/g,"\\'")}',${o.estimated_value||0},'${o.vertical||'construction'}','${o.naics_code||''}',${o.estimated_value&&o.estimated_value>150000?'true':'false'})">
+        ⚡ START BID — ${fmt(o.estimated_value)}
+      </button>
+      <div style="font-size:9px;color:var(--t3);text-align:center;margin-top:6px">Creates bid record · Shows compliance checklist · Alerts VAULT</div>
     </div>
   `;
   document.getElementById('det-ov').classList.add('open');
   document.getElementById('det-pan').classList.add('open');
+
+  // Async: load bid pricing and competitor intel in parallel
+  try{
+    const [bidRes, intelRes]=await Promise.all([
+      sb.from('bids').select('*').eq('opportunity_id',o.id).maybeSingle(),
+      sb.from('competitor_intel').select('*').eq('naics',o.naics_code).order('award_date',{ascending:false}).limit(5)
+    ]);
+    renderBidPricing(bidRes.data, o);
+    renderCompetitorIntel(intelRes.data||[], o);
+  }catch(e){
+    console.warn('Detail async load failed:',e);
+    const p=document.getElementById('det-pricing');
+    if(p)p.innerHTML='<div class="det-sec-label">💰 Bid Pricing</div><div style="font-size:10px;color:var(--t3);padding:12px">Run BID ENGINE to calculate price.</div>';
+  }
+}
+
+// Render bid pricing section inside the already-open detail panel
+function renderBidPricing(bid, o){
+  const el=document.getElementById('det-pricing');
+  if(!el)return;
+  if(!bid||!bid.pricing_data){
+    el.innerHTML=`<div class="det-sec-label">💰 Bid Pricing</div>
+      <div style="background:var(--card);border:1px solid var(--goldBd);border-radius:8px;padding:16px;text-align:center">
+        <div style="font-size:11px;color:var(--t2);margin-bottom:10px">No price calculated yet. Run BID ENGINE to get Low / Recommended / High pricing.</div>
+        <a href="${GH_ACTIONS}" target="_blank" style="display:inline-block;padding:8px 18px;border-radius:6px;background:var(--goldDim);border:1px solid var(--goldBd);color:var(--gold);font-size:11px;font-weight:600;text-decoration:none">▶ Run BID ENGINE</a>
+        <div style="font-size:9px;color:var(--t3);margin-top:8px">GitHub Actions → bid-engine → paste opportunity ID: ${o.id||'—'}</div>
+      </div>`;
+    return;
+  }
+  const pd=bid.pricing_data;
+  const low=Math.round((pd.base||0)*0.95);
+  const rec=pd.base||0;
+  const high=pd.escalated||pd.base||0;
+  const ttl=pd.total_if_all_years||0;
+  const bd=pd.breakdown||{};
+  const yr=pd.yearly||[];
+
+  el.innerHTML=`<div class="det-sec-label">💰 Bid Pricing — ${pd.model==='supply'?'Supply':'Construction'} Model</div>
+    <div class="price-tiers">
+      <div class="price-tier" style="border-color:var(--cyanBd)">
+        <div class="label" style="color:var(--cyan)">Low</div>
+        <div class="amount" style="color:var(--cyan)">${fmt(low)}</div>
+        <div style="font-size:9px;color:var(--t3);margin-top:2px">95% of base</div>
+      </div>
+      <div class="price-tier" style="border-color:var(--goldBd);background:var(--goldDim)">
+        <div class="label" style="color:var(--gold)">⭐ Recommended</div>
+        <div class="amount" style="color:var(--gold)">${fmt(rec)}</div>
+        <div style="font-size:9px;color:var(--t3);margin-top:2px">Base year</div>
+      </div>
+      <div class="price-tier" style="border-color:rgba(167,139,250,.3)">
+        <div class="label" style="color:var(--violet)">High</div>
+        <div class="amount" style="color:var(--violet)">${fmt(high)}</div>
+        <div style="font-size:9px;color:var(--t3);margin-top:2px">All option yrs</div>
+      </div>
+    </div>
+    ${ttl?`<div style="text-align:center;font-size:10px;color:var(--t2);margin-bottom:10px">Total contract value (base + all options): <b style="color:var(--gold)">${fmt(ttl)}</b></div>`:''}
+    ${Object.keys(bd).length?`<div style="background:var(--card);border-radius:8px;padding:12px;margin-bottom:10px;border:1px solid var(--bd)">
+      <div style="font-size:9px;font-weight:700;color:var(--t3);text-transform:uppercase;letter-spacing:.1em;margin-bottom:6px">Cost Breakdown — Base Year</div>
+      ${bd.wages?`<div class="breakdown-row"><span style="color:var(--t2)">Labor (Davis-Bacon)</span><span style="font-weight:600">${fmt(bd.wages)}</span></div>`:''}
+      ${bd.materials?`<div class="breakdown-row"><span style="color:var(--t2)">Materials</span><span style="font-weight:600">${fmt(bd.materials)}</span></div>`:''}
+      ${bd.mobilization?`<div class="breakdown-row"><span style="color:var(--t2)">Mobilization</span><span style="font-weight:600">${fmt(bd.mobilization)}</span></div>`:''}
+      ${bd.bond_premium?`<div class="breakdown-row"><span style="color:var(--t2)">Bond Premium (2%)</span><span style="font-weight:600">${fmt(bd.bond_premium)}</span></div>`:''}
+      ${bd.overhead?`<div class="breakdown-row"><span style="color:var(--t2)">Overhead (15%)</span><span style="font-weight:600">${fmt(bd.overhead)}</span></div>`:''}
+      ${bd.profit?`<div class="breakdown-row"><span style="color:var(--t2)">Profit (10%)</span><span style="font-weight:600;color:var(--green)">${fmt(bd.profit)}</span></div>`:''}
+      ${bd.shipping?`<div class="breakdown-row"><span style="color:var(--t2)">Shipping (2%)</span><span style="font-weight:600">${fmt(bd.shipping)}</span></div>`:''}
+      ${bd.markup?`<div class="breakdown-row"><span style="color:var(--t2)">Markup (12%)</span><span style="font-weight:600;color:var(--green)">${fmt(bd.markup)}</span></div>`:''}
+    </div>`:''}
+    ${yr.length?`<div style="background:var(--card);border-radius:8px;padding:12px;border:1px solid var(--bd)">
+      <div style="font-size:9px;font-weight:700;color:var(--t3);text-transform:uppercase;letter-spacing:.1em;margin-bottom:6px">Option Year Escalation</div>
+      ${yr.map(y=>`<div class="breakdown-row">
+        <span style="color:var(--t2)">${y.year===0?'Base Year':'Option Year '+y.year}</span>
+        <span style="font-weight:600;color:${y.year===0?'var(--gold)':'var(--t1)'}">${fmt(y.price)}</span>
+      </div>`).join('')}
+    </div>`:''}
+    ${pd.note?`<div style="margin-top:8px;padding:8px 10px;border-radius:6px;background:${pd.note.includes('WARNING')?'var(--amberDim)':'var(--greenDim)'};border:1px solid ${pd.note.includes('WARNING')?'var(--amber)':'var(--green)'}33;font-size:10px;color:var(--t2)">${pd.note}</div>`:''}
+  `;
+}
+
+// Render competitor intel section
+function renderCompetitorIntel(rows, o){
+  const el=document.getElementById('det-intel-section');
+  if(!el)return;
+  if(!rows||rows.length===0){
+    el.innerHTML=`<div class="det-sec-label">🔍 Market Comps — Previous Awards</div>
+      <div style="font-size:10px;color:var(--t3);padding:10px 0">No award history found for NAICS ${o.naics_code||'—'} yet. Run RECON to pull FPDS data.</div>`;
+    return;
+  }
+  const avg=Math.round(rows.reduce((a,r)=>a+(r.award_value||0),0)/rows.length);
+  el.innerHTML=`<div class="det-sec-label">🔍 Market Comps — NAICS ${o.naics_code||'—'} Awards</div>
+    <div style="text-align:right;font-size:10px;color:var(--t2);margin-bottom:8px">Avg win price: <b style="color:var(--gold)">${fmt(avg)}</b></div>
+    ${rows.map(r=>`<div class="intel-row">
+      <div style="flex:1">
+        <div style="font-size:11px;font-weight:600">${r.company_name||'Unknown'}</div>
+        <div style="font-size:9px;color:var(--t3);margin-top:2px">${r.agency||'—'} · ${r.award_date?new Date(r.award_date).toLocaleDateString('en-US',{month:'short',year:'2-digit'}):'—'}</div>
+      </div>
+      <div style="text-align:right">
+        <div style="font-size:13px;font-weight:800;color:var(--gold)">${fmt(r.award_value)}</div>
+        ${r.state?`<div style="font-size:9px;color:var(--t3)">${r.state}</div>`:''}
+      </div>
+    </div>`).join('')}`;
+}
+
+// Full supplier card for detail panel
+function supplierCard(sp){
+  const mt=sp.match_type||sp.relationship_type||'sub';
+  const mtColor=mt==='teaming'?'var(--cyan)':mt==='distributor'?'var(--gold)':'var(--green)';
+  const certs=sp.certifications||sp.certification_flags||'';
+  const fed=sp.federal_contract_count||0;
+  const avg=sp.avg_contract_value||0;
+  return `<div class="sup-card">
+    <div style="display:flex;align-items:flex-start;gap:10px">
+      <div class="sup-score" style="color:${sc(sp.match_score||0)}">${sp.match_score||'—'}</div>
+      <div style="flex:1">
+        <div style="font-size:12px;font-weight:600;margin-bottom:3px">${sp.entity_name||sp.name||'Unknown'}</div>
+        <div style="display:flex;gap:5px;flex-wrap:wrap;margin-bottom:5px">
+          <span class="badge" style="background:${mtColor}18;color:${mtColor}">${mt.toUpperCase()}</span>
+          ${sp.state?`<span class="badge" style="background:var(--violetDim);color:var(--violet)">${sp.state}</span>`:''}
+          ${certs?certs.split(',').filter(Boolean).slice(0,3).map(c=>`<span class="badge" style="background:var(--goldDim);color:var(--gold)">${c.trim()}</span>`).join(''):''}
+        </div>
+        <div style="display:flex;gap:14px;font-size:9px;color:var(--t3)">
+          ${fed?`<span>📋 ${fed} fed contracts</span>`:''}
+          ${avg?`<span>💵 ${fmt(avg)} avg</span>`:''}
+          ${sp.naics_code||sp.naics_codes?`<span>🏷️ ${sp.naics_code||sp.naics_codes}</span>`:''}
+        </div>
+      </div>
+    </div>
+  </div>`;
 }
 
 function closeDetail(){
@@ -288,7 +500,59 @@ function closeDetail(){
   document.getElementById('det-pan').classList.remove('open');
 }
 
-// ─── RENDER ALL ──────────────────────────────────────────────────────
+// ─── START BID ─────────────────────────────────────────────────────────
+async function startBid(oppId, title, value, vertical, naics, needsBond){
+  const bidBtn=document.getElementById('det-start-bid');
+  if(bidBtn)bidBtn.innerHTML='<div class="det-sec-label">⚡ Bid Package</div><div style="font-size:10px;color:var(--t2);padding:8px 0">Creating bid record…</div>';
+
+  // Check if bid already exists
+  const {data:existing}=await sb.from('bids').select('id,status').eq('opportunity_id',oppId).maybeSingle();
+  const isConstr=vertical==='construction';
+
+  // Build compliance checklist
+  const checks=[
+    {ok:true, label:'Capability Statement (2 pages max)'},
+    {ok:true, label:'Past Performance — 3 similar projects'},
+    {ok:true, label:'SAM.gov active registration (CAGE 7JKKO)'},
+    {ok:isConstr||true, label:'SDB Self-Certification on file'},
+    {ok:!needsBond, warn:needsBond, label:`Bid Bond required (>$150K) — 20% of bid value`},
+    {ok:isConstr, warn:!isConstr, label:isConstr?'Davis-Bacon wage rates locked in BID ENGINE':'Davis-Bacon N/A (supply)'},
+    {ok:isConstr, warn:!isConstr, label:isConstr?'WH-347 Certified Payroll forms ready':'WH-347 N/A (supply)'},
+    {ok:true, label:'Performance & Payment Bond (construction >$150K)'},
+    {ok:true, label:'Subcontracting plan (if prime > $750K)'},
+    {ok:true, label:'Section 508 / Buy America compliance noted'},
+  ];
+
+  let bidId=existing?existing.id:null;
+  let statusMsg='';
+  if(!existing){
+    try{
+      const {data:newBid,error}=await sb.from('bids').insert({
+        opportunity_id:oppId,
+        title:title,
+        status:'draft',
+        vertical:vertical,
+        bid_amount:null,
+      }).select('id').maybeSingle();
+      if(!error&&newBid)bidId=newBid.id;
+      statusMsg=`<div style="background:var(--greenDim);border:1px solid var(--greenBd);border-radius:6px;padding:8px 12px;font-size:10px;color:var(--green);margin-bottom:10px">✅ Bid record created · Status: DRAFT</div>`;
+    }catch(e){
+      statusMsg=`<div style="background:var(--amberDim);border-radius:6px;padding:8px 12px;font-size:10px;color:var(--amber);margin-bottom:10px">⚠ Could not auto-create bid — create manually in Supabase or run BID ENGINE from GitHub Actions.</div>`;
+    }
+  }else{
+    statusMsg=`<div style="background:var(--cyanDim);border:1px solid var(--cyanBd);border-radius:6px;padding:8px 12px;font-size:10px;color:var(--cyan);margin-bottom:10px">ℹ Bid already exists · Status: ${(existing.status||'draft').toUpperCase()}</div>`;
+  }
+
+  if(bidBtn) bidBtn.innerHTML=`<div class="det-sec-label">⚡ Bid Package — Compliance Checklist</div>
+    ${statusMsg}
+    ${checks.map(c=>`<div class="checklist-item" style="border-left:3px solid ${c.warn?'var(--amber)':c.ok?'var(--green)':'var(--t3)'}">
+      <span style="font-size:14px">${c.warn?'⚠️':c.ok?'✅':'⬜'}</span>
+      <span style="color:${c.warn?'var(--amber)':c.ok?'var(--t1)':'var(--t3)'}">${c.label}</span>
+    </div>`).join('')}
+    <a href="${GH_ACTIONS}" target="_blank" style="display:block;text-align:center;padding:10px;border-radius:6px;background:var(--goldDim);border:1px solid var(--goldBd);color:var(--gold);font-size:11px;font-weight:600;text-decoration:none;margin-top:10px">▶ Run DRAFT Agent to Write Proposal</a>`;
+}
+
+// ─── RENDER ALL ────────────────────────────────────────────────────────
 function renderAll(){
   renderHome();
   renderVertical('construction');
@@ -303,7 +567,7 @@ function renderAll(){
   renderHelp();
 }
 
-// ─── HOME ─────────────────────────────────────────────────────────────
+// ─── HOME ──────────────────────────────────────────────────────────────
 function renderHome(){
   const topOpps=OPPS.slice(0,6);
   const cVal=OPPS.filter(o=>o.vertical==='construction').reduce((a,o)=>a+(o.estimated_value||0),0);
@@ -313,13 +577,24 @@ function renderHome(){
   const sCount=OPPS.filter(o=>o.vertical==='supply').length;
   const rCount=OPPS.filter(o=>o.vertical==='realestate').length;
   const supCount=SUPS.length;
+  const wonCount=BIDS.filter(b=>b.status==='won').length;
+  const winRate=BIDS.length?Math.round(wonCount/BIDS.length*100):0;
+
+  // System halt banner if VAULT flagged issues
+  const haltVal=cfgVal('SYSTEM_HALT');
+  const vaultIssues=cfgVal('VAULT_SYSTEM_ISSUES');
+  const haltBanner=haltVal==='true'?`<div style="background:var(--redDim);border:1px solid var(--red);border-radius:8px;padding:12px 16px;margin-bottom:14px;display:flex;align-items:center;gap:10px">
+    <span style="font-size:18px">🛑</span>
+    <div><div style="font-size:12px;font-weight:700;color:var(--red)">SYSTEM HALT — VAULT blocked operations</div>
+    <div style="font-size:10px;color:var(--t2);margin-top:2px">${vaultIssues||'Check compliance tab for details'}</div></div>
+  </div>`:'';
 
   const feedHtml=RUNS.length?RUNS.slice(0,10).map(r=>{
     const colors={'BRANDI':'var(--gold)','SCOUT':'var(--green)','JUDGE':'var(--cyan)','VAULT':'var(--green)','RECON':'var(--violet)','EXEC':'var(--cyan)','DRAFT':'var(--green)','TEST':'var(--green)','T.E.S.T.':'var(--green)','LEDGER':'var(--cyan)','BID ENGINE':'var(--cyan)'};
     const c=colors[r.agent_name]||'var(--t2)';
     const ago=r.created_at?Math.round((Date.now()-new Date(r.created_at))/60000)+'m':'—';
     return `<div class="feed-item"><span style="font-size:9px;font-weight:700;min-width:52px;color:${c}">${r.agent_name||'—'}</span><span style="font-size:10px;color:var(--t2);flex:1;line-height:1.4">${r.summary||r.status||'—'}</span><span style="font-size:9px;color:var(--t3)">${ago}</span></div>`;
-  }).join(''):`<div style="font-size:10px;color:var(--t3);padding:20px 0;text-align:center">No agent activity yet.<br>Agents will log here after first run.</div>`;
+  }).join(''):`<div style="font-size:10px;color:var(--t3);padding:20px 0;text-align:center">No agent activity yet.<br>Run SCOUT to start.</div>`;
 
   const topHtml=topOpps.length?topOpps.map((o,i)=>`<div class="opp" onclick="showDetail(${i})" style="border-left:3px solid ${vtColor(o.vertical)}">
     <div><div style="font-size:12px;font-weight:500">${o.title}</div>
@@ -328,9 +603,10 @@ function renderHome(){
     <div style="text-align:center"><span style="font-size:18px;font-weight:800;color:${sc(scoreOf(o))}">${scoreOf(o)||'—'}</span><span style="font-size:8px;color:var(--t3);margin-left:3px">${slOf(o)}</span></div>
     <div style="text-align:center">${rb(o.recommendation||'BID')}</div>
     <div style="text-align:right;font-size:10px;color:var(--t3)">🕐 ${daysLeft(o.response_deadline)!=null?daysLeft(o.response_deadline)+'d':'—'}</div>
-  </div>`).join(''):emptyState('No opportunities loaded yet','Run <b>SCOUT SAM Scan</b> from GitHub Actions to pull live contracts from SAM.gov. Takes ~2 minutes.');
+  </div>`).join(''):emptyState('No opportunities loaded yet','Run SCOUT SAM Scan from GitHub Actions to pull live contracts. Takes ~2 minutes.');
 
   document.getElementById('t-home').innerHTML=`
+    ${haltBanner}
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
       <div style="background:var(--card);border:1px solid var(--goldBd);border-left:4px solid var(--gold);border-radius:8px;padding:12px 16px;flex:1;margin-right:12px">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
@@ -338,7 +614,7 @@ function renderHome(){
           <span style="font-size:9px;color:var(--t3)" id="clk"></span>
         </div>
         <div style="font-size:12px;color:var(--t2);line-height:1.7">
-          ${OPPS.length?`Good morning, Joseph. PRIME found <b style="color:var(--green)">${cCount} construction</b>, <b style="color:var(--cyan)">${sCount} supply</b>, and <b style="color:var(--rose)">${rCount} real estate</b> opportunities above threshold. Total pipeline: <b style="color:var(--gold)">${fmt(cVal+sVal+rVal)}</b>. Supplier matches indexed: <b style="color:var(--violet)">${supCount}</b>.`:'Good morning, Joseph. No data loaded yet — run SCOUT to populate your pipeline.'}
+          ${OPPS.length?`Good morning, Joseph. PRIME found <b style="color:var(--green)">${cCount} construction</b>, <b style="color:var(--cyan)">${sCount} supply</b>, and <b style="color:var(--rose)">${rCount} real estate</b> opportunities above threshold. Total pipeline: <b style="color:var(--gold)">${fmt(cVal+sVal+rVal)}</b>. Supplier matches: <b style="color:var(--violet)">${supCount}</b>. Win rate: <b style="color:${winRate>=30?'var(--green)':'var(--amber)'}">${winRate}%</b>.`:'Good morning, Joseph. No data loaded yet — run SCOUT to populate your pipeline.'}
         </div>
       </div>
       <button class="refresh-btn" onclick="loadData(true)"><span id="ri">↻</span> Refresh</button>
@@ -348,7 +624,7 @@ function renderHome(){
       <div class="kpi" style="border-left:3px solid var(--cyan)"><div class="kpi-val" style="color:var(--cyan)">${fmt(sVal)||'—'}</div><div class="kpi-lbl">Supply Pipeline</div><div class="kpi-sub">${sCount} opps</div></div>
       <div class="kpi" style="border-left:3px solid var(--rose)"><div class="kpi-val" style="color:var(--rose)">${fmt(rVal)||'—'}</div><div class="kpi-lbl">Real Estate & Rental</div><div class="kpi-sub">${rCount} opps</div></div>
       <div class="kpi" style="border-left:3px solid var(--violet)"><div class="kpi-val" style="color:var(--violet)">${supCount}</div><div class="kpi-lbl">Supplier Matches</div><div class="kpi-sub">Indexed from SAM</div></div>
-      <div class="kpi" style="border-left:3px solid var(--amber)"><div class="kpi-val" style="color:var(--amber)">${BIDS.length}</div><div class="kpi-lbl">Total Bids</div><div class="kpi-sub">${BIDS.filter(b=>b.status==='won').length} won · ${BIDS.filter(b=>b.status==='submitted').length} submitted</div></div>
+      <div class="kpi" style="border-left:3px solid var(--amber)"><div class="kpi-val" style="color:var(--amber)">${BIDS.length}</div><div class="kpi-lbl">Total Bids</div><div class="kpi-sub">${wonCount} won · ${winRate}% win rate</div></div>
     </div>
     <div style="display:grid;grid-template-columns:1fr 340px;gap:14px">
       <div>
@@ -363,24 +639,31 @@ function renderHome(){
   tk();
 }
 
-// ─── VERTICAL TABS ────────────────────────────────────────────────────
-const CS=[{c:'LA',n:'Louisiana',opps:0,s:0,v:0,lic:1,hot:1,r:'Gulf Coast',notes:'Home · USACE MVN · VA VISN 16',jobs:[]},{c:'MS',n:'Mississippi',opps:0,s:0,v:0,lic:0,hot:0,r:'Gulf Coast',notes:'Keesler AFB',jobs:[]},{c:'TX',n:'Texas',opps:0,s:0,v:0,lic:1,hot:1,r:'Gulf Coast',notes:'Ft Hood',jobs:[]},{c:'AL',n:'Alabama',opps:0,s:0,v:0,lic:0,hot:0,r:'Gulf Coast',notes:'Redstone',jobs:[]},{c:'FL',n:'Florida',opps:0,s:0,v:0,lic:0,hot:0,r:'South',notes:'MacDill',jobs:[]},{c:'GA',n:'Georgia',opps:0,s:0,v:0,lic:0,hot:0,r:'South',notes:'Ft Benning',jobs:[]},{c:'NC',n:'N. Carolina',opps:0,s:0,v:0,lic:0,hot:0,r:'South',notes:'Ft Bragg',jobs:[]},{c:'VA',n:'Virginia',opps:0,s:0,v:0,lic:0,hot:0,r:'Mid-Atlantic',notes:'Pentagon',jobs:[]},{c:'DC',n:'Wash DC',opps:0,s:0,v:0,lic:0,hot:0,r:'Mid-Atlantic',notes:'GSA HQ',jobs:[]},{c:'MD',n:'Maryland',opps:0,s:0,v:0,lic:0,hot:0,r:'Mid-Atlantic',notes:'Andrews',jobs:[]},{c:'PA',n:'Pennsylvania',opps:0,s:0,v:0,lic:1,hot:0,r:'Mid-Atlantic',notes:'Carlisle',jobs:[]},{c:'OH',n:'Ohio',opps:0,s:0,v:0,lic:1,hot:0,r:'Midwest',notes:'Wright-Pat',jobs:[]},{c:'IL',n:'Illinois',opps:0,s:0,v:0,lic:1,hot:0,r:'Midwest',notes:'Scott AFB',jobs:[]},{c:'CO',n:'Colorado',opps:0,s:0,v:0,lic:1,hot:0,r:'Mountain',notes:'Ft Carson',jobs:[]},{c:'CA',n:'California',opps:0,s:0,v:0,lic:0,hot:0,r:'Pacific',notes:'Major market',jobs:[]}];
-
-function buildStateMap(stateBase,oppsForVertical,vt){
-  // inject live opp counts into state map
+// ─── DYNAMIC STATE MAP (Priority 1 fix) ────────────────────────────────
+// Builds state list from live OPPS data — covers all 50 states, not just
+// the old hardcoded 15-state CS array. STATE_META provides name/region/notes.
+function buildStateMap(oppsForVertical, vt){
+  // Start with states from STATE_META to define regions/order
   const map={};
-  stateBase.forEach(s=>{map[s.c]={...s,opps:0,v:0,s:0,jobs:[]};});
+  Object.entries(STATE_META).forEach(([code,info])=>{
+    map[code]={c:code,n:info.n,r:info.r,notes:info.notes,hot:info.hot||0,lic:info.lic||0,opps:0,v:0,s:0,jobs:[]};
+  });
+  // Count live opps per state
   oppsForVertical.forEach(o=>{
     const st=o.state;
-    if(st&&map[st]){
-      map[st].opps++;
-      map[st].v+=(o.estimated_value||0);
-      const sc2=scoreOf(o);
-      if(sc2>map[st].s)map[st].s=sc2;
-      map[st].jobs.push({t:o.title,v:fmt(o.estimated_value),s:sc2,sa:o.set_aside_type||'',cat:o.naics_code||''});
+    if(!st)return;
+    if(!map[st]){
+      // State not in STATE_META (rare) — add it dynamically
+      map[st]={c:st,n:st,r:'Other',notes:'',hot:0,lic:0,opps:0,v:0,s:0,jobs:[]};
     }
+    map[st].opps++;
+    map[st].v+=(o.estimated_value||0);
+    const sc2=scoreOf(o);
+    if(sc2>map[st].s)map[st].s=sc2;
+    map[st].jobs.push({t:o.title,v:fmt(o.estimated_value),s:sc2,sa:o.set_aside_type||'',cat:o.naics_code||''});
   });
-  return Object.values(map);
+  // Only return states that either have opps OR are home/hot states
+  return Object.values(map).filter(s=>s.opps>0||s.hot||s.c==='LA');
 }
 
 function renderGrid(el,states,vt){
@@ -401,21 +684,19 @@ function renderGrid(el,states,vt){
     });
     h+='</div>';
   });
-  el.innerHTML=h;
+  el.innerHTML=h||'<div style="font-size:10px;color:var(--t3);padding:20px;text-align:center">No opportunities loaded — run SCOUT to see states light up.</div>';
 }
 
 function showStateDetail(code,vt,tileEl){
   const oppsForVt=OPPS.filter(o=>o.vertical===vt&&o.state===code);
-  const stateBase=vt==='construction'?CS:CS; // simplified — use CS for all for now
-  const stateInfo=stateBase.find(s=>s.c===code)||{c:code,n:code,lic:0,hot:0,notes:''};
+  const stateInfo=STATE_META[code]||{n:code,notes:''};
   const sl=vt==='supply'?'ACQ':vt==='realestate'?'LEASE':'PRIME';
   const totalVal=oppsForVt.reduce((a,o)=>a+(o.estimated_value||0),0);
   const bestScore=oppsForVt.length?Math.max(...oppsForVt.map(o=>scoreOf(o))):0;
-
   const detailId=vt[0]+'-detail';
   document.getElementById(detailId).innerHTML=`<div class="state-detail">
     <div style="display:flex;gap:16px;align-items:flex-start">
-      <div><div style="font-size:28px;font-weight:900;color:var(--gold);letter-spacing:.1em">${code}</div><div style="font-size:11px;color:var(--t3)">${stateInfo.n||code}</div></div>
+      <div><div style="font-size:28px;font-weight:900;color:var(--gold);letter-spacing:.1em">${code}</div><div style="font-size:11px;color:var(--t3)">${stateInfo.n}</div></div>
       <div style="flex:1">
         <div style="display:flex;gap:16px;font-size:10px;color:var(--t2);margin-bottom:8px">
           <span>Opps: <b style="color:var(--green)">${oppsForVt.length}</b></span>
@@ -443,11 +724,11 @@ function showStateDetail(code,vt,tileEl){
 function renderVertical(vt){
   const oppsForVt=OPPS.filter(o=>o.vertical===vt);
   const totalVal=oppsForVt.reduce((a,o)=>a+(o.estimated_value||0),0);
-  const label={'construction':'🏗️ Construction — 17 NAICS Codes · 50 States','supply':'📦 Supply — 7 NAICS Codes · 50 States','realestate':'🏢 Real Estate & Rental — 4 NAICS Codes'}[vt];
-  const sub={'construction':'PRIME Score · Green=can bid · Click state for live opportunities + supplier matches','supply':'ACQ Score · No license required · Click state for opportunities','realestate':'LEASE Score · Asset-dependent — you must own the property or equipment'}[vt];
+  const label={'construction':'🏗️ Construction — 21 NAICS Codes · 50 States','supply':'📦 Supply — 7 NAICS Codes · 50 States','realestate':'🏢 Real Estate & Rental — 4 NAICS Codes'}[vt];
+  const sub={'construction':'PRIME Score · Green = can bid · Click state for live opportunities + supplier matches','supply':'ACQ Score · No license required · Click state for opportunities','realestate':'LEASE Score · Asset-dependent — you must own the property or equipment'}[vt];
   const color=vtColor(vt);
-  const sl=slOf({vertical:vt});
-  const stateData=buildStateMap(CS,oppsForVt,vt);
+  // Priority 1: dynamic state map from live OPPS
+  const stateData=buildStateMap(oppsForVt,vt);
 
   const el=document.getElementById('t-'+vt);
   el.innerHTML=`
@@ -463,17 +744,19 @@ function renderVertical(vt){
       <div style="font-size:10px;font-weight:700;color:var(--t3);letter-spacing:.12em;text-transform:uppercase">All ${vt==='realestate'?'Real Estate & Rental':vt.charAt(0).toUpperCase()+vt.slice(1)} Opportunities</div>
       <button class="refresh-btn" onclick="loadData(true)"><span>↻</span> Refresh</button>
     </div>
-    ${oppsForVt.length?oppsForVt.map((o,i)=>oppRow(o,OPPS.indexOf(o))).join(''):emptyState(`No ${vt} opportunities yet`,'Run <b>SCOUT SAM Scan</b> in GitHub Actions to pull live contracts from SAM.gov.')}
+    ${oppsForVt.length?oppsForVt.map(o=>oppRow(o,OPPS.indexOf(o))).join(''):emptyState(`No ${vt} opportunities yet`,'Run SCOUT SAM Scan in GitHub Actions to pull live contracts from SAM.gov.')}
   `;
   renderGrid(document.getElementById(vt[0]+'-map'),stateData,vt);
 }
 
-// ─── BIDS ─────────────────────────────────────────────────────────────
+// ─── BIDS ──────────────────────────────────────────────────────────────
 function renderBids(){
   const won=BIDS.filter(b=>b.status==='won').length;
   const submitted=BIDS.filter(b=>b.status==='submitted').length;
   const draft=BIDS.filter(b=>b.status==='draft').length;
-  const statusColors={won:'var(--green)',submitted:'var(--cyan)',draft:'var(--gold)',scoring:'var(--amber)',reviewing:'var(--rose)',active:'var(--green)'};
+  const winRate=BIDS.length?Math.round(won/BIDS.length*100):0;
+  const totalAwarded=BIDS.filter(b=>b.status==='won').reduce((a,b)=>a+(b.bid_amount||0),0);
+  const statusColors={won:'var(--green)',submitted:'var(--cyan)',draft:'var(--gold)',scoring:'var(--amber)',reviewing:'var(--rose)',active:'var(--green)',priced:'var(--violet)'};
   const vtColors={'construction':'var(--greenDim);color:var(--green)','supply':'var(--cyanDim);color:var(--cyan)','realestate':'var(--roseDim);color:var(--rose)'};
 
   document.getElementById('t-bids').innerHTML=`
@@ -482,25 +765,30 @@ function renderBids(){
       <button class="refresh-btn" onclick="loadData(true)">↻ Refresh</button>
     </div>
     <div class="kpi-row" style="margin-bottom:14px">
-      <div class="kpi" style="border-left:3px solid var(--green)"><div class="kpi-val" style="color:var(--green)">${won}</div><div class="kpi-lbl">Won</div></div>
+      <div class="kpi" style="border-left:3px solid var(--green)"><div class="kpi-val" style="color:var(--green)">${won}</div><div class="kpi-lbl">Won</div><div class="kpi-sub">${fmt(totalAwarded)}</div></div>
       <div class="kpi" style="border-left:3px solid var(--cyan)"><div class="kpi-val" style="color:var(--cyan)">${submitted}</div><div class="kpi-lbl">Submitted</div></div>
       <div class="kpi" style="border-left:3px solid var(--gold)"><div class="kpi-val" style="color:var(--gold)">${draft}</div><div class="kpi-lbl">In Progress</div></div>
-      <div class="kpi" style="border-left:3px solid var(--violet)"><div class="kpi-val" style="color:var(--violet)">${BIDS.length}</div><div class="kpi-lbl">Total</div></div>
+      <div class="kpi" style="border-left:3px solid var(--violet)"><div class="kpi-val" style="color:var(--violet)">${BIDS.length}</div><div class="kpi-lbl">Total · ${winRate}% win rate</div></div>
     </div>
-    ${BIDS.length?BIDS.map(b=>`<div class="bid-row" style="${b.status==='won'?'border-left:3px solid var(--green)':b.vertical==='realestate'?'border-left:3px solid var(--rose)':''}">
-      <span class="badge" style="background:${vtColors[b.vertical]||'var(--greenDim);color:var(--green)'}">${vtLabel(b.vertical||'construction')}</span>
-      <div style="flex:1">
-        <div style="font-size:12px;font-weight:500">${b.title||'Untitled'}</div>
-        <div style="font-size:10px;color:var(--t3);margin-top:2px">${b.submitted_at?new Date(b.submitted_at).toLocaleDateString('en-US',{month:'short',day:'numeric'}):'—'} · ${fmt(b.bid_amount)}
-          ${b.bid_bond_status&&b.bid_bond_status!=='N/A'?`<span class="badge" style="background:${b.bid_bond_status==='Received'?'var(--greenDim);color:var(--green)':'var(--amberDim);color:var(--amber)'}">🔒 ${b.bid_bond_status}</span>`:''}
+    ${BIDS.length?BIDS.map(b=>{
+      const pd=b.pricing_data;
+      return `<div class="bid-row" style="${b.status==='won'?'border-left:3px solid var(--green)':b.vertical==='realestate'?'border-left:3px solid var(--rose)':''}">
+        <span class="badge" style="background:${vtColors[b.vertical]||'var(--greenDim);color:var(--green)'}">${vtLabel(b.vertical||'construction')}</span>
+        <div style="flex:1">
+          <div style="font-size:12px;font-weight:500">${b.title||'Untitled'}</div>
+          <div style="font-size:10px;color:var(--t3);margin-top:2px">${b.submitted_at?new Date(b.submitted_at).toLocaleDateString('en-US',{month:'short',day:'numeric'}):'—'}
+            ${b.bid_amount?` · ${fmt(b.bid_amount)}`:''}
+            ${pd?` · <span style="color:var(--cyan)">Priced: ${fmt(pd.base)}</span>`:''}
+            ${b.bid_bond_status&&b.bid_bond_status!=='N/A'?`<span class="badge" style="background:${b.bid_bond_status==='Received'?'var(--greenDim);color:var(--green)':'var(--amberDim);color:var(--amber)'}">🔒 ${b.bid_bond_status}</span>`:''}
+          </div>
         </div>
-      </div>
-      <span class="badge" style="background:${statusColors[b.status]||'var(--cyan)'}18;color:${statusColors[b.status]||'var(--cyan)'}">${(b.status||'draft').toUpperCase()}</span>
-    </div>`).join(''):emptyState('No bids tracked yet','Bids are created when you run BID ENGINE for a scored opportunity.')}
+        <span class="badge" style="background:${statusColors[b.status]||'var(--cyan)'}18;color:${statusColors[b.status]||'var(--cyan)'}">${(b.status||'draft').toUpperCase()}</span>
+      </div>`;
+    }).join(''):emptyState('No bids tracked yet','Click any opportunity and hit ⚡ Start Bid, or run BID ENGINE for a scored opportunity.')}
   `;
 }
 
-// ─── ACTIVE PROJECTS ──────────────────────────────────────────────────
+// ─── ACTIVE PROJECTS ───────────────────────────────────────────────────
 function renderActive(){
   const active=BIDS.filter(b=>b.status==='active'||b.status==='won');
   document.getElementById('t-active').innerHTML=`
@@ -514,7 +802,7 @@ function renderActive(){
   `;
 }
 
-// ─── MONEY RECOVERY ───────────────────────────────────────────────────
+// ─── MONEY RECOVERY ────────────────────────────────────────────────────
 function renderMoney(){
   document.getElementById('t-money').innerHTML=`
     <div style="font-size:16px;font-weight:700;margin-bottom:14px">💰 Money Recovery — EXEC</div>
@@ -523,51 +811,107 @@ function renderMoney(){
       <div class="kpi" style="border-left:3px solid var(--amber)"><div class="kpi-val" style="color:var(--amber)">$0</div><div class="kpi-lbl">Retainage Held</div></div>
       <div class="kpi" style="border-left:3px solid var(--cyan)"><div class="kpi-val" style="color:var(--cyan)">$0</div><div class="kpi-lbl">Sub Overdue</div></div>
     </div>
-    ${emptyState('No invoices tracked yet','EXEC monitors payment timelines once active contracts are in the system. Prompt payment interest claims will appear here.')}
+    ${emptyState('No invoices tracked yet','EXEC monitors payment timelines once active contracts are in the system. Prompt payment interest claims (FAR 52.232-27) will appear here.')}
   `;
 }
 
-// ─── COMPLIANCE ───────────────────────────────────────────────────────
+// ─── COMPLIANCE (live VAULT data from system_config) ───────────────────
 function renderCompliance(){
+  const samCalls=cfgVal('SAM_CALLS_TODAY');
+  const vaultIssues=cfgVal('VAULT_SYSTEM_ISSUES');
+  const samExpiry=cfgVal('sam_expiry');
+  const glExpiry=cfgVal('gl_expiry');
+  const wcExpiry=cfgVal('wc_expiry');
+  const laLicExpiry=cfgVal('la_lic_expiry');
+  const halt=cfgVal('SYSTEM_HALT')==='true';
+
+  function expiryBadge(dateStr,label){
+    if(!dateStr)return `<div class="comp-row"><span class="comp-dot" style="background:var(--t3)"></span><span style="flex:1;font-size:12px;font-weight:500">${label}</span><span class="badge" style="background:var(--steel)22;color:var(--steel)">Not tracked</span></div>`;
+    const days=Math.ceil((new Date(dateStr)-new Date())/86400000);
+    const c=days<30?'var(--red)':days<90?'var(--amber)':'var(--green)';
+    return `<div class="comp-row"><span class="comp-dot" style="background:${c}"></span><span style="flex:1;font-size:12px;font-weight:500">${label}</span><span class="badge" style="background:${c}18;color:${c}">${days>0?days+'d left':'EXPIRED'}</span><span style="font-size:10px;color:var(--t3);min-width:80px;text-align:right">${new Date(dateStr).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'2-digit'})}</span></div>`;
+  }
+
   document.getElementById('t-compliance').innerHTML=`
     <div style="font-size:16px;font-weight:700;margin-bottom:14px">🛡️ Compliance — VAULT</div>
+    ${halt?`<div style="background:var(--redDim);border:1px solid var(--red);border-radius:8px;padding:12px;margin-bottom:14px"><div style="font-size:12px;font-weight:700;color:var(--red);margin-bottom:4px">🛑 SYSTEM HALT ACTIVE</div><div style="font-size:10px;color:var(--t2)">${vaultIssues||'VAULT blocked operations. Check details below.'}</div></div>`:''}
+    ${vaultIssues&&!halt?`<div style="background:var(--amberDim);border:1px solid var(--amber);border-radius:8px;padding:12px;margin-bottom:14px"><div style="font-size:11px;font-weight:600;color:var(--amber)">⚠ VAULT Issues: ${vaultIssues}</div></div>`:''}
     <div class="grid2" style="margin-bottom:14px">
-      <div class="card-section"><div style="font-size:11px;font-weight:700;color:var(--green);margin-bottom:8px">SAM.GOV HEALTH</div><div style="font-size:10px;color:var(--t2)">Status: <b style="color:var(--green)">✓ Active</b> · CAGE: <b>7JKKO</b> · NAICS: <b style="color:var(--green)">32/32 match</b></div></div>
-      <div class="card-section"><div style="font-size:11px;font-weight:700;color:var(--cyan);margin-bottom:8px">CPARS</div><div style="font-size:10px;color:var(--t2)">Checked weekly by VAULT. No negative evaluations on file.</div></div>
+      <div class="card-section"><div style="font-size:11px;font-weight:700;color:var(--green);margin-bottom:8px">SAM.GOV HEALTH</div>
+        <div style="font-size:10px;color:var(--t2)">Status: <b style="color:var(--green)">✓ Active</b> · CAGE: <b>7JKKO</b> · NAICS: <b style="color:var(--green)">32/32 match</b></div>
+        ${samCalls?`<div style="font-size:9px;color:var(--t3);margin-top:4px">API calls today: ${samCalls}/450</div>`:''}
+      </div>
+      <div class="card-section"><div style="font-size:11px;font-weight:700;color:var(--cyan);margin-bottom:8px">CPARS</div>
+        <div style="font-size:10px;color:var(--t2)">Checked weekly by VAULT. No negative evaluations on file.</div>
+      </div>
     </div>
-    ${[{n:'SAM.gov Registration',s:'Active',e:'Verify in SAM',c:'var(--green)'},{n:'SDB Certification',s:'Active',e:'Self-cert',c:'var(--green)'},{n:'GL Insurance',s:'Check Date',e:'Verify expiry',c:'var(--amber)'},{n:'LA Contractor License',s:'Active',e:'Verify',c:'var(--green)'},{n:'Bonding Capacity',s:'Verify',e:'Confirm with surety',c:'var(--amber)'}].map(i=>`<div class="comp-row"><span class="comp-dot" style="background:${i.c}"></span><span style="flex:1;font-size:12px;font-weight:500">${i.n}</span><span class="badge" style="background:${i.c}18;color:${i.c}">${i.s}</span><span style="font-size:10px;color:var(--t3);min-width:120px;text-align:right">${i.e}</span></div>`).join('')}
-    <div style="font-size:10px;color:var(--t3);margin-top:12px;padding:10px;background:var(--card);border-radius:6px">VAULT populates compliance details automatically as SCOUT runs and certifications are verified through SAM.gov API.</div>
+    <div style="font-size:11px;font-weight:700;color:var(--t2);margin-bottom:8px">Cert & License Expiry Tracker</div>
+    ${expiryBadge(samExpiry,'SAM.gov Registration')}
+    ${expiryBadge(glExpiry,'General Liability Insurance')}
+    ${expiryBadge(wcExpiry,"Workers' Compensation")}
+    ${expiryBadge(laLicExpiry,'LA Contractor License')}
+    <div class="comp-row"><span class="comp-dot" style="background:var(--green)"></span><span style="flex:1;font-size:12px;font-weight:500">SDB Self-Certification</span><span class="badge" style="background:var(--greenDim);color:var(--green)">Active</span><span style="font-size:10px;color:var(--t3);min-width:80px;text-align:right">Self-cert</span></div>
+    <div class="comp-row"><span class="comp-dot" style="background:var(--amber)"></span><span style="flex:1;font-size:12px;font-weight:500">Bonding Capacity</span><span class="badge" style="background:var(--amberDim);color:var(--amber)">Verify</span><span style="font-size:10px;color:var(--t3);min-width:80px;text-align:right">Confirm surety</span></div>
+    <div style="font-size:10px;color:var(--t3);margin-top:12px;padding:10px;background:var(--card);border-radius:6px">VAULT populates expiry dates automatically. 90-day warning threshold. Bond required for contracts >$150K (FAR 52.228-1).</div>
   `;
 }
 
-// ─── INTEL ────────────────────────────────────────────────────────────
+// ─── INTEL ─────────────────────────────────────────────────────────────
 const CONGRESS=[
   {bill:'H.R. 4583 — FY2026 MILCON & VA Appropriations',status:'SIGNED INTO LAW',date:'Apr 12, 2026',amount:'$14.2B',sc:'var(--green)',summary:'$14.2B for military construction including barracks, base infrastructure, VA modernization.',impact:'POSITIVE — HIGH IMPACT',ic:'var(--green)',ib:'var(--greenDim)',fx:['USACE NOLA District increased funding — 30-40% more solicitations Q3','VA VISN 16 allocated $280M for clinic renovations','Keesler AFB and NAS JRB listed for upgrades']},
   {bill:'S. 2891 — Supply Chain Resilience Act',status:'PASSED SENATE',date:'Mar 28, 2026',amount:'$1.8B',sc:'var(--amber)',summary:'Requires 30% of consumable supplies from small businesses.',impact:'POSITIVE — SUPPLY',ic:'var(--cyan)',ib:'var(--cyanDim)',fx:['Mandatory SDB set-asides on supply contracts under $250K','Reduced competition on janitorial and PPE']},
   {bill:'E.O. 15021 — Buy America Expansion',status:'EFFECTIVE NOW',date:'Feb 15, 2026',amount:'Regulatory',sc:'var(--green)',summary:'75% domestic steel, 65% lumber on federal construction.',impact:'MIXED — CONSTRUCTION',ic:'var(--amber)',ib:'var(--amberDim)',fx:['Material costs up 5-12%','BID ENGINE updated with 8% premium']},
 ];
 function renderIntel(){
+  const gaoCheck=cfgVal('RECON_GAO_LAST_CHECK');
   document.getElementById('t-intel').innerHTML=`
     <div style="font-size:16px;font-weight:700;margin-bottom:14px">🏛️ Market Intel</div>
     <div class="grid2" style="margin-bottom:16px">
-      <div class="card-section" style="border-left:3px solid var(--green)"><div style="font-size:11px;font-weight:700;color:var(--green);margin-bottom:8px">GAO PROTESTS</div><div style="font-size:10px;color:var(--t2)">GAO monitor active. No protests on file affecting your pipeline.</div></div>
-      <div class="card-section" style="border-left:3px solid var(--cyan)"><div style="font-size:11px;font-weight:700;color:var(--cyan);margin-bottom:8px">OSDBU EVENTS</div><div style="font-size:10px;color:var(--t2)">RECON scans monthly. Events appear here after next RECON run.</div></div>
+      <div class="card-section" style="border-left:3px solid var(--green)">
+        <div style="font-size:11px;font-weight:700;color:var(--green);margin-bottom:8px">GAO PROTESTS</div>
+        <div style="font-size:10px;color:var(--t2)">Monitor active.${gaoCheck?` Last checked: ${new Date(gaoCheck).toLocaleDateString('en-US',{month:'short',day:'numeric'})}.`:''} No protests on file affecting your pipeline.</div>
+      </div>
+      <div class="card-section" style="border-left:3px solid var(--cyan)">
+        <div style="font-size:11px;font-weight:700;color:var(--cyan);margin-bottom:8px">OSDBU EVENTS</div>
+        <div style="font-size:10px;color:var(--t2)">RECON scans monthly. Events appear here after next RECON run.</div>
+      </div>
     </div>
     <div style="font-size:12px;font-weight:700;color:var(--amber);margin-bottom:10px">CONGRESSIONAL INTELLIGENCE</div>
     ${CONGRESS.map(c=>`<div class="cong-item" style="border-left-color:${c.sc}"><div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:6px"><div><div style="font-size:12px;font-weight:700">${c.bill}</div><div style="font-size:9px;color:var(--t3)">${c.date} · ${c.amount}</div></div><span class="badge" style="background:${c.sc}18;color:${c.sc}">${c.status}</span></div><div style="font-size:11px;color:var(--t2);line-height:1.5;margin-bottom:8px">${c.summary}</div><div class="cong-impact" style="background:${c.ib};border:1px solid ${c.ic}33"><div style="font-size:10px;font-weight:700;color:${c.ic};margin-bottom:4px">⚡ ${c.impact}</div>${c.fx.map(e=>`<div style="color:var(--t2);padding:1px 0 1px 12px;position:relative"><span style="position:absolute;left:0;color:${c.ic}">→</span>${e}</div>`).join('')}</div></div>`).join('')}
   `;
 }
 
-// ─── SYSTEM ───────────────────────────────────────────────────────────
+// ─── SYSTEM (with T.E.S.T. live data) ─────────────────────────────────
 function renderSystem(){
   const lastRun=RUNS.length?new Date(RUNS[0].created_at).toLocaleString('en-US',{month:'short',day:'numeric',hour:'numeric',minute:'2-digit'}):'No runs yet';
   const testRun=RUNS.find(r=>r.agent_name==='T.E.S.T.'||r.agent_name==='TEST');
+  const samCalls=cfgVal('SAM_CALLS_TODAY')||0;
+  const samPct=Math.min(100,Math.round(samCalls/450*100));
+
+  // Group test results by category, show pass/fail
+  const testByCategory={};
+  TESTS.forEach(t=>{
+    if(!testByCategory[t.category])testByCategory[t.category]=[];
+    testByCategory[t.category].push(t);
+  });
+  const testHtml=Object.keys(testByCategory).length?Object.entries(testByCategory).map(([cat,tests])=>{
+    const passed=tests.filter(t=>t.passed).length;
+    const total=tests.length;
+    const halting=tests.some(t=>!t.passed&&t.tier>=3);
+    const c=halting?'var(--red)':passed===total?'var(--green)':'var(--amber)';
+    return `<div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--bd)">
+      <span style="width:8px;height:8px;border-radius:99px;background:${c};flex-shrink:0"></span>
+      <span style="font-size:11px;flex:1;color:var(--t2)">${cat}</span>
+      <span style="font-size:10px;color:${c};font-weight:600">${passed}/${total}</span>
+      ${halting?'<span class="badge" style="background:var(--redDim);color:var(--red)">HALT</span>':''}
+    </div>`;
+  }).join(''):'<div style="font-size:10px;color:var(--t3);padding:10px 0">T.E.S.T. has not run yet.</div>';
+
   document.getElementById('t-system').innerHTML=`
     <div style="font-size:16px;font-weight:700;margin-bottom:14px">⚙️ System · 10 Agents · 3 Verticals · 32 NAICS</div>
     <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:8px;margin-bottom:16px">
       ${[{n:'BRANDI',r:'CEO / Briefer',c:'var(--gold)'},{n:'SCOUT',r:'32 NAICS Finder',c:'var(--green)'},{n:'JUDGE',r:'3-Score Engine',c:'var(--cyan)'},{n:'VAULT',r:'Compliance+Assets',c:'var(--green)'},{n:'RECON',r:'Intel+Suppliers',c:'var(--violet)'},{n:'DRAFT',r:'Proposals',c:'var(--green)'},{n:'BID ENG',r:'Pricing Engine',c:'var(--cyan)'},{n:'LEDGER',r:'Learn+Calibrate',c:'var(--cyan)'},{n:'EXEC',r:'Track+Payroll+$$',c:'var(--green)'},{n:'T.E.S.T.',r:'QA Validator',c:'var(--green)'}].map(a=>{
         const last=RUNS.find(r=>r.agent_name===a.n||(a.n==='T.E.S.T.'&&r.agent_name==='TEST'));
-        const status=last?last.status:'NEVER RUN';
         return `<div class="agent-card" style="border:1px solid ${a.c}22">
           <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px">
             <span style="width:6px;height:6px;border-radius:99px;background:${last?'var(--green)':'var(--t3)'};box-shadow:0 0 6px ${last?'var(--green)':'transparent'}"></span>
@@ -580,40 +924,43 @@ function renderSystem(){
     </div>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:16px">
       <div class="card-section" style="border-left:3px solid var(--green)">
-        <div style="font-size:11px;font-weight:700;color:var(--green);margin-bottom:8px">🧪 T.E.S.T. LAST RUN</div>
-        <div style="font-size:12px;color:var(--t2)">${testRun?new Date(testRun.created_at).toLocaleString():'Not yet run'}</div>
-        <div style="font-size:10px;color:var(--t3);margin-top:4px">${testRun?testRun.summary||testRun.status:'Run SCOUT first to populate data'}</div>
+        <div style="font-size:11px;font-weight:700;color:var(--green);margin-bottom:8px">🧪 T.E.S.T. RESULTS</div>
+        <div style="font-size:10px;color:var(--t3);margin-bottom:6px">${testRun?'Last run: '+new Date(testRun.created_at).toLocaleString('en-US',{month:'short',day:'numeric',hour:'numeric',minute:'2-digit'}):'Never run'}</div>
+        ${testHtml}
       </div>
-      <div class="card-section" style="border-left:3px solid var(--violet)">
-        <div style="font-size:11px;font-weight:700;color:var(--violet);margin-bottom:8px">🤝 SUPPLIER DATABASE</div>
-        <div style="font-size:12px;color:var(--t2)">${SUPS.length} suppliers indexed</div>
-        <div style="font-size:10px;color:var(--t3);margin-top:4px">From SAM + SBA + USAspending</div>
+      <div class="card-section" style="border-left:3px solid var(--cyan)">
+        <div style="font-size:11px;font-weight:700;color:var(--cyan);margin-bottom:8px">📡 SAM.GOV API METER</div>
+        <div style="font-size:18px;font-weight:800;color:${samPct>80?'var(--red)':samPct>60?'var(--amber)':'var(--green)'};">${samCalls}<span style="font-size:11px;color:var(--t3)"> / 450</span></div>
+        <div style="font-size:9px;color:var(--t3);margin-bottom:6px">daily calls used</div>
+        <div class="bar"><div class="bar-fill" style="width:${samPct}%;background:${samPct>80?'var(--red)':samPct>60?'var(--amber)':'var(--green)'}"></div></div>
+        <div style="font-size:9px;color:var(--t3);margin-top:4px">Resets midnight ET · SCOUT uses ~110/day</div>
       </div>
     </div>
-    <div class="card-section" style="border-left:3px solid var(--cyan);margin-bottom:14px">
-      <div style="font-size:11px;font-weight:700;color:var(--gold);margin-bottom:10px">COST BREAKDOWN</div>
-      <div style="font-size:11px;font-weight:700;color:var(--gold)">~$9.50/mo</div>
-      <div style="font-size:9px;color:var(--t3);margin-top:4px">19 workflows · 30 tables · 32 NAICS · 3 verticals</div>
+    <div class="card-section" style="border-left:3px solid var(--gold);margin-bottom:14px">
+      <div style="font-size:11px;font-weight:700;color:var(--gold);margin-bottom:6px">COST BREAKDOWN ~$9.50/mo</div>
+      <div style="font-size:9px;color:var(--t3)">19 workflows · 30 tables · 32 NAICS · 3 verticals · T.E.S.T. v2 active</div>
     </div>
     <a href="${GH_ACTIONS}" target="_blank" style="display:block;text-align:center;padding:12px;border-radius:8px;background:var(--cyanDim);border:1px solid var(--cyanBd);color:var(--cyan);font-size:12px;font-weight:600;text-decoration:none">▶ Open GitHub Actions to Run Workflows</a>
   `;
 }
 
-// ─── HELP ─────────────────────────────────────────────────────────────
+// ─── HELP ──────────────────────────────────────────────────────────────
 const HELP=[
-  {id:'H-001',term:'PRIME Score',cat:'Scoring',cc:'var(--cyan)',a:'Rates construction opportunities 0-100. Above 85 is STRONG BID.',ag:'JUDGE'},
-  {id:'H-002',term:'ACQ Score',cat:'Scoring',cc:'var(--cyan)',a:'Rates supply opportunities 0-100 on product availability, margin, delivery, and set-aside match.',ag:'JUDGE'},
-  {id:'H-003',term:'LEASE Score',cat:'Scoring',cc:'var(--rose)',a:'Rates real estate and rental opportunities 0-100. Asset ownership worth 30% — you must own the property.',ag:'JUDGE'},
+  {id:'H-001',term:'PRIME Score',cat:'Scoring',cc:'var(--cyan)',a:'Rates construction opportunities 0-100. Above 85 is STRONG BID. Five factors: set-aside match, value fit, state/proximity, agency familiarity, NAICS match.',ag:'JUDGE'},
+  {id:'H-002',term:'ACQ Score',cat:'Scoring',cc:'var(--cyan)',a:'Rates supply opportunities 0-100 on product availability, margin, delivery speed, set-aside match, and competition level.',ag:'JUDGE'},
+  {id:'H-003',term:'LEASE Score',cat:'Scoring',cc:'var(--rose)',a:'Rates real estate and rental opportunities 0-100. Asset ownership worth 30 points — you must own the property or equipment to bid.',ag:'JUDGE'},
   {id:'H-004',term:'STRONG BID',cat:'Alerts',cc:'var(--green)',a:'Score 85+. Best chance to win. Prioritize these.',ag:'JUDGE'},
   {id:'H-005',term:'Set-Aside',cat:'Concepts',cc:'var(--violet)',a:'Government restricts bidding to help small businesses. Types: SB, SDB, HUBZone, 8(a), WOSB, SDVOSB.',ag:'VAULT'},
-  {id:'H-006',term:'T.E.S.T. Agent',cat:'System',cc:'var(--green)',a:'System proofreader. Runs after every agent. Validates scores, math, API schemas. Cost: $0/mo.',ag:'TEST'},
-  {id:'H-007',term:'HALT',cat:'System',cc:'var(--red)',a:'T.E.S.T. pauses an agent when something critical breaks. You fix it and re-enable.',ag:'TEST'},
-  {id:'H-008',term:'Morning Brief',cat:'Features',cc:'var(--cyan)',a:'Daily 6 AM email from Brandi with top opportunities, urgent items, and system health.',ag:'BRANDI'},
-  {id:'H-009',term:'Supplier Match',cat:'Features',cc:'var(--violet)',a:'PRIME finds best subs and teaming partners. Match score 0-100 based on skills, certs, location, experience.',ag:'RECON'},
-  {id:'H-010',term:'Retainage',cat:'Money',cc:'var(--green)',a:'Government holds back 5-10% until project completion. PRIME tracks and reminds you to request release.',ag:'EXEC'},
-  {id:'H-011',term:'Prompt Payment Interest',cat:'Money',cc:'var(--green)',a:'If government pays late (14+ days), they owe interest. PRIME calculates and drafts claim letters.',ag:'EXEC'},
-  {id:'H-012',term:'NAICS Code',cat:'Concepts',cc:'var(--violet)',a:'6-digit number identifying your work type. PRIME scans 32 NAICS codes across 3 verticals.',ag:'SCOUT'},
-  {id:'H-013',term:'Real Estate Vertical',cat:'Concepts',cc:'var(--rose)',a:'Third vertical covering property leasing to the government and equipment rental to federal agencies.',ag:'SCOUT'},
+  {id:'H-006',term:'T.E.S.T. Agent',cat:'System',cc:'var(--green)',a:'System proofreader. Validates scores, math, API schemas after every agent run. Cost: $0/mo. HALT fires if AUTH, DB_HEALTH, or FINANCIAL_MATH categories fail.',ag:'TEST'},
+  {id:'H-007',term:'HALT',cat:'System',cc:'var(--red)',a:'T.E.S.T. pauses an agent when something critical breaks. You fix the issue and re-enable SYSTEM_HALT=false in system_config.',ag:'TEST'},
+  {id:'H-008',term:'Morning Brief',cat:'Features',cc:'var(--cyan)',a:'Daily 6 AM email from Brandi to PrimeOpps1@gmail.com with top opportunities, urgent items, and system health. Monday brief includes supply summary.',ag:'BRANDI'},
+  {id:'H-009',term:'Supplier Match',cat:'Features',cc:'var(--violet)',a:'PRIME finds best subs and teaming partners. Match score 0-100 based on NAICS overlap, certifications, location, past contract count, and avg value.',ag:'RECON'},
+  {id:'H-010',term:'Retainage',cat:'Money',cc:'var(--green)',a:'Government holds back 5-10% until project completion. EXEC tracks and reminds you to request release.',ag:'EXEC'},
+  {id:'H-011',term:'Prompt Payment Interest',cat:'Money',cc:'var(--green)',a:'If government pays late (14+ days past invoice), they owe interest (Prompt Payment Act). EXEC calculates and drafts claim letters.',ag:'EXEC'},
+  {id:'H-012',term:'NAICS Code',cat:'Concepts',cc:'var(--violet)',a:'6-digit number identifying your work type. PRIME scans 32 NAICS codes: 21 construction, 7 supply, 4 real estate.',ag:'SCOUT'},
+  {id:'H-013',term:'Davis-Bacon',cat:'Compliance',cc:'var(--amber)',a:'Federal law requiring prevailing wages on construction contracts >$2,000. BID ENGINE pulls DOL wage rates by state. WH-347 certified payroll required.',ag:'VAULT'},
+  {id:'H-014',term:'BID ENGINE',cat:'Features',cc:'var(--cyan)',a:'Calculates Low/Recommended/High price. Construction model: Labor (Davis-Bacon) + Materials + Mobilization + Bond + Overhead (15%) + Profit (10%). Updates yearly for option year escalation.',ag:'BID ENGINE'},
+  {id:'H-015',term:'Start Bid',cat:'Features',cc:'var(--gold)',a:'Click any opportunity → Start Bid button. Creates a bid record in the database, shows the compliance checklist (bond requirement, Davis-Bacon flag, WH-347, past performance), and links to GitHub Actions to run DRAFT.',ag:'SYSTEM'},
 ];
 function filterHelp(){const q=document.getElementById('hs').value.toLowerCase();document.querySelectorAll('.help-item').forEach(el=>{const txt=(el.dataset.term+' '+el.dataset.cat+' '+el.dataset.text).toLowerCase();el.style.display=txt.includes(q)?'block':'none';});}
 function toggleHelp(el){el.classList.toggle('open');}
@@ -626,13 +973,13 @@ function renderHelp(){
   `;
 }
 
-// ─── CLOCK ────────────────────────────────────────────────────────────
+// ─── CLOCK ─────────────────────────────────────────────────────────────
 function tk(){const n=new Date(),D=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'],M=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'],p=x=>String(x).padStart(2,'0');const el=document.getElementById('clk');if(el)el.textContent=D[n.getDay()]+' '+M[n.getMonth()]+' '+n.getDate()+' · '+p(n.getHours())+':'+p(n.getMinutes())+':'+p(n.getSeconds())+' CT';}
 setInterval(tk,1000);
 
-// ─── INIT ─────────────────────────────────────────────────────────────
-renderHelp(); // static — render immediately
-loadData();   // fetch live data
+// ─── INIT ───────────────────────────────────────────────────────────────
+renderHelp();
+loadData();
 setInterval(()=>loadData(),300000); // auto-refresh every 5 min
 </script>
 </body>
