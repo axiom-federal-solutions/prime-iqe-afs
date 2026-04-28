@@ -219,8 +219,21 @@ function sc(s){return s>=85?'var(--green)':s>=70?'var(--gold)':s>=55?'var(--ambe
 function rb(r){const m={'STRONG BID':{bg:'var(--greenDim)',c:'var(--green)',i:'✅'},'BID':{bg:'var(--cyanDim)',c:'var(--cyan)',i:'✅'},'CONDITIONAL':{bg:'var(--amberDim)',c:'var(--amber)',i:'⚠️'},'NO BID':{bg:'var(--redDim)',c:'var(--red)',i:'❌'},'STRONG LEASE':{bg:'var(--greenDim)',c:'var(--green)',i:'🏢'},'LEASE':{bg:'var(--roseDim)',c:'var(--rose)',i:'🏢'}};const s=m[r]||m['BID'];return '<span class="badge" style="background:'+s.bg+';color:'+s.c+'">'+s.i+' '+r+'</span>';}
 function fmt(v){if(!v&&v!==0)return '—';return v>=1e6?'$'+(v/1e6).toFixed(1)+'M':v>=1000?'$'+(v/1000).toFixed(0)+'K':'$'+Math.round(v);}
 function daysLeft(deadline){if(!deadline)return null;const d=Math.ceil((new Date(deadline)-new Date())/86400000);return Math.max(0,d);}
-function scoreOf(o){return o.vertical==='supply'?o.acq_score:o.vertical==='realestate'?o.lease_score:(o.prime_score||o.acq_score||o.lease_score)||0;}
-function slOf(o){return o.vertical==='supply'?'ACQ':o.vertical==='realestate'?'LEASE':'PRIME';}
+// Derive vertical from NAICS if DB column not yet set
+// Supply NAICS: IT, training, janitorial, food, logistics, manufacturing
+const SUPPLY_NAICS=['541511','541512','541519','541330','561110','561210','424410',
+  '332999','339999','611420','611430','541611','541618','238910','488490'];
+// Real Estate NAICS
+const RE_NAICS=['531110','531120','531210','531311','531312','531390'];
+function getVertical(o){
+  if(o.vertical&&o.vertical!=='null')return o.vertical;
+  const n=(o.naics||'').trim();
+  if(RE_NAICS.some(c=>n.startsWith(c)))return 'realestate';
+  if(SUPPLY_NAICS.some(c=>n.startsWith(c)))return 'supply';
+  return 'construction';
+}
+function scoreOf(o){const v=getVertical(o);return v==='supply'?o.acq_score:v==='realestate'?(o.lease_score||o.prime_score):(o.prime_score||o.acq_score||o.lease_score)||0;}
+function slOf(o){const v=getVertical(o);return v==='supply'?'ACQ':v==='realestate'?'LEASE':'PRIME';}
 function vtColor(v){return v==='supply'?'var(--cyan)':v==='realestate'?'var(--rose)':'var(--green)';}
 function vtLabel(v){return v==='supply'?'SUPPLY':v==='realestate'?'RE&R':'CONSTR';}
 function emptyState(msg,sub){return `<div class="empty"><div class="empty-icon">📡</div><div class="empty-title">${msg}</div><div class="empty-body">${sub}</div><a class="run-link" href="${GH_ACTIONS}" target="_blank">▶ Open GitHub Actions to Run SCOUT</a></div>`;}
@@ -237,7 +250,7 @@ async function loadData(manual=false){
       sb.from('opportunities').select('*').order('prime_score',{ascending:false}).limit(200),
       sb.from('bids').select('*').order('created_at',{ascending:false}).limit(50),
       sb.from('supplier_matches').select('*').order('match_score',{ascending:false}).limit(100),
-      sb.from('agent_runs').select('*').order('created_at',{ascending:false}).limit(50),
+      sb.from('agent_logs').select('*').order('created_at',{ascending:false}).limit(50),
       sb.from('system_config').select('*'),
       sb.from('test_results').select('*').order('run_at',{ascending:false}).limit(30),
       sb.from('prompt_payment_claims').select('*').order('payment_due',{ascending:true}).limit(30),
@@ -283,17 +296,17 @@ function oppRow(o,idx){
   const s=scoreOf(o), sl=slOf(o), days=daysLeft(o.response_deadline);
   const sa=o.set_aside_type||o.set_aside||'';
   const src=o.source||'';
-  return `<div class="opp" onclick="showDetail(${idx})" style="border-left:3px solid ${vtColor(o.vertical)}">
+  return `<div class="opp" onclick="showDetail(${idx})" style="border-left:3px solid ${vtColor(getVertical(o))}">
     <div>
       <div style="font-size:12px;font-weight:500;line-height:1.3">${o.title||'Untitled'}</div>
       <div style="font-size:10px;color:var(--t3);margin-top:3px;display:flex;gap:5px;align-items:center;flex-wrap:wrap">
-        ${o.agency||'—'} · ${o.naics_code||''}
+        ${o.agency||'—'} · ${o.naics||''}
         ${sa?`<span class="badge" style="background:${sa==='SDB'?'var(--goldDim);color:var(--gold)':'var(--cyanDim);color:var(--cyan)'}">${sa}</span>`:''}
         ${src==='DIBBS'?'<span class="badge" style="background:var(--amberDim);color:var(--amber)">DIBBS</span>':''}
         ${o.state?`<span class="badge" style="background:var(--violetDim);color:var(--violet)">${o.state}</span>`:''}
       </div>
     </div>
-    <div style="text-align:right;font-size:13px;font-weight:700">${fmt(o.estimated_value)}</div>
+    <div style="text-align:right;font-size:13px;font-weight:700">${fmt(o.value)}</div>
     <div style="text-align:center"><span style="font-size:18px;font-weight:800;color:${sc(s)}">${s||'—'}</span><span style="font-size:8px;color:var(--t3);letter-spacing:.1em;margin-left:3px">${sl}</span></div>
     <div style="text-align:center">${rb(o.recommendation||'BID')}</div>
     <div style="text-align:right;font-size:10px;color:${days!=null&&days<=10?'var(--red)':'var(--t3)'}">🕐 ${days!=null?days+'d':'—'}</div>
@@ -311,7 +324,7 @@ async function showDetail(idx){
   // Open panel immediately with core info + loading skeletons for async sections
   document.getElementById('det-content').innerHTML=`
     <div style="margin-bottom:4px">
-      <span class="badge" style="background:${vtColor(o.vertical)}22;color:${vtColor(o.vertical)}">${vtLabel(o.vertical)}</span>
+      <span class="badge" style="background:${vtColor(getVertical(o))}22;color:${vtColor(getVertical(o))}">${vtLabel(getVertical(o))}</span>
       ${o.source?`<span class="badge" style="background:var(--amberDim);color:var(--amber);margin-left:4px">${o.source}</span>`:''}
     </div>
     <div style="font-size:17px;font-weight:700;line-height:1.4;margin:10px 0 4px">${o.title||'Untitled'}</div>
@@ -323,7 +336,7 @@ async function showDetail(idx){
         <div style="font-size:9px;color:var(--t3);text-transform:uppercase;margin-top:2px">${sl} Score</div>
       </div>
       <div style="background:var(--card);border-radius:8px;padding:12px;text-align:center;border:1px solid var(--bd)">
-        <div style="font-size:16px;font-weight:800;color:var(--gold)">${fmt(o.estimated_value)}</div>
+        <div style="font-size:16px;font-weight:800;color:var(--gold)">${fmt(o.value)}</div>
         <div style="font-size:9px;color:var(--t3);text-transform:uppercase;margin-top:2px">Est. Value</div>
       </div>
       <div style="background:var(--card);border-radius:8px;padding:12px;text-align:center;border:1px solid var(--bd)">
@@ -336,7 +349,7 @@ async function showDetail(idx){
 
     <div style="background:var(--card);border-radius:8px;padding:14px;margin-bottom:12px;border:1px solid var(--bd)">
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;font-size:10px;line-height:1.8">
-        <div><span style="color:var(--t3)">NAICS</span><br><b>${o.naics_code||'—'}</b></div>
+        <div><span style="color:var(--t3)">NAICS</span><br><b>${o.naics||'—'}</b></div>
         <div><span style="color:var(--t3)">Set-Aside</span><br><b>${o.set_aside_type||o.set_aside||'Full & Open'}</b></div>
         <div><span style="color:var(--t3)">State</span><br><b>${o.state||'—'}</b></div>
         <div><span style="color:var(--t3)">Deadline</span><br><b>${deadline}</b></div>
@@ -373,8 +386,8 @@ async function showDetail(idx){
     <!-- START BID -->
     <div class="det-section" id="det-start-bid">
       <div class="det-sec-label">⚡ Start This Bid</div>
-      <button class="start-bid-btn" onclick="startBid('${o.id}','${(o.title||'').replace(/'/g,"\\'")}',${o.estimated_value||0},'${o.vertical||'construction'}','${o.naics_code||''}',${o.estimated_value&&o.estimated_value>150000?'true':'false'})">
-        ⚡ START BID — ${fmt(o.estimated_value)}
+      <button class="start-bid-btn" onclick="startBid('${o.id}','${(o.title||'').replace(/'/g,"\\'")}',${o.value||0},'${getVertical(o)}','${o.naics||''}',${o.value&&o.value>150000?'true':'false'})">
+        ⚡ START BID — ${fmt(o.value)}
       </button>
       <div style="font-size:9px;color:var(--t3);text-align:center;margin-top:6px">Creates bid record · Shows compliance checklist · Alerts VAULT</div>
     </div>
@@ -386,7 +399,7 @@ async function showDetail(idx){
   try{
     const [bidRes, intelRes]=await Promise.all([
       sb.from('bids').select('*').eq('opportunity_id',o.id).maybeSingle(),
-      sb.from('competitor_intel').select('*').eq('naics',o.naics_code).order('award_date',{ascending:false}).limit(5)
+      sb.from('competitor_intel').select('*').eq('naics',o.naics).order('award_date',{ascending:false}).limit(5)
     ]);
     renderBidPricing(bidRes.data, o, intelRes.data||[]);
     renderCompetitorIntel(intelRes.data||[], o);
@@ -485,11 +498,11 @@ function renderCompetitorIntel(rows, o){
   if(!el)return;
   if(!rows||rows.length===0){
     el.innerHTML=`<div class="det-sec-label">🔍 Market Comps — Previous Awards</div>
-      <div style="font-size:10px;color:var(--t3);padding:10px 0">No award history found for NAICS ${o.naics_code||'—'} yet. Run RECON to pull FPDS data.</div>`;
+      <div style="font-size:10px;color:var(--t3);padding:10px 0">No award history found for NAICS ${o.naics||'—'} yet. Run RECON to pull FPDS data.</div>`;
     return;
   }
   const avg=Math.round(rows.reduce((a,r)=>a+(r.award_value||0),0)/rows.length);
-  el.innerHTML=`<div class="det-sec-label">🔍 Market Comps — NAICS ${o.naics_code||'—'} Awards</div>
+  el.innerHTML=`<div class="det-sec-label">🔍 Market Comps — NAICS ${o.naics||'—'} Awards</div>
     <div style="text-align:right;font-size:10px;color:var(--t2);margin-bottom:8px">Avg win price: <b style="color:var(--gold)">${fmt(avg)}</b></div>
     ${rows.map(r=>`<div class="intel-row">
       <div style="flex:1">
@@ -638,9 +651,9 @@ function renderActionQueue(){
       return `<div class="opp" onclick="showDetail(${idx})" style="border-left:3px solid var(--red)">
         <div>
           <div style="font-size:12px;font-weight:600;line-height:1.3">${o.title||'Untitled'}</div>
-          <div style="font-size:10px;color:var(--t3);margin-top:3px">${o.agency||'—'} · ${o.naics_code||''} · <span style="color:var(--violet)">${o.state||''}</span></div>
+          <div style="font-size:10px;color:var(--t3);margin-top:3px">${o.agency||'—'} · ${o.naics||''} · <span style="color:var(--violet)">${o.state||''}</span></div>
         </div>
-        <div style="text-align:right;font-size:13px;font-weight:700">${fmt(o.estimated_value)}</div>
+        <div style="text-align:right;font-size:13px;font-weight:700">${fmt(o.value)}</div>
         <div style="text-align:center"><span style="font-size:18px;font-weight:800;color:${sc(s)}">${s}</span><span style="font-size:8px;color:var(--t3);margin-left:3px">${slOf(o)}</span></div>
         <div style="text-align:center">${rb(o.recommendation||'BID')}</div>
         <div style="text-align:right;font-size:12px;font-weight:700;color:var(--red)">🔥 ${days}d left</div>
@@ -651,12 +664,12 @@ function renderActionQueue(){
   const newHtml=newToday.length
     ?newToday.slice(0,10).map(o=>{
       const idx=OPPS.indexOf(o);
-      return `<div class="opp" onclick="showDetail(${idx})" style="border-left:3px solid ${vtColor(o.vertical)}">
+      return `<div class="opp" onclick="showDetail(${idx})" style="border-left:3px solid ${vtColor(getVertical(o))}">
         <div>
           <div style="font-size:12px;font-weight:500;line-height:1.3">${o.title||'Untitled'}</div>
           <div style="font-size:10px;color:var(--t3);margin-top:3px">${o.agency||'—'} <span class="badge" style="background:var(--cyanDim);color:var(--cyan)">NEW</span></div>
         </div>
-        <div style="text-align:right;font-size:13px;font-weight:700">${fmt(o.estimated_value)}</div>
+        <div style="text-align:right;font-size:13px;font-weight:700">${fmt(o.value)}</div>
         <div style="text-align:center"><span style="font-size:18px;font-weight:800;color:${sc(scoreOf(o))}">${scoreOf(o)||'—'}</span></div>
         <div style="text-align:center">${rb(o.recommendation||'BID')}</div>
         <div style="text-align:right;font-size:10px;color:var(--t3)">🕐 ${daysLeft(o.response_deadline)!=null?daysLeft(o.response_deadline)+'d':'—'}</div>
@@ -681,12 +694,12 @@ function renderActionQueue(){
 // ─── HOME ──────────────────────────────────────────────────────────────
 function renderHome(){
   const topOpps=OPPS.slice(0,6);
-  const cVal=OPPS.filter(o=>o.vertical==='construction').reduce((a,o)=>a+(o.estimated_value||0),0);
-  const sVal=OPPS.filter(o=>o.vertical==='supply').reduce((a,o)=>a+(o.estimated_value||0),0);
-  const rVal=OPPS.filter(o=>o.vertical==='realestate').reduce((a,o)=>a+(o.estimated_value||0),0);
-  const cCount=OPPS.filter(o=>o.vertical==='construction').length;
-  const sCount=OPPS.filter(o=>o.vertical==='supply').length;
-  const rCount=OPPS.filter(o=>o.vertical==='realestate').length;
+  const cVal=OPPS.filter(o=>getVertical(o)==='construction').reduce((a,o)=>a+(o.value||0),0);
+  const sVal=OPPS.filter(o=>getVertical(o)==='supply').reduce((a,o)=>a+(o.value||0),0);
+  const rVal=OPPS.filter(o=>getVertical(o)==='realestate').reduce((a,o)=>a+(o.value||0),0);
+  const cCount=OPPS.filter(o=>getVertical(o)==='construction').length;
+  const sCount=OPPS.filter(o=>getVertical(o)==='supply').length;
+  const rCount=OPPS.filter(o=>getVertical(o)==='realestate').length;
   const supCount=SUPS.length;
   const wonCount=BIDS.filter(b=>b.status==='won').length;
   const winRate=BIDS.length?Math.round(wonCount/BIDS.length*100):0;
@@ -707,10 +720,10 @@ function renderHome(){
     return `<div class="feed-item"><span style="font-size:9px;font-weight:700;min-width:52px;color:${c}">${r.agent_name||'—'}</span><span style="font-size:10px;color:var(--t2);flex:1;line-height:1.4">${r.summary||r.status||'—'}</span><span style="font-size:9px;color:var(--t3)">${ago}</span></div>`;
   }).join(''):`<div style="font-size:10px;color:var(--t3);padding:20px 0;text-align:center">No agent activity yet.<br>Run SCOUT to start.</div>`;
 
-  const topHtml=topOpps.length?topOpps.map((o,i)=>`<div class="opp" onclick="showDetail(${i})" style="border-left:3px solid ${vtColor(o.vertical)}">
+  const topHtml=topOpps.length?topOpps.map((o,i)=>`<div class="opp" onclick="showDetail(${i})" style="border-left:3px solid ${vtColor(getVertical(o))}">
     <div><div style="font-size:12px;font-weight:500">${o.title}</div>
-    <div style="font-size:10px;color:var(--t3);margin-top:3px">${o.agency||'—'} <span class="badge" style="background:${vtColor(o.vertical)}18;color:${vtColor(o.vertical)}">${vtLabel(o.vertical)}</span></div></div>
-    <div style="text-align:right;font-size:13px;font-weight:700">${fmt(o.estimated_value)}</div>
+    <div style="font-size:10px;color:var(--t3);margin-top:3px">${o.agency||'—'} <span class="badge" style="background:${vtColor(getVertical(o))}18;color:${vtColor(getVertical(o))}">${vtLabel(getVertical(o))}</span></div></div>
+    <div style="text-align:right;font-size:13px;font-weight:700">${fmt(o.value)}</div>
     <div style="text-align:center"><span style="font-size:18px;font-weight:800;color:${sc(scoreOf(o))}">${scoreOf(o)||'—'}</span><span style="font-size:8px;color:var(--t3);margin-left:3px">${slOf(o)}</span></div>
     <div style="text-align:center">${rb(o.recommendation||'BID')}</div>
     <div style="text-align:right;font-size:10px;color:var(--t3)">🕐 ${daysLeft(o.response_deadline)!=null?daysLeft(o.response_deadline)+'d':'—'}</div>
@@ -768,11 +781,11 @@ function renderPerformance(){
   // 2. NAICS performance from OPPS
   const naicsStats={};
   OPPS.forEach(o=>{
-    const n=o.naics_code; if(!n)return;
+    const n=o.naics; if(!n)return;
     if(!naicsStats[n])naicsStats[n]={code:n,count:0,totalScore:0,totalValue:0};
     naicsStats[n].count++;
     naicsStats[n].totalScore+=scoreOf(o);
-    naicsStats[n].totalValue+=(o.estimated_value||0);
+    naicsStats[n].totalValue+=(o.value||0);
   });
   const naicsList=Object.values(naicsStats)
     .sort((a,b)=>b.count-a.count).slice(0,10);
@@ -874,10 +887,10 @@ function buildStateMap(oppsForVertical, vt){
       map[st]={c:st,n:st,r:'Other',notes:'',hot:0,lic:0,opps:0,v:0,s:0,jobs:[]};
     }
     map[st].opps++;
-    map[st].v+=(o.estimated_value||0);
+    map[st].v+=(o.value||0);
     const sc2=scoreOf(o);
     if(sc2>map[st].s)map[st].s=sc2;
-    map[st].jobs.push({t:o.title,v:fmt(o.estimated_value),s:sc2,sa:o.set_aside_type||'',cat:o.naics_code||''});
+    map[st].jobs.push({t:o.title,v:fmt(o.value),s:sc2,sa:o.set_aside_type||'',cat:o.naics||''});
   });
   // Only return states that either have opps OR are home/hot states
   return Object.values(map).filter(s=>s.opps>0||s.hot||s.c==='LA');
@@ -905,10 +918,10 @@ function renderGrid(el,states,vt){
 }
 
 function showStateDetail(code,vt,tileEl){
-  const oppsForVt=OPPS.filter(o=>o.vertical===vt&&o.state===code);
+  const oppsForVt=OPPS.filter(o=>getVertical(o)===vt&&o.state===code);
   const stateInfo=STATE_META[code]||{n:code,notes:''};
   const sl=vt==='supply'?'ACQ':vt==='realestate'?'LEASE':'PRIME';
-  const totalVal=oppsForVt.reduce((a,o)=>a+(o.estimated_value||0),0);
+  const totalVal=oppsForVt.reduce((a,o)=>a+(o.value||0),0);
   const bestScore=oppsForVt.length?Math.max(...oppsForVt.map(o=>scoreOf(o))):0;
   const detailId=vt[0]+'-detail';
   document.getElementById(detailId).innerHTML=`<div class="state-detail">
@@ -932,15 +945,15 @@ function showStateDetail(code,vt,tileEl){
           <span style="font-size:11px;font-weight:600">${o.title}</span>
           <span style="font-size:14px;font-weight:800;color:${sc(s2)}">${s2}</span>
         </div>
-        <div style="font-size:9px;color:var(--t3);margin-top:3px">${fmt(o.estimated_value)} · ${o.set_aside_type||''}</div>
+        <div style="font-size:9px;color:var(--t3);margin-top:3px">${fmt(o.value)} · ${o.set_aside_type||''}</div>
       </div>`;
     }).join(''):`<div style="font-size:10px;color:var(--t3);text-align:center;padding:12px">No live opportunities in ${code} yet.</div>`}
   </div>`;
 }
 
 function renderVertical(vt){
-  const oppsForVt=OPPS.filter(o=>o.vertical===vt);
-  const totalVal=oppsForVt.reduce((a,o)=>a+(o.estimated_value||0),0);
+  const oppsForVt=OPPS.filter(o=>getVertical(o)===vt);
+  const totalVal=oppsForVt.reduce((a,o)=>a+(o.value||0),0);
   const label={'construction':'🏗️ Construction — 21 NAICS Codes · 50 States','supply':'📦 Supply — 7 NAICS Codes · 50 States','realestate':'🏢 Real Estate & Rental — 4 NAICS Codes'}[vt];
   const sub={'construction':'PRIME Score · Green = can bid · Click state for live opportunities + supplier matches','supply':'ACQ Score · No license required · Click state for opportunities','realestate':'LEASE Score · Asset-dependent — you must own the property or equipment'}[vt];
   const color=vtColor(vt);
