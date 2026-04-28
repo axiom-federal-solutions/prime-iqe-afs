@@ -13,6 +13,17 @@
 const { supabase, logAction, isAgentEnabled, getConfig, setConfig } = require('../lib/supabase');
 const { fetchJSON, fetchText, sleep } = require('../lib/fetch-retry');
 
+// NAICS prefix lists used by deriveVertical() to tag each opportunity's vertical
+const SUPPLY_NAICS_PREFIXES = ['541511','541512','541519','541330','561110','561210',
+  '424410','332999','339999','611420','611430','541611','541618','488490'];
+const RE_NAICS_PREFIXES = ['531110','531120','531210','531311','531312','531390'];
+function deriveVertical(naics) {
+  const n = (naics || '').trim();
+  if (RE_NAICS_PREFIXES.some(p => n.startsWith(p))) return 'realestate';
+  if (SUPPLY_NAICS_PREFIXES.some(p => n.startsWith(p))) return 'supply';
+  return 'construction';
+}
+
 // Our company info — used in user-agent headers and set-aside filtering
 const COMPANY = {
   uei:            'USMQMFAGL9M4',
@@ -74,8 +85,9 @@ const REAL_ESTATE_NAICS = [
 // All 32 NAICS codes we search
 const ALL_NAICS = [...CONSTRUCTION_NAICS, ...SUPPLY_NAICS, ...REAL_ESTATE_NAICS];
 
-// Set-aside types we qualify for
-const SET_ASIDE_TYPES = ['SBA', 'SBP', 'SDVOSBC', 'HZC', 'WOSB', '8A', 'SDB'];
+// Set-aside types we qualify for — SDB-eligible + unrestricted (full & open) only
+// Narrowed from broad list to conserve SAM.gov API quota and focus on winnable opps
+const SET_ASIDE_TYPES = ['SDB', ''];
 
 // SAM.gov API base URL
 const SAM_API_BASE = 'https://api.sam.gov/opportunities/v2/search';
@@ -249,11 +261,12 @@ async function upsertOpportunity(opp, type, naics) {
     type:                type,
     value:               value,
     posted_date:         opp.postedDate ? opp.postedDate.split('T')[0] : new Date().toISOString().split('T')[0],
-    deadline:            deadline ? deadline.split('T')[0] : null,
+    deadline:            deadline ? new Date(deadline).toISOString().split('T')[0] : null,
     set_aside:           opp.typeOfSetAside || null,
     place_of_performance: state || null,
     description:         opp.description || null,
     source:              'SAM.gov',
+    vertical:            deriveVertical(naics),
     prime_score:         primeScore,
     status:              'new',
     raw_data:            opp,
@@ -284,12 +297,15 @@ async function scanDLADIBBS() {
 
     // Keywords that indicate supply opportunities relevant to our NAICS
     const supplyKeywords = ['petroleum', 'fuel', 'lubricant', 'janitorial', 'paper', 'ppe', 'office supplies', 'food', 'beverage'];
-    const found = supplyKeywords.some(kw => html.toLowerCase().includes(kw));
+    const matches = supplyKeywords.filter(kw => html.toLowerCase().includes(kw));
+    const count   = matches.length;
+    console.log(`DLA DIBBS: Detected ${count} keyword matches — insert logic pending DIBBS API integration`);
 
-    if (found) {
+    if (count > 0) {
       await logAction('SCOUT', 'DLA DIBBS has relevant supply activity — manual review recommended', {
-        url:    DLA_API_BASE,
-        action: 'Visit DLA DIBBS to review current RFQs matching supply NAICS',
+        url:     DLA_API_BASE,
+        matches: matches,
+        action:  'Visit DLA DIBBS to review current RFQs matching supply NAICS',
       });
     }
 

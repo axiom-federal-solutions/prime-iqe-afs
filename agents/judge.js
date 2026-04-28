@@ -12,6 +12,16 @@ const { supabase, logAction, isAgentEnabled } = require('../lib/supabase');
 const { claudeJSON } = require('../lib/claude');
 const { checkCostCap, recordCost } = require('../lib/cost-guard');
 
+const SUPPLY_NAICS_PREFIXES = ['541511','541512','541519','541330','561110','561210',
+  '424410','332999','339999','611420','611430','541611','541618','488490'];
+const RE_NAICS_PREFIXES = ['531110','531120','531210','531311','531312','531390'];
+function deriveVertical(naics) {
+  const n = (naics || '').trim();
+  if (RE_NAICS_PREFIXES.some(p => n.startsWith(p))) return 'realestate';
+  if (SUPPLY_NAICS_PREFIXES.some(p => n.startsWith(p))) return 'supply';
+  return 'construction';
+}
+
 // Walker Contractors / Axiom Federal Solutions profile
 const COMPANY = {
   name:           'Walker Contractors LLC',
@@ -178,6 +188,7 @@ async function scoreOpportunity(opp) {
     scored_at:      new Date().toISOString(),
     status:         tier === 'NO_BID' ? 'rejected' : 'scored',
     needs_scoring:  false,
+    vertical:       deriveVertical(opp.naics || opp.naics_code || ''),
   };
 
   // Also store lease_score in its dedicated column for real estate opps

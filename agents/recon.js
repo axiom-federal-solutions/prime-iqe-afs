@@ -457,11 +457,18 @@ async function enrichFromSBA() {
   const SBA_API = 'https://api.sba.gov/sb_profiles/v3/search?';
 
   // Get suppliers that haven't been SBA-enriched recently
-  const { data: suppliers } = await supabase
-    .from('suppliers')
-    .select('id, uei, name, state')
-    .is('sba_enriched_at', null)
-    .limit(50);
+  let suppliers = [];
+  try {
+    const { data } = await supabase
+      .from('suppliers')
+      .select('id, uei, name, state')
+      .is('sba_enriched_at', null)
+      .limit(50);
+    suppliers = data || [];
+  } catch (err) {
+    console.warn('RECON: suppliers table not available —', err.message);
+    return 0;
+  }
 
   if (!suppliers || suppliers.length === 0) return 0;
 
@@ -486,11 +493,15 @@ async function enrichFromSBA() {
         if (match['veteran_owned'])     certs.push('VOSB');
         if (match['service_disabled'])  certs.push('SDVOSB');
 
-        await supabase.from('suppliers').update({
-          certifications:    certs,
-          socioeconomic:     certs,
-          sba_enriched_at:   new Date().toISOString(),
-        }).eq('id', supplier.id);
+        try {
+          await supabase.from('suppliers').update({
+            certifications:    certs,
+            socioeconomic:     certs,
+            sba_enriched_at:   new Date().toISOString(),
+          }).eq('id', supplier.id);
+        } catch (updateErr) {
+          console.warn(`RECON: suppliers update failed —`, updateErr.message);
+        }
 
         enriched++;
       }
@@ -510,12 +521,19 @@ async function enrichFromSBA() {
 // No API key required — public government data
 // ----------------------------------------------------------
 async function enrichFromUSAspending() {
-  const { data: suppliers } = await supabase
-    .from('suppliers')
-    .select('id, uei, name')
-    .is('usaspending_enriched_at', null)
-    .not('uei', 'is', null)
-    .limit(30);
+  let suppliers = [];
+  try {
+    const { data } = await supabase
+      .from('suppliers')
+      .select('id, uei, name')
+      .is('usaspending_enriched_at', null)
+      .not('uei', 'is', null)
+      .limit(30);
+    suppliers = data || [];
+  } catch (err) {
+    console.warn('RECON: suppliers table not available —', err.message);
+    return 0;
+  }
 
   if (!suppliers || suppliers.length === 0) return 0;
 
@@ -528,12 +546,16 @@ async function enrichFromUSAspending() {
       });
 
       if (data) {
-        await supabase.from('suppliers').update({
-          federal_contract_count:  data.total_transaction_count || 0,
-          avg_contract_value:      data.total_obligations ? data.total_obligations / Math.max(data.total_transaction_count || 1, 1) : 0,
-          agencies_worked:         data.top_five_award_types?.length || 0,
-          usaspending_enriched_at: new Date().toISOString(),
-        }).eq('id', supplier.id);
+        try {
+          await supabase.from('suppliers').update({
+            federal_contract_count:  data.total_transaction_count || 0,
+            avg_contract_value:      data.total_obligations ? data.total_obligations / Math.max(data.total_transaction_count || 1, 1) : 0,
+            agencies_worked:         data.top_five_award_types?.length || 0,
+            usaspending_enriched_at: new Date().toISOString(),
+          }).eq('id', supplier.id);
+        } catch (updateErr) {
+          console.warn(`RECON: suppliers update failed —`, updateErr.message);
+        }
 
         enriched++;
       }
@@ -563,11 +585,18 @@ async function matchSuppliersToOpportunity(opportunityId) {
   if (!opp) return 0;
 
   // Load all active suppliers
-  const { data: suppliers } = await supabase
-    .from('suppliers')
-    .select('*')
-    .eq('status', 'active')
-    .limit(500);
+  let suppliers = [];
+  try {
+    const { data } = await supabase
+      .from('suppliers')
+      .select('*')
+      .eq('status', 'active')
+      .limit(500);
+    suppliers = data || [];
+  } catch (err) {
+    console.warn('RECON: suppliers table not available —', err.message);
+    return 0;
+  }
 
   if (!suppliers || suppliers.length === 0) return 0;
 
@@ -587,14 +616,18 @@ async function matchSuppliersToOpportunity(opportunityId) {
 
   // Upsert top 10 into supplier_matches
   for (const match of top10) {
-    await supabase.from('supplier_matches').upsert({
-      opportunity_id:  opp.id,
-      supplier_id:     match.supplier.id,
-      match_score:     match.score,
-      match_type:      match.matchType,
-      score_breakdown: calcMatchBreakdown(match.supplier, opp),
-      created_at:      new Date().toISOString(),
-    }, { onConflict: 'opportunity_id,supplier_id' });
+    try {
+      await supabase.from('supplier_matches').upsert({
+        opportunity_id:  opp.id,
+        supplier_id:     match.supplier.id,
+        match_score:     match.score,
+        match_type:      match.matchType,
+        score_breakdown: calcMatchBreakdown(match.supplier, opp),
+        created_at:      new Date().toISOString(),
+      }, { onConflict: 'opportunity_id,supplier_id' });
+    } catch (err) {
+      console.warn('RECON: supplier_matches upsert failed —', err.message);
+    }
   }
 
   console.log(`RECON: Opportunity ${opportunityId} — ${top10.length} supplier matches stored`);

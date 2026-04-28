@@ -9,6 +9,18 @@
 
 const { supabase, logAction } = require('../lib/supabase');
 
+// ----------------------------------------------------------
+// VERTICAL DERIVATION: Classify opportunity by NAICS code
+// ----------------------------------------------------------
+const SUPPLY_NAICS_PREFIXES = ['541511','541512','541519','541330','561110','561210','424410','332999','339999','611420','611430','541611','541618','488490'];
+const RE_NAICS_PREFIXES = ['531110','531120','531210','531311','531312','531390'];
+function deriveVertical(naics) {
+  const n = (naics || '').trim();
+  if (RE_NAICS_PREFIXES.some(p => n.startsWith(p))) return 'realestate';
+  if (SUPPLY_NAICS_PREFIXES.some(p => n.startsWith(p))) return 'supply';
+  return 'construction';
+}
+
 // Walker Contractors target NAICS codes
 // Construction: 236220, 238210, 237990, 236116, 561730
 // Supply: 424710 (Fuel), 424130 (Janitorial/Paper), 424490 (PPE), 424120 (Office Supplies), 424410 (Food & Beverage)
@@ -149,17 +161,22 @@ async function scanPortal(portal) {
 async function upsertStateOpportunity(opp, portal) {
   const solicitationNumber = opp.solicitation_number || portal.state + '-' + Date.now();
 
+  const naicsCode = opp.naics || '236220';
+  const rawDeadline = opp.deadline || null;
+  const parsedDeadline = rawDeadline ? new Date(rawDeadline).toISOString().split('T')[0] : null;
+
   const { error } = await supabase.from('opportunities').upsert({
     solicitation_number: solicitationNumber,
     title: opp.title || 'State Procurement Opportunity',
     agency: portal.state + ' ' + (opp.agency || 'State Agency'),
-    naics: opp.naics || '236220',
+    naics: naicsCode,
     state: portal.state,
     value: opp.value || null,
     posted_date: opp.posted_date || new Date().toISOString().split('T')[0],
-    deadline: opp.deadline || null,
+    deadline: parsedDeadline,
     source: portal.name,
     status: 'new',
+    vertical: deriveVertical(naicsCode),
   }, { onConflict: 'solicitation_number' });
 
   if (error) {
