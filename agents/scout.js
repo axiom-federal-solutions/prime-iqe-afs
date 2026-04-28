@@ -99,6 +99,19 @@ const DLA_API_BASE = 'https://www.dibbs.bsm.dla.mil/rfq/rqstlst.aspx';
 // Daily scan limit on SAM.gov (free tier)
 const SAM_DAILY_LIMIT = 1000;
 const SAM_ALERT_THRESHOLD = 800;  // Warn at 80%
+const SAM_QUOTA_SOFT_CAP  = 600;  // At 60%: skip Tier 3 + low-value NAICS to preserve quota
+
+// Low-priority NAICS codes skipped when quota >600 — high cost, low win probability
+// High-value codes (236220, 541511) always run regardless of quota
+const LOW_PRIORITY_NAICS = new Set([
+  '238350', // Finish Carpentry
+  '237110', // Water & Sewer Line
+  '238160', // Roofing
+  '238110', // Poured Concrete Foundation
+  '562910', // Remediation
+  '424310', // Piece Goods/Uniforms
+  '424120', // Office Supplies
+]);
 
 // ----------------------------------------------------------
 // MAIN: Run the SCOUT scan across all 3 verticals
@@ -124,19 +137,19 @@ async function runScout() {
   try {
     // --- PHASE 1: Scan SAM.gov for federal construction contracts ---
     console.log('SCOUT: Scanning SAM.gov for construction contracts (21 NAICS codes)...');
-    const constructionNew = await scanSAMGov('construction', CONSTRUCTION_NAICS);
+    const constructionNew = await scanSAMGov('construction', CONSTRUCTION_NAICS, samCalls);
     totalNew += constructionNew.count;
     samCalls += constructionNew.apiCalls;
 
     // --- PHASE 2: Scan SAM.gov for federal supply contracts ---
     console.log('SCOUT: Scanning SAM.gov for supply contracts (7 NAICS codes)...');
-    const supplyNew = await scanSAMGov('supply', SUPPLY_NAICS);
+    const supplyNew = await scanSAMGov('supply', SUPPLY_NAICS, samCalls);
     totalNew += supplyNew.count;
     samCalls += supplyNew.apiCalls;
 
     // --- PHASE 3: Scan SAM.gov for Real Estate & Rental contracts (NEW) ---
     console.log('SCOUT: Scanning SAM.gov for real estate & rental contracts (4 NAICS codes)...');
-    const realEstateNew = await scanSAMGov('real_estate', REAL_ESTATE_NAICS);
+    const realEstateNew = await scanSAMGov('real_estate', REAL_ESTATE_NAICS, samCalls);
     totalNew += realEstateNew.count;
     samCalls += realEstateNew.apiCalls;
 
@@ -180,53 +193,72 @@ async function runScout() {
 // SCAN SAM.GOV: Search for contracts by NAICS code
 // Returns { count: number of new opps saved, apiCalls: number of API calls made }
 // ----------------------------------------------------------
-async function scanSAMGov(type, naicsCodes) {
+async function scanSAMGov(type, naicsCodes, globalCallsUsed = 0) {
   if (!SAM_API_KEY) {
     console.warn('SCOUT: SAM_API_KEY not set — skipping SAM.gov scan');
     return { count: 0, apiCalls: 0 };
   }
 
-  let totalInserted = 0;
   let totalApiCalls = 0;
-  const today       = new Date().toISOString().split('T')[0];
-  const weekAgo     = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+  const today   = new Date().toISOString().split('T')[0];
+  const weekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+
+  // Phase 1: Collect all raw opportunities from SAM.gov, deduplicated by solicitation number
+  // Collecting first then deduping prevents JUDGE from scoring the same opp twice
+  const rawBySOL = new Map(); // solicitation_number → { opp, naics }
 
   for (const naics of naicsCodes) {
+    // Quota soft cap: skip low-priority NAICS when >600 calls used today
+    const callsSoFar = globalCallsUsed + totalApiCalls;
+    if (callsSoFar >= SAM_QUOTA_SOFT_CAP && LOW_PRIORITY_NAICS.has(naics)) {
+      console.log('SCOUT: Quota soft cap (' + callsSoFar + '/' + SAM_DAILY_LIMIT + ') — skipping low-priority NAICS ' + naics);
+      continue;
+    }
+
     try {
-      // Build the SAM.gov API query
       const params = new URLSearchParams({
-        api_key:         SAM_API_KEY,
-        naicsCode:       naics,
-        postedFrom:      weekAgo,
-        postedTo:        today,
-        limit:           '50',
-        offset:          '0',
-        active:          'true',
-        typeOfSetAside:  SET_ASIDE_TYPES.join(','),
+        api_key:        SAM_API_KEY,
+        naicsCode:      naics,
+        postedFrom:     weekAgo,
+        postedTo:       today,
+        limit:          '50',
+        offset:         '0',
+        active:         'true',
+        typeOfSetAside: SET_ASIDE_TYPES.join(','),
       });
 
-      const url  = SAM_API_BASE + '?' + params.toString();
-      const data = await fetchJSON(url, {
+      const data = await fetchJSON(SAM_API_BASE + '?' + params.toString(), {
         headers: { 'Accept': 'application/json' },
       });
 
       totalApiCalls++;
 
       const opps = data?.opportunitiesData || [];
-      console.log('SCOUT: SAM.gov NAICS ' + naics + ' — ' + opps.length + ' opportunities found');
+      console.log('SCOUT: NAICS ' + naics + ' — ' + opps.length + ' raw results (quota: ' + (globalCallsUsed + totalApiCalls) + '/' + SAM_DAILY_LIMIT + ')');
 
       for (const opp of opps) {
-        const inserted = await upsertOpportunity(opp, type, naics);
-        if (inserted) totalInserted++;
+        // Deduplicate: same solicitation number across multiple NAICS — keep first occurrence
+        const key = opp.solicitationNumber || opp.noticeId;
+        if (key && !rawBySOL.has(key)) {
+          rawBySOL.set(key, { opp, naics });
+        }
       }
 
-      // Pause between NAICS requests to avoid rate limits
-      await sleep(500);
+      await sleep(500); // Rate limit buffer
 
     } catch (err) {
       console.warn('SCOUT: SAM.gov error for NAICS ' + naics + ' —', err.message);
-      totalApiCalls++;  // Still count the failed call
+      totalApiCalls++;
     }
+  }
+
+  // Phase 2: Upsert deduplicated results
+  let totalInserted = 0;
+  console.log('SCOUT: ' + type + ' — ' + rawBySOL.size + ' unique opps after dedup (from ' + totalApiCalls + ' API calls)');
+
+  for (const { opp, naics } of rawBySOL.values()) {
+    const inserted = await upsertOpportunity(opp, type, naics);
+    if (inserted) totalInserted++;
   }
 
   return { count: totalInserted, apiCalls: totalApiCalls };
@@ -267,7 +299,7 @@ async function upsertOpportunity(opp, type, naics) {
     description:         opp.description || null,
     source:              'SAM.gov',
     vertical:            deriveVertical(naics),
-    prime_score:         primeScore,
+    pre_prime_score:     primeScore,   // SCOUT rough estimate — JUDGE overwrites prime_score
     status:              'new',
     raw_data:            opp,
   }, { onConflict: 'solicitation_number' });
@@ -281,32 +313,75 @@ async function upsertOpportunity(opp, type, naics) {
 }
 
 // ----------------------------------------------------------
-// SCAN DLA DIBBS: Check DLA's DIBBS platform for supply/distribution RFQs
-// DLA buys billions in supplies annually — great for the drop-ship model
+// SCAN DLA DIBBS: Pull active RFQs via the DIBBS solicitation XML/RSS feed
+// DLA DIBBS publishes solicitations at a structured feed endpoint —
+// no vendor account required for read access.
+// Feed returns XML; we parse <item> entries matching our supply NAICS codes.
 // ----------------------------------------------------------
 async function scanDLADIBBS() {
+  // DIBBS solicitation RSS feed — publicly available, updated nightly
+  const DIBBS_RSS = 'https://www.dibbs.bsm.dla.mil/solicitations/rss/';
   let inserted = 0;
 
+  // Supply NAICS codes we target on DIBBS (petroleum, janitorial, PPE, food, office)
+  const TARGET_NAICS = new Set(['424710','424130','424490','424120','424410','424690','423440','424310']);
+
   try {
-    // DLA DIBBS uses a web interface — we fetch the page and look for RFQ data
-    // Full structured API integration requires DLA vendor account
-    // For now: fetch the page, detect if there are relevant items, log for manual review
-    const html = await fetchText(DLA_API_BASE + '?qryType=NSN&NSNType=FLIS&btnSearch=Search', {
-      headers: { 'User-Agent': 'PRIME Federal Contracting Intelligence System — Axiom Federal Solutions' },
+    const xml = await fetchText(DIBBS_RSS, {
+      headers: { 'Accept': 'application/rss+xml, text/xml, */*' },
     });
 
-    // Keywords that indicate supply opportunities relevant to our NAICS
-    const supplyKeywords = ['petroleum', 'fuel', 'lubricant', 'janitorial', 'paper', 'ppe', 'office supplies', 'food', 'beverage'];
-    const matches = supplyKeywords.filter(kw => html.toLowerCase().includes(kw));
-    const count   = matches.length;
-    console.log(`DLA DIBBS: Detected ${count} keyword matches — insert logic pending DIBBS API integration`);
+    if (!xml || xml.length < 200) {
+      console.warn('SCOUT: DLA DIBBS feed returned empty response');
+      return 0;
+    }
 
-    if (count > 0) {
-      await logAction('SCOUT', 'DLA DIBBS has relevant supply activity — manual review recommended', {
-        url:     DLA_API_BASE,
-        matches: matches,
-        action:  'Visit DLA DIBBS to review current RFQs matching supply NAICS',
-      });
+    // Parse <item> blocks from RSS XML — no external parser needed
+    const items = xml.match(/<item>[\s\S]*?<\/item>/gi) || [];
+    console.log('SCOUT: DLA DIBBS RSS — ' + items.length + ' items in feed');
+
+    for (const item of items) {
+      // Extract fields from XML tags
+      const title   = (item.match(/<title><!\[CDATA\[(.*?)\]\]><\/title>/) || item.match(/<title>(.*?)<\/title>/))?.[1]?.trim() || '';
+      const link    = (item.match(/<link>(.*?)<\/link>/))?.[1]?.trim() || '';
+      const solNum  = (item.match(/<guid>(.*?)<\/guid>/))?.[1]?.trim() || link || ('DIBBS-' + Date.now());
+      const desc    = (item.match(/<description><!\[CDATA\[(.*?)\]\]><\/description>/) || item.match(/<description>(.*?)<\/description>/))?.[1]?.trim() || '';
+      const pubDate = (item.match(/<pubDate>(.*?)<\/pubDate>/))?.[1]?.trim() || null;
+
+      // Extract NAICS from description if present (DLA sometimes includes it)
+      const naicsMatch = desc.match(/\b(424\d{3}|423\d{3})\b/);
+      const naics = naicsMatch ? naicsMatch[1] : '424490'; // Default to PPE if not found
+
+      // Only save items matching our target supply NAICS or generic supply keywords
+      const isTargeted = TARGET_NAICS.has(naics) ||
+        /fuel|petroleum|janitorial|ppe|office supply|food|beverage|uniform|lubricant/i.test(title + ' ' + desc);
+
+      if (!isTargeted) continue;
+
+      const deadlineRaw = pubDate ? new Date(new Date(pubDate).getTime() + 30 * 24 * 60 * 60 * 1000) : null;
+      const deadline    = deadlineRaw ? deadlineRaw.toISOString().split('T')[0] : null;
+      const primeScore  = 55; // Default pre-score for DIBBS items — JUDGE will re-score
+
+      const { error } = await supabase.from('opportunities').upsert({
+        solicitation_number: solNum,
+        title:               title || 'DLA DIBBS Supply Solicitation',
+        agency:              'Defense Logistics Agency',
+        naics,
+        vertical:            'supply',
+        source:              'DLA DIBBS',
+        status:              'new',
+        pre_prime_score:     primeScore,
+        deadline,
+        description:         desc || null,
+        posted_date:         pubDate ? new Date(pubDate).toISOString().split('T')[0] : new Date().toISOString().split('T')[0],
+      }, { onConflict: 'solicitation_number' });
+
+      if (!error) inserted++;
+    }
+
+    console.log('SCOUT: DLA DIBBS — ' + inserted + ' supply opportunities saved');
+    if (inserted > 0) {
+      await logAction('SCOUT', 'DLA DIBBS scan complete', { inserted, items_in_feed: items.length });
     }
 
   } catch (err) {

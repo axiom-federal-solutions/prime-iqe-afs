@@ -181,6 +181,7 @@ async function scoreOpportunity(opp) {
   // Build the update payload — real estate opps also get lease_score stored separately
   const updatePayload = {
     prime_score:    score,        // Always populate prime_score for sorting/display
+    raw_data:       null,         // Null out raw SAM.gov JSON after scoring — prevents DB bloat (~5KB/opp)
     score_factors:  factors,
     recommendation: recommendation,
     tier:           tier,
