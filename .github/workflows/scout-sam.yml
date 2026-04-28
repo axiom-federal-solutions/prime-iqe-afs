@@ -48,13 +48,14 @@ jobs:
       - name: Reset SAM.gov daily call counter (midnight run only)
         # Only reset the counter on the midnight run (4 AM UTC = 11 PM CT)
         if: github.event.schedule == '0 4 * * *'
-        run: node -e "
-          const { setConfig } = require('./lib/supabase');
-          setConfig('SAM_CALLS_TODAY', '0').then(() => {
-            console.log('SAM call counter reset for new day');
-            process.exit(0);
-          });
-        "
+        run: |
+          node -e "
+            const { setConfig } = require('./lib/supabase');
+            setConfig('SAM_CALLS_TODAY', '0').then(() => {
+              console.log('SAM call counter reset for new day');
+              process.exit(0);
+            });
+          "
         env:
           SUPABASE_URL:              ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}

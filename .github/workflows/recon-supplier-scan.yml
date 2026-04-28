@@ -58,14 +58,7 @@ jobs:
       #    This calls scanSuppliers(), enrichFromSBA(), enrichFromUSAspending(),
       #    then matchAllNewOpportunities() in sequence
       - name: Run supplier scan and matching
-        run: |
-          node -e "
-          const recon = require('./agents/recon.js');
-          // Note: recon.js exports matchSuppliersToOpportunity and matchAllNewOpportunities
-          // The full scan (scanSuppliers, enrichFromSBA, enrichFromUSAspending) is embedded
-          // in recon.js and runs via the standard runRecon() call on weekly schedule
-          console.log('Supplier scan triggered via workflow');
-          "
+        run: node agents/recon.js
         env:
           SUPABASE_URL:              ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
