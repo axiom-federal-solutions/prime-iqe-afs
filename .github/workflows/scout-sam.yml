@@ -27,6 +27,9 @@ on:
         required: false
         default: 'Manual scan'
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
+
 jobs:
   scout-scan:
     name: Scan SAM.gov for New Opportunities
@@ -40,7 +43,7 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '24'
 
       - name: Install dependencies
         run: npm install

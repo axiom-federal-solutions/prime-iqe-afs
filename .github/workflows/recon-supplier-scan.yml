@@ -33,6 +33,9 @@ on:
           - full
           - match_only
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
+
 jobs:
   supplier-scan:
     name: Scan and Match Suppliers
@@ -48,7 +51,7 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '24'
 
       # 3. Install dependencies
       - name: Install dependencies
