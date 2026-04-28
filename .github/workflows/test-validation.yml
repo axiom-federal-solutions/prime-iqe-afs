@@ -1,0 +1,71 @@
+# =============================================================
+# TEST-VALIDATION.YML — T.E.S.T. v2 Workflow
+# JOB: Run all 28+ validation tests across 6 categories
+#      Catches data integrity issues before they become bid problems
+# SCHEDULE: Daily 04:00 CT (before Brandi at 06:00)
+# TRIGGERS ALSO: After SCOUT, JUDGE, EXEC, and BRANDI complete
+# COST: $0/month — T.E.S.T. agent makes zero LLM calls
+# =============================================================
+
+name: T.E.S.T. Validation
+
+on:
+  # Daily at 04:00 CT = 10:00 UTC
+  schedule:
+    - cron: '0 10 * * *'
+
+  # Triggered after other agents complete
+  workflow_run:
+    workflows:
+      - "SCOUT SAM Scan"
+      - "JUDGE Scoring"
+      - "EXEC Prompt Payment Check"
+      - "BRANDI Morning Brief"
+    types:
+      - completed
+
+  # Allow manual trigger from GitHub Actions UI
+  workflow_dispatch:
+    inputs:
+      reason:
+        description: 'Why are you running T.E.S.T. manually?'
+        required: false
+        default: 'Manual validation check'
+
+jobs:
+  run-test-validation:
+    name: Run T.E.S.T. Validation Suite
+    runs-on: ubuntu-latest
+    timeout-minutes: 10  # T.E.S.T. should never take longer than 10 minutes
+
+    steps:
+      # 1. Get the code from GitHub
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      # 2. Set up Node.js (same version as all other agents)
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      # 3. Install dependencies
+      - name: Install dependencies
+        run: npm ci
+
+      # 4. Run T.E.S.T. agent
+      - name: Run T.E.S.T. validation
+        run: node agents/test.js
+        env:
+          SUPABASE_URL:            ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          SAM_API_KEY:             ${{ secrets.SAM_API_KEY }}
+          ANTHROPIC_API_KEY:       ${{ secrets.ANTHROPIC_API_KEY }}
+          SENDGRID_API_KEY:        ${{ secrets.SENDGRID_API_KEY }}
+          CAGE_CODE:               ${{ secrets.CAGE_CODE }}
+
+      # 5. If T.E.S.T. fails (non-zero exit), log it — but don't fail the workflow
+      #    T.E.S.T. handles its own HALT logic via system_config + Brandi alerts
+      - name: Log completion
+        if: always()
+        run: echo "T.E.S.T. run complete at $(date -u '+%Y-%m-%d %H:%M UTC')"

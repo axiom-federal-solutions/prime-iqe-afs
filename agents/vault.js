@@ -8,7 +8,7 @@
 // SAFETY RULE: Checks kill switch. Failing compliance blocks the bid.
 // =============================================================
 
-const { supabase, logAction, checkSystemHalt } = require('../lib/supabase');
+const { supabase, logAction, isAgentEnabled } = require('../lib/supabase');
 
 // Current compliance status — kept in sync with Supabase system_config
 // Update these when licenses/certs are renewed
@@ -42,8 +42,11 @@ const COMPLIANCE = {
 // Warning threshold — alert when a cert or license expires in less than X days
 const EXPIRY_WARNING_DAYS = 90;
 
-// Supply NAICS codes — these get the fast bypass path
-const SUPPLY_NAICS = ['424710', '424130', '424490', '424120', '424410'];
+// Supply NAICS codes — fast bypass (no bonding, no Davis-Bacon, no license)
+const SUPPLY_NAICS = ['424710','424130','424490','424120','424690','423440','424310'];
+
+// Real Estate & Rental NAICS — asset ownership gate (NEW 3rd vertical)
+const REAL_ESTATE_NAICS = ['531110','531120','532412','532120'];
 
 // ----------------------------------------------------------
 // MAIN: Run daily compliance check
@@ -51,9 +54,9 @@ const SUPPLY_NAICS = ['424710', '424130', '424490', '424120', '424410'];
 async function runVault() {
   console.log('VAULT: Starting daily compliance check...');
 
-  // Check kill switch first
-  const halted = await checkSystemHalt('VAULT');
-  if (halted) process.exit(0);
+  // Check per-agent enable flag (T.E.S.T. can disable VAULT via system_config)
+  const enabled = await isAgentEnabled('VAULT');
+  if (!enabled) process.exit(0);
 
   try {
     // --- PART 1: Check system-wide compliance status ---
@@ -146,9 +149,12 @@ async function checkPendingBids() {
     const opp = bid.opportunities;
     if (!opp) continue;
 
-    const isSupply = SUPPLY_NAICS.includes(opp.naics);
+    const isSupply     = SUPPLY_NAICS.includes(opp.naics);
+    const isRealEstate = REAL_ESTATE_NAICS.includes(opp.naics);
 
-    if (isSupply) {
+    if (isRealEstate) {
+      await runRealEstateComplianceCheck(bid, opp);
+    } else if (isSupply) {
       await runSupplyComplianceCheck(bid, opp);
     } else {
       await runConstructionComplianceCheck(bid, opp);
@@ -338,6 +344,98 @@ function checkExpiryAlerts() {
   }
 
   return alerts;
+}
+
+// ----------------------------------------------------------
+// REAL ESTATE COMPLIANCE: Asset ownership gate for Real Estate & Rental bids
+// KEY RULE: Walker can only bid if the asset (property/equipment/vehicle) EXISTS
+// This is the hard gate — no asset = INELIGIBLE, no exceptions
+// ----------------------------------------------------------
+async function runRealEstateComplianceCheck(bid, opp) {
+  const checks  = [];
+  let eligible  = true;
+
+  // SAM.gov — still required for all federal contracts
+  if (!COMPLIANCE.sam_active) {
+    checks.push({ check: 'SAM.gov Active', status: 'FAIL', note: 'SAM.gov registration inactive' });
+    eligible = false;
+  } else {
+    checks.push({ check: 'SAM.gov Active', status: 'PASS', note: 'UEI: ' + COMPLIANCE.uei });
+  }
+
+  // Set-aside eligibility
+  const sa = (opp.set_aside || '').toUpperCase();
+  if (['SDB','SBA','SBP'].includes(sa) && COMPLIANCE.sdb_cert) {
+    checks.push({ check: 'Set-Aside Eligibility', status: 'PASS', note: 'SDB certified — qualifies for ' + sa });
+  } else if (['SDB','SBA','SBP'].includes(sa) && !COMPLIANCE.sdb_cert) {
+    checks.push({ check: 'Set-Aside Eligibility', status: 'FAIL', note: 'SDB cert required for ' + sa });
+    eligible = false;
+  } else {
+    checks.push({ check: 'Set-Aside Eligibility', status: 'PASS', note: 'Full and open — no cert required' });
+  }
+
+  // *** ASSET OWNERSHIP GATE — the critical real estate check ***
+  // Check if Walker has confirmed asset ownership in the database
+  // Joe must manually enter owned properties/equipment into the system
+  const assetType = getAssetTypeFromNAICS(opp.naics);
+  const { data: ownedAssets } = await supabase
+    .from('compliance')
+    .select('id, name, status')
+    .ilike('type', `%${assetType}%`)
+    .eq('status', 'active')
+    .limit(5);
+
+  const hasAsset = ownedAssets && ownedAssets.length > 0;
+  checks.push({
+    check:  'Asset Ownership Confirmed',
+    status: hasAsset ? 'PASS' : 'FAIL',
+    note:   hasAsset
+      ? `Found ${ownedAssets.length} owned ${assetType} in system: ${ownedAssets.map(a => a.name).join(', ')}`
+      : `NO ${assetType.toUpperCase()} found in compliance records — CANNOT BID. Add owned ${assetType} to PRIME to unlock this opportunity.`,
+  });
+  if (!hasAsset) eligible = false;  // Hard block — no asset = no bid
+
+  // Property insurance check (for real estate leases)
+  if (['531110','531120'].includes(opp.naics)) {
+    checks.push({
+      check:  'Property/Landlord Insurance',
+      status: 'ACTION_REQUIRED',
+      note:   'Confirm landlord liability insurance is in place before executing lease. GSA requires $2M minimum.',
+    });
+  }
+
+  // Equipment/vehicle insurance check
+  if (['532412','532120'].includes(opp.naics)) {
+    checks.push({
+      check:  'Equipment/Fleet Insurance',
+      status: 'ACTION_REQUIRED',
+      note:   'Confirm equipment or vehicle rental insurance covers government use before bid submission.',
+    });
+  }
+
+  // Bypassed construction-specific checks (document for audit trail)
+  checks.push({ check: 'Contractor License', status: 'BYPASSED', note: 'Not required for property/equipment leasing' });
+  checks.push({ check: 'Bonding',            status: 'BYPASSED', note: 'Performance bonds not required for lease contracts' });
+  checks.push({ check: 'Davis-Bacon',        status: 'BYPASSED', note: 'Davis-Bacon does not apply to lease contracts' });
+
+  await supabase.from('bids').update({
+    compliance_checks: checks,
+    compliance_status: eligible ? 'ELIGIBLE' : 'INELIGIBLE',
+    compliance_date:   new Date().toISOString(),
+  }).eq('id', bid.id);
+
+  console.log('VAULT: ' + opp.solicitation_number + ' (REAL ESTATE) → ' + (eligible ? 'ELIGIBLE — asset confirmed' : 'INELIGIBLE — asset ownership not confirmed'));
+}
+
+// Map NAICS to asset type label for compliance lookup
+function getAssetTypeFromNAICS(naics) {
+  const map = {
+    '531110': 'residential_property',
+    '531120': 'commercial_property',
+    '532412': 'construction_equipment',
+    '532120': 'truck_fleet',
+  };
+  return map[naics] || 'real_estate_asset';
 }
 
 // Run VAULT when this file is executed

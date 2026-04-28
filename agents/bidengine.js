@@ -7,7 +7,7 @@
 // =============================================================
 
 // Load helper tools
-const { supabase, logAction } = require('../lib/supabase');
+const { supabase, logAction, isAgentEnabled } = require('../lib/supabase');
 
 // Walker Contractors LLC / Axiom Federal Solutions HQ — New Orleans, LA
 const HQ_LOCATION = { state: 'LA', lat: 29.9511, lng: -90.0715 };
@@ -321,6 +321,48 @@ async function getOpportunity(opportunityId) {
   if (error || !data) throw new Error('Opportunity not found: ' + opportunityId);
   return data;
 }
+
+// ----------------------------------------------------------
+// FIND DISTRIBUTORS: Cross-reference supplier DB for supply bid pricing
+// Instead of guessing at distributor prices, look up matched suppliers
+// who have distributor match type for this opportunity
+// ----------------------------------------------------------
+async function findDistributors(opportunityId) {
+  try {
+    const { data: matches } = await supabase
+      .from('supplier_matches')
+      .select('*, suppliers(name, state, naics_codes, avg_contract_value, federal_contract_count, certifications)')
+      .eq('opportunity_id', opportunityId)
+      .eq('match_type', 'distributor')
+      .gte('match_score', 40)
+      .order('match_score', { ascending: false })
+      .limit(5);
+
+    if (!matches || matches.length === 0) {
+      console.log(`BID ENGINE: No distributor matches found for opportunity ${opportunityId} — using market price estimates`);
+      return [];
+    }
+
+    const distributors = matches.map(m => ({
+      name:          m.suppliers?.name || 'Unknown',
+      state:         m.suppliers?.state || '',
+      match_score:   m.match_score,
+      naics_codes:   m.suppliers?.naics_codes || [],
+      avg_val:       m.suppliers?.avg_contract_value || 0,
+      contracts_won: m.suppliers?.federal_contract_count || 0,
+    }));
+
+    console.log(`BID ENGINE: Found ${distributors.length} distributor candidates for opportunity ${opportunityId}`);
+    return distributors;
+
+  } catch (err) {
+    console.warn('BID ENGINE: findDistributors error —', err.message);
+    return [];
+  }
+}
+
+// Export so DRAFT and other agents can call findDistributors
+module.exports = { findDistributors };
 
 // ----------------------------------------------------------
 // START: Run BID ENGINE when this file is executed

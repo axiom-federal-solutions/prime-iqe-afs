@@ -8,7 +8,7 @@
 // SAFETY RULE: Checks kill switch before every batch
 // =============================================================
 
-const { supabase, logAction, checkSystemHalt } = require('../lib/supabase');
+const { supabase, logAction, isAgentEnabled } = require('../lib/supabase');
 const { claudeJSON } = require('../lib/claude');
 const { checkCostCap, recordCost } = require('../lib/cost-guard');
 
@@ -51,9 +51,27 @@ const THRESHOLDS = {
   NO_BID:       0,  // Red   — skip this one
 };
 
-// Construction NAICS codes we compete for
-const CONSTRUCTION_NAICS = ['236220', '236116', '237990', '238210', '238160', '238110'];
-const SUPPLY_NAICS        = ['424710', '424130', '424490', '424120', '424410'];
+// NAICS code sets by vertical (drives which scoring model to use)
+const CONSTRUCTION_NAICS = [
+  '236220','236116','237990','238210','238160','238110',
+  '236210','238320','238910','238990','238220',
+  '238310','238330','238110','238160','237310','237110','562910',
+  '541330','561720','561210','238350','561730',
+];
+const SUPPLY_NAICS = [
+  '424710','424130','424490','424120','424690','423440','424310',
+];
+// Real Estate & Rental — uses LEASE Score model
+const REAL_ESTATE_NAICS = ['531110','531120','532412','532120'];
+
+// LEASE Score weights for Real Estate & Rental vertical
+const LEASE_WEIGHTS = {
+  asset_ownership: 0.30,  // Do we own the property/equipment needed?
+  location_match:  0.25,  // Is the asset in the right location?
+  lease_term_fit:  0.20,  // Does the contract term match our holding strategy?
+  cert_match:      0.15,  // Set-aside certification match
+  revenue_stability: 0.10, // Is this recurring, stable revenue?
+};
 
 // ----------------------------------------------------------
 // MAIN: Score all opportunities that are waiting for a score
@@ -61,9 +79,9 @@ const SUPPLY_NAICS        = ['424710', '424130', '424490', '424120', '424410'];
 async function runJudge() {
   console.log('JUDGE: Starting scoring run...');
 
-  // Check kill switch
-  const halted = await checkSystemHalt('JUDGE');
-  if (halted) process.exit(0);
+  // Check per-agent enable flag (T.E.S.T. can disable JUDGE via system_config)
+  const enabled = await isAgentEnabled('JUDGE');
+  if (!enabled) process.exit(0);
 
   try {
     // Find all opportunities that need scoring
@@ -121,40 +139,57 @@ async function runJudge() {
 }
 
 // ----------------------------------------------------------
-// SCORE OPPORTUNITY: Calculate PRIME or ACQ score for one opportunity
+// SCORE OPPORTUNITY: Route to the correct scoring model
+// Construction → PRIME Score | Supply → ACQ Score | Real Estate → LEASE Score
 // ----------------------------------------------------------
 async function scoreOpportunity(opp) {
-  const isSupply = SUPPLY_NAICS.includes(opp.naics);
+  const isSupply     = SUPPLY_NAICS.includes(opp.naics);
+  const isRealEstate = REAL_ESTATE_NAICS.includes(opp.naics);
 
   let scoreResult;
+  let scoreField = 'prime_score'; // Default field to save score into
 
-  if (isSupply) {
+  if (isRealEstate) {
+    scoreResult = await calcLeaseScore(opp);
+    scoreField  = 'lease_score';
+  } else if (isSupply) {
     scoreResult = await calcAcqScore(opp);
+    scoreField  = 'prime_score'; // ACQ score stored in prime_score column as generic score
   } else {
     scoreResult = await calcPrimeScore(opp);
+    scoreField  = 'prime_score';
   }
 
   const { score, factors, recommendation, reasoning } = scoreResult;
 
-  // Determine the bid tier
+  // Determine the bid tier (same thresholds across all 3 scoring models)
   const tier = score >= THRESHOLDS.STRONG_BID ? 'STRONG_BID'
              : score >= THRESHOLDS.BID         ? 'BID'
              : score >= THRESHOLDS.CONDITIONAL ? 'CONDITIONAL'
              : 'NO_BID';
 
+  // Build the update payload — real estate opps also get lease_score stored separately
+  const updatePayload = {
+    prime_score:    score,        // Always populate prime_score for sorting/display
+    score_factors:  factors,
+    recommendation: recommendation,
+    tier:           tier,
+    reasoning:      reasoning,
+    scored_at:      new Date().toISOString(),
+    status:         tier === 'NO_BID' ? 'rejected' : 'scored',
+    needs_scoring:  false,
+  };
+
+  // Also store lease_score in its dedicated column for real estate opps
+  if (isRealEstate) {
+    updatePayload.lease_score = score;
+    updatePayload.prime_score = null; // Real estate doesn't have a PRIME Score
+  }
+
   // Save the score and recommendation to the database
   const { error } = await supabase
     .from('opportunities')
-    .update({
-      prime_score:    score,
-      score_factors:  factors,
-      recommendation: recommendation,
-      tier:           tier,
-      reasoning:      reasoning,
-      scored_at:      new Date().toISOString(),
-      status:         tier === 'NO_BID' ? 'rejected' : 'scored',
-      needs_scoring:  false,
-    })
+    .update(updatePayload)
     .eq('id', opp.id);
 
   if (error) {
@@ -280,6 +315,135 @@ async function calcAcqScore(opp) {
     recommendation: tier,
     reasoning,
   };
+}
+
+// ----------------------------------------------------------
+// CALC LEASE SCORE: Score a Real Estate & Rental opportunity (5 factors)
+// Asset-dependent: VAULT must confirm asset ownership before bid is allowed
+// This score tells Joe HOW GOOD the contract is IF the asset exists
+// ----------------------------------------------------------
+async function calcLeaseScore(opp) {
+  const naics = opp.naics || '';
+  const state = opp.place_of_performance || '';
+  const title = (opp.title || '').toLowerCase();
+  const value = opp.value || 0;
+
+  // Factor 1: Asset Ownership (0-100)
+  // VAULT checks actual asset records — JUDGE uses NAICS as proxy for now
+  // Full ownership check happens in VAULT before bid submission
+  const assetOwnership = scoreAssetOwnership(naics, title);
+
+  // Factor 2: Location Match (0-100)
+  // Is the asset in or near where the government needs it?
+  const locationMatch = scoreLeaseLocation(state);
+
+  // Factor 3: Lease Term Fit (0-100)
+  // Does the contract duration match Walker's holding/investment strategy?
+  const leaseTermFit = scoreLeaseTermFit(opp, title);
+
+  // Factor 4: Certification Match (0-100)
+  const certMatch = scoreSetAsideMatch(opp); // Reuse supply function — same logic
+
+  // Factor 5: Revenue Stability (0-100)
+  // Is this a long-term stable income stream or one-time emergency contract?
+  const revenueStability = scoreRevenueStability(naics, title);
+
+  // Weighted LEASE Score
+  const finalScore = Math.round(
+    assetOwnership   * LEASE_WEIGHTS.asset_ownership  +
+    locationMatch    * LEASE_WEIGHTS.location_match   +
+    leaseTermFit     * LEASE_WEIGHTS.lease_term_fit   +
+    certMatch        * LEASE_WEIGHTS.cert_match       +
+    revenueStability * LEASE_WEIGHTS.revenue_stability
+  );
+
+  const tier = finalScore >= THRESHOLDS.STRONG_BID ? 'STRONG BID'
+             : finalScore >= THRESHOLDS.BID         ? 'BID'
+             : finalScore >= THRESHOLDS.CONDITIONAL ? 'CONDITIONAL BID'
+             : 'NO BID';
+
+  const reasoning = buildRealEstateReasoning(opp, finalScore, {
+    assetOwnership, locationMatch, leaseTermFit, certMatch, revenueStability,
+  });
+
+  return {
+    score: finalScore,
+    factors: {
+      asset_ownership: assetOwnership,
+      location_match:  locationMatch,
+      lease_term_fit:  leaseTermFit,
+      cert_match:      certMatch,
+      revenue_stability: revenueStability,
+    },
+    recommendation: tier,
+    reasoning,
+  };
+}
+
+// LEASE Score Factor: Asset Ownership — proxy score until VAULT confirms
+function scoreAssetOwnership(naics, title) {
+  // GSA nonresidential leases (531120) — large passive income stream, good score if property exists
+  if (naics === '531120') return 70;  // GSA leases — property ownership assumed pending VAULT check
+  // Military residential housing (531110)
+  if (naics === '531110') return 65;
+  // Equipment rental — likely have construction equipment (532412)
+  if (naics === '532412') return 75;  // Walker likely has some heavy equipment
+  // Truck rental (532120) — good if fleet exists
+  if (naics === '532120') return 60;
+
+  // Keywords suggesting asset availability
+  if (title.includes('adjacent') || title.includes('nearby') || title.includes('baton rouge') ||
+      title.includes('new orleans') || title.includes('louisiana')) return 70;
+
+  return 50; // Unknown — VAULT will confirm actual ownership
+}
+
+// LEASE Score Factor: Location Match for real estate opps
+function scoreLeaseLocation(state) {
+  if (!state) return 40;
+  // Same city/metro (Gulf South) — highest score
+  if (['LA'].includes(state)) return 100;  // Home state
+  if (['MS','TX'].includes(state)) return 80;  // Adjacent — can manage
+  if (['AL','FL','GA'].includes(state)) return 60;  // Same day travel
+  if (['TN','AR'].includes(state)) return 40;  // Manageable
+  return 20;  // Remote — low score
+}
+
+// LEASE Score Factor: Lease Term Fit
+function scoreLeaseTermFit(opp, title) {
+  // Look for lease term signals in title/description
+  if (title.includes('5 year') || title.includes('5-year')) return 95;
+  if (title.includes('3 year') || title.includes('3-year')) return 85;
+  if (title.includes('1 year') || title.includes('annual'))  return 75;
+  if (title.includes('month-to-month') || title.includes('short term')) return 50;
+  if (title.includes('10 year') || title.includes('15 year')) return 40; // Long lock-in
+  return 70; // Unknown term — assume moderate fit
+}
+
+// LEASE Score Factor: Revenue Stability
+function scoreRevenueStability(naics, title) {
+  // GSA office leases are multi-year stable — very high stability
+  if (naics === '531120') return 90;
+  // Military housing — long-term stable demand
+  if (naics === '531110') return 85;
+  // Equipment rental — ongoing, but variable demand
+  if (naics === '532412') return 65;
+  // Truck rental — disaster response is seasonal and unpredictable
+  if (naics === '532120') return 50;
+  return 60;
+}
+
+// Build readable LEASE Score reasoning
+function buildRealEstateReasoning(opp, score, factors) {
+  return (
+    'LEASE Score: ' + score + '/100 (' + (score >= 85 ? 'STRONG BID' : score >= 70 ? 'BID' : score >= 55 ? 'CONDITIONAL' : 'NO BID') + '). ' +
+    'Asset Ownership: ' + factors.assetOwnership + ' (VAULT will confirm before bid) | ' +
+    'Location: ' + factors.locationMatch + ' | ' +
+    'Lease Term Fit: ' + factors.leaseTermFit + ' | ' +
+    'Cert Match: ' + factors.certMatch + ' | ' +
+    'Revenue Stability: ' + factors.revenueStability + '. ' +
+    'REMINDER: VAULT blocks bid submission unless asset ownership is confirmed in the system.'
+  );
 }
 
 // ----------------------------------------------------------

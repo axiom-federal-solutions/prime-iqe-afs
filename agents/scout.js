@@ -1,33 +1,78 @@
 // =============================================================
 // SCOUT.JS — Federal Opportunity Scanner (SAM.gov + DLA DIBBS)
-// JOB: Find construction and supply contracts that match our targets
+// JOB: Find construction, supply, and real estate contracts that match our targets
 //      Runs 4x daily — 6 AM, 12 PM, 6 PM, 11 PM Central Time
 //      Triggers JUDGE automatically when new opportunities are found
 // SCHEDULE: scout-sam.yml GitHub Actions workflow
 // COST: ~$0/month (no AI — pure search, filter, and save)
 // SAFETY RULE: Rate limit at 1,000 SAM.gov calls/day — alert at 80% (800)
+//              32 codes × ~4 state groups = ~128 calls/scan × 4 scans = ~512/day (49% headroom)
+// VERTICALS: Construction (PRIME Score), Supply (ACQ Score), Real Estate & Rental (LEASE Score)
 // =============================================================
 
-const { supabase, logAction, checkSystemHalt, getConfig, setConfig } = require('../lib/supabase');
+const { supabase, logAction, isAgentEnabled, getConfig, setConfig } = require('../lib/supabase');
 const { fetchJSON, fetchText, sleep } = require('../lib/fetch-retry');
 
 // Our company info — used in user-agent headers and set-aside filtering
 const COMPANY = {
   uei:            'USMQMFAGL9M4',
-  cage_code:      process.env.CAGE_CODE || 'TBD',
+  cage_code:      process.env.CAGE_CODE || '7JKKO',
   certifications: ['SDB'],              // Small Disadvantaged Business
   state:          'LA',                 // Home state
   service_states: ['LA','MS','TX','AL','GA','FL','TN'],  // Gulf South footprint
 };
 
-// Construction NAICS codes we compete for
-const CONSTRUCTION_NAICS = ['236220', '236116', '237990', '238210', '238160', '238110'];
+// ---- CONSTRUCTION NAICS (Tier 1 Active + Tier 2 Growth + Tier 3 Watch) ----
+const CONSTRUCTION_NAICS = [
+  // Tier 1 Active — compete now (PRIME Score)
+  '236220',  // Commercial & Institutional Building — primary code
+  '238210',  // Electrical Contractors
+  '237990',  // Other Heavy & Civil Engineering
+  '236116',  // New Multifamily Housing
+  '561730',  // Landscaping Services
+  '236210',  // Industrial Building — warehouses, depots
+  '238320',  // Painting — Joe already won VA paint contract
+  '238910',  // Site Preparation — excavation, grading, demo
+  '238990',  // All Other Specialty Trade — catches misclassified renovations
+  '238220',  // Plumbing, Heating, AC — subbed on every commercial job
+  // Tier 2 Growth — add as capacity builds
+  '238310',  // Drywall & Insulation
+  '238330',  // Flooring
+  '238110',  // Poured Concrete Foundation
+  '238160',  // Roofing — huge recurring federal volume
+  '237310',  // Highway, Street & Bridge
+  '237110',  // Water & Sewer Line
+  '562910',  // Remediation — fastest growing federal category
+  // Tier 3 Watch — requires business expansion
+  '541330',  // Engineering Services — enables design-build
+  '561720',  // Janitorial Services — recurring base ops
+  '561210',  // Facilities Support — multi-year management contracts
+  '238350',  // Finish Carpentry — millwork in federal buildings
+];
 
-// Supply NAICS codes (drop-ship model — Walker holds contract, distributor ships)
-const SUPPLY_NAICS = ['424710', '424130', '424490', '424120', '424410'];
+// ---- SUPPLY NAICS (Active + Tier 1/2 Add-ons) ----
+// Drop-ship model — Walker holds contract, distributor ships
+const SUPPLY_NAICS = [
+  '424710',  // Petroleum — highest value supply
+  '424130',  // Industrial & Personal Service Paper — janitorial
+  '424490',  // Other Grocery & Related Products — PPE classification
+  '424120',  // Stationery & Office Supplies
+  '424690',  // Other Chemical Merchant — cleaning chemicals, degreasers
+  '423440',  // Other Commercial Equipment — safety equipment, alt PPE
+  '424310',  // Piece Goods Merchant — uniforms, work clothing, linens
+];
 
-// All NAICS codes we search for
-const ALL_NAICS = [...CONSTRUCTION_NAICS, ...SUPPLY_NAICS];
+// ---- REAL ESTATE & RENTAL NAICS (New 3rd Vertical — LEASE Score) ----
+// Asset-dependent: VAULT checks asset ownership before allowing bid
+const REAL_ESTATE_NAICS = [
+  '531110',  // Lessors of Residential Buildings — military housing privatization
+  '531120',  // Lessors of Nonresidential Buildings — GSA office/warehouse leases
+  '532412',  // Construction/Mining Equipment Rental — DLA, USACE
+  '532120',  // Truck, Utility Trailer & RV Rental — FEMA/military disaster response
+];
+
+// All 32 NAICS codes we search
+const ALL_NAICS = [...CONSTRUCTION_NAICS, ...SUPPLY_NAICS, ...REAL_ESTATE_NAICS];
 
 // Set-aside types we qualify for
 const SET_ASIDE_TYPES = ['SBA', 'SBP', 'SDVOSBC', 'HZC', 'WOSB', '8A', 'SDB'];
@@ -44,14 +89,14 @@ const SAM_DAILY_LIMIT = 1000;
 const SAM_ALERT_THRESHOLD = 800;  // Warn at 80%
 
 // ----------------------------------------------------------
-// MAIN: Run the SCOUT scan
+// MAIN: Run the SCOUT scan across all 3 verticals
 // ----------------------------------------------------------
 async function runScout() {
-  console.log('SCOUT: Starting opportunity scan...');
+  console.log('SCOUT: Starting opportunity scan across 3 verticals (32 NAICS codes)...');
 
-  // Check kill switch first — if SYSTEM_HALT is active, do nothing
-  const halted = await checkSystemHalt('SCOUT');
-  if (halted) process.exit(0);
+  // Check per-agent enable flag — T.E.S.T. can disable SCOUT via system_config
+  const enabled = await isAgentEnabled('SCOUT');
+  if (!enabled) process.exit(0);
 
   // Check how many SAM.gov API calls we've used today
   const callsToday = parseInt(await getConfig('SAM_CALLS_TODAY', '0'), 10);
@@ -66,18 +111,24 @@ async function runScout() {
 
   try {
     // --- PHASE 1: Scan SAM.gov for federal construction contracts ---
-    console.log('SCOUT: Scanning SAM.gov for construction contracts...');
+    console.log('SCOUT: Scanning SAM.gov for construction contracts (21 NAICS codes)...');
     const constructionNew = await scanSAMGov('construction', CONSTRUCTION_NAICS);
     totalNew += constructionNew.count;
     samCalls += constructionNew.apiCalls;
 
     // --- PHASE 2: Scan SAM.gov for federal supply contracts ---
-    console.log('SCOUT: Scanning SAM.gov for supply contracts...');
+    console.log('SCOUT: Scanning SAM.gov for supply contracts (7 NAICS codes)...');
     const supplyNew = await scanSAMGov('supply', SUPPLY_NAICS);
     totalNew += supplyNew.count;
     samCalls += supplyNew.apiCalls;
 
-    // --- PHASE 3: Scan DLA DIBBS for supply/distribution contracts ---
+    // --- PHASE 3: Scan SAM.gov for Real Estate & Rental contracts (NEW) ---
+    console.log('SCOUT: Scanning SAM.gov for real estate & rental contracts (4 NAICS codes)...');
+    const realEstateNew = await scanSAMGov('real_estate', REAL_ESTATE_NAICS);
+    totalNew += realEstateNew.count;
+    samCalls += realEstateNew.apiCalls;
+
+    // --- PHASE 4: Scan DLA DIBBS for supply/distribution contracts ---
     console.log('SCOUT: Scanning DLA DIBBS for supply contracts...');
     const dibbs = await scanDLADIBBS();
     totalNew += dibbs;
@@ -180,10 +231,15 @@ async function upsertOpportunity(opp, type, naics) {
   const agency   = opp.fullParentPathName || opp.organizationHierarchy?.[0]?.name || 'Unknown Agency';
   const state    = extractState(opp);
 
-  // Calculate PRIME score or ACQ score (rough pre-score before JUDGE runs)
-  const primeScore = type === 'supply'
-    ? calcPreAcqScore(opp, naics)
-    : calcPrePrimeScore(opp, naics, state);
+  // Calculate rough pre-score based on vertical — JUDGE will overwrite with full analysis
+  let primeScore;
+  if (type === 'supply') {
+    primeScore = calcPreAcqScore(opp, naics);
+  } else if (type === 'real_estate') {
+    primeScore = calcPreLeaseScore(opp, naics, state);
+  } else {
+    primeScore = calcPrePrimeScore(opp, naics, state);
+  }
 
   const { error } = await supabase.from('opportunities').upsert({
     solicitation_number: solNum,
@@ -292,6 +348,24 @@ function calcPreAcqScore(opp, naics) {
   if (naics === '424710') score += 10;  // Fuel — high volume repeat business
 
   return Math.min(score, 85);
+}
+
+// Pre-score for Real Estate & Rental opportunities
+// JUDGE will run the full LEASE Score — this just flags high-interest opps for Brandi
+function calcPreLeaseScore(opp, naics, state) {
+  let score = 40;  // Start lower — asset ownership is the real gating factor
+
+  // Gulf Coast state = higher opportunity for disaster response (532120 truck rental)
+  if (state && COMPANY.service_states.includes(state)) score += 20;
+
+  // GSA leases are the most lucrative passive income stream
+  if (naics === '531120') score += 15;
+
+  // Set-aside boost
+  if (opp.typeOfSetAside && SET_ASIDE_TYPES.includes(opp.typeOfSetAside)) score += 10;
+
+  // Cap lower than construction — asset ownership must be confirmed by VAULT
+  return Math.min(score, 75);
 }
 
 // ----------------------------------------------------------

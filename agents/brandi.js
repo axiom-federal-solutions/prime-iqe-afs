@@ -10,7 +10,7 @@
 //              Checks kill switch before every send.
 // =============================================================
 
-const { supabase, logAction, checkSystemHalt, getConfig } = require('../lib/supabase');
+const { supabase, logAction, isAgentEnabled, getConfig } = require('../lib/supabase');
 const { sendBrief, wrapEmail } = require('../lib/sendgrid');
 const { getMonthlySpend } = require('../lib/cost-guard');
 
@@ -41,9 +41,9 @@ async function runBrandi() {
   const mode = process.argv[2] || 'daily';
   console.log('BRANDI: Starting in mode "' + mode + '"...');
 
-  // Check kill switch — if SYSTEM_HALT is active, don't send anything
-  const halted = await checkSystemHalt('BRANDI');
-  if (halted) process.exit(0);
+  // Check per-agent enable flag (T.E.S.T. can disable BRANDI via system_config)
+  const enabled = await isAgentEnabled('BRANDI');
+  if (!enabled) process.exit(0);
 
   try {
     if (mode === 'daily')  await sendDailyBrief();
@@ -353,6 +353,80 @@ function pendingRow(bid) {
     <div style="font-size:11px;color:#8B95AB;">${opp.agency || ''} · Score: <span style="color:${SCORE_COLOR(score)}">${score}</span> · Status: ${bid.status}</div>
     <div style="font-size:11px;color:#E9C46A;margin-top:4px;">→ Review in PRIME dashboard to approve or reject</div>
   </div>`;
+}
+
+// ----------------------------------------------------------
+// GET SUPPLIER ALERTS: Pull new supplier matches for morning brief
+// Shows Joe which opportunities now have qualified subs/teaming partners
+// ----------------------------------------------------------
+async function getSupplierAlerts() {
+  try {
+    const since = new Date(Date.now() - 25 * 60 * 60 * 1000).toISOString();
+
+    const { data: matches } = await supabase
+      .from('supplier_matches')
+      .select('*, opportunities(title, solicitation_number, agency), suppliers(name, state, certifications)')
+      .gte('created_at', since)
+      .gte('match_score', 60)
+      .order('match_score', { ascending: false })
+      .limit(5);
+
+    if (!matches || matches.length === 0) return '';
+
+    let section = '\n📋 SUPPLIER MATCHES (New Today):\n';
+    for (const m of matches) {
+      const opp      = m.opportunities;
+      const supplier = m.suppliers;
+      const certs    = (supplier?.certifications || []).join(', ') || 'No certs';
+      section += `• ${supplier?.name || 'Unknown'} (${supplier?.state || '?'}) — Score: ${m.match_score}/100 · ${m.match_type} · ${certs}\n`;
+      section += `  → ${opp?.title || 'Unknown Opportunity'} (${opp?.solicitation_number || 'N/A'})\n`;
+    }
+
+    return section;
+  } catch (err) {
+    console.warn('BRANDI: getSupplierAlerts failed —', err.message);
+    return '';
+  }
+}
+
+// ----------------------------------------------------------
+// GET TEST HEALTH SECTION: Pull T.E.S.T. results for morning brief
+// Imports from test.js — keeps Brandi informed of system health
+// ----------------------------------------------------------
+async function getTestHealthSection() {
+  try {
+    const since = new Date(Date.now() - 25 * 60 * 60 * 1000).toISOString();
+    const { data: results } = await supabase
+      .from('test_results')
+      .select('test_name, passed, tier, action_taken, category')
+      .gte('created_at', since)
+      .order('created_at', { ascending: false });
+
+    if (!results || results.length === 0) {
+      return '\n🔵 SYSTEM HEALTH: No T.E.S.T. results from last 24h.\n';
+    }
+
+    const total    = results.length;
+    const passed   = results.filter(r => r.passed).length;
+    const halts    = results.filter(r => r.action_taken === 'HALT');
+    const alerts   = results.filter(r => r.action_taken === 'ALERT');
+
+    let section = '\n';
+    if (halts.length > 0) {
+      section += `🔴 SYSTEM HEALTH — T.E.S.T. HALT: ${halts.length} critical failure(s). Agents may be disabled:\n`;
+      halts.forEach(h => { section += `   • ${h.test_name}\n`; });
+      section += '   → Log in to PRIME dashboard → System tab to re-enable after fixing root cause.\n';
+    } else if (alerts.length > 0) {
+      section += `🟡 SYSTEM HEALTH — T.E.S.T. ALERT: ${alerts.length} test(s) failing consistently:\n`;
+      alerts.forEach(a => { section += `   • ${a.test_name}\n`; });
+    } else {
+      section += `🟢 SYSTEM HEALTH: All ${total} T.E.S.T. checks passed (${passed}/${total}).\n`;
+    }
+
+    return section;
+  } catch (err) {
+    return '\n⚠️ SYSTEM HEALTH: Could not load T.E.S.T. results.\n';
+  }
 }
 
 // Run BRANDI when this file is executed

@@ -8,7 +8,7 @@
 // =============================================================
 
 // Load helper tools
-const { supabase, logAction } = require('../lib/supabase');
+const { supabase, logAction, isAgentEnabled } = require('../lib/supabase');
 const { claudeSonnet, claudeHaiku } = require('../lib/claude');
 
 // Our company info — used in every proposal we write
@@ -393,6 +393,52 @@ async function queueForBrandiReview(bidId, eventType) {
     next_step: 'Approve or reject in morning briefing email',
   });
 }
+
+// ----------------------------------------------------------
+// GET SUBS FOR PLAN: Pull real matched suppliers for sub plans (L5-09)
+// Called when generating small business subcontracting plans
+// Replaces placeholder names with actual matched suppliers from the DB
+// ----------------------------------------------------------
+async function getSubsForPlan(opportunityId) {
+  try {
+    const { data: matches } = await supabase
+      .from('supplier_matches')
+      .select('*, suppliers(name, state, certifications, naics_codes, avg_contract_value, federal_contract_count)')
+      .eq('opportunity_id', opportunityId)
+      .in('match_type', ['sub', 'teaming'])
+      .gte('match_score', 50)
+      .order('match_score', { ascending: false })
+      .limit(5);
+
+    if (!matches || matches.length === 0) {
+      // Fallback to generic text if no suppliers matched yet
+      return [{
+        name: 'TBD — Run RECON supplier scan to populate matches',
+        type: 'Subcontractor',
+        naics: 'TBD',
+        cert: 'TBD',
+        estimated_value: 0,
+      }];
+    }
+
+    return matches.map(m => ({
+      name:             m.suppliers?.name || 'Unknown',
+      state:            m.suppliers?.state || '',
+      certifications:   (m.suppliers?.certifications || []).join(', '),
+      naics:            (m.suppliers?.naics_codes || []).slice(0, 2).join(', '),
+      match_score:      m.match_score,
+      match_type:       m.match_type,
+      avg_contract_val: m.suppliers?.avg_contract_value ? '$' + Math.round(m.suppliers.avg_contract_value / 1000) + 'K' : 'N/A',
+      federal_history:  m.suppliers?.federal_contract_count || 0,
+    }));
+  } catch (err) {
+    console.warn('DRAFT: getSubsForPlan failed —', err.message);
+    return [];
+  }
+}
+
+// Export so other modules can call getSubsForPlan
+module.exports = { getSubsForPlan };
 
 // ----------------------------------------------------------
 // START: Run DRAFT when this file is executed

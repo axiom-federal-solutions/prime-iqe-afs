@@ -12,7 +12,7 @@
 // COST: ~$0.50/month (minimal Haiku usage for congressional intel summaries)
 // =============================================================
 
-const { supabase, logAction, checkSystemHalt } = require('../lib/supabase');
+const { supabase, logAction, isAgentEnabled } = require('../lib/supabase');
 const { claudeHaiku } = require('../lib/claude');
 const { fetchJSON, fetchText } = require('../lib/fetch-retry');
 
@@ -36,8 +36,8 @@ const CONCENTRATION_THRESHOLD = 0.80;
 async function runRecon() {
   console.log('RECON: Starting intelligence gathering...');
 
-  const halted = await checkSystemHalt('RECON');
-  if (halted) process.exit(0);
+  const enabled = await isAgentEnabled('RECON');
+  if (!enabled) process.exit(0);
 
   const results = {};
 
@@ -375,6 +375,403 @@ function extractXmlValue(xml, tag) {
   const match = xml.match(new RegExp('<' + tag + '[^>]*>([\\s\\S]*?)<\\/' + tag + '>'));
   return match ? match[1].replace(/<[^>]+>/g, '').trim() : null;
 }
+
+// ----------------------------------------------------------
+// SUPPLIER INTELLIGENCE: Scan free government APIs for subs/partners
+// 3 sources: SAM.gov Entity API, SBA Dynamic Search, USAspending
+// Called by recon-supplier-scan.yml (weekly Monday 03:00 CT)
+// Also called after JUDGE scores a new opportunity (matching only)
+// ----------------------------------------------------------
+
+// Adjacent state network for location scoring (Gulf Coast focus)
+const ADJACENT_STATES = {
+  LA: ['MS','TX','AR'],
+  MS: ['LA','TN','AL'],
+  TX: ['LA','OK','NM'],
+  AL: ['MS','TN','GA','FL'],
+  GA: ['FL','TN','SC','NC'],
+  FL: ['AL','GA'],
+  TN: ['MS','AL','GA','KY','MO'],
+};
+
+// 5-factor match score weights
+const MATCH_WEIGHTS = {
+  naics:    0.30,  // NAICS match
+  cert:     0.25,  // Certification match to set-aside
+  location: 0.20,  // Geographic proximity
+  experience: 0.15, // Past federal contract history
+  capacity: 0.10,  // Company size fits the role
+};
+
+// Minimum score to store a match (below this = noise)
+const MIN_MATCH_SCORE = 40;
+
+// ----------------------------------------------------------
+// SCAN SUPPLIERS: Pull registered contractors from SAM.gov Entity API
+// Uses the SAME API key as SCOUT — no additional cost
+// ----------------------------------------------------------
+async function scanSuppliers() {
+  const samKey = process.env.SAM_API_KEY;
+  if (!samKey) {
+    console.warn('RECON: SAM_API_KEY not set — skipping supplier scan');
+    return 0;
+  }
+
+  // NAICS codes we want subs for — focus on construction subtrades
+  const subNAICS = ['238110','238210','238220','238310','238320','238330','238910','562910','237310'];
+  let totalSaved = 0;
+
+  for (const naics of subNAICS) {
+    try {
+      const url = `https://api.sam.gov/entity-information/v3/entities?api_key=${samKey}&naicsCode=${naics}&entityStatus=Active&purposeOfRegistrationCode=Z2&limit=50`;
+
+      const data = await fetchJSON(url, {
+        headers: { 'User-Agent': 'PRIME-IQE-RECON/1.0', 'Accept': 'application/json' },
+      });
+
+      const entities = data?.entityData || [];
+      console.log(`RECON: SAM Entity API NAICS ${naics} — ${entities.length} suppliers found`);
+
+      for (const entity of entities) {
+        const saved = await upsertSupplier(entity, naics);
+        if (saved) totalSaved++;
+      }
+
+      // Respect rate limits
+      await new Promise(r => setTimeout(r, 500));
+
+    } catch (err) {
+      console.warn(`RECON: Supplier scan error for NAICS ${naics} —`, err.message);
+    }
+  }
+
+  await logAction('RECON', 'Supplier scan complete', { suppliers_saved: totalSaved });
+  return totalSaved;
+}
+
+// ----------------------------------------------------------
+// ENRICH FROM SBA: Add certification status from SBA Dynamic Small Business Search
+// No API key required — public endpoint
+// ----------------------------------------------------------
+async function enrichFromSBA() {
+  const SBA_API = 'https://api.sba.gov/sb_profiles/v3/search?';
+
+  // Get suppliers that haven't been SBA-enriched recently
+  const { data: suppliers } = await supabase
+    .from('suppliers')
+    .select('id, uei, name, state')
+    .is('sba_enriched_at', null)
+    .limit(50);
+
+  if (!suppliers || suppliers.length === 0) return 0;
+
+  let enriched = 0;
+  for (const supplier of suppliers) {
+    try {
+      const params = new URLSearchParams({
+        name:  supplier.name.substring(0, 30),
+        state: supplier.state || '',
+      });
+
+      const data = await fetchJSON(SBA_API + params.toString(), {
+        headers: { 'Accept': 'application/json' },
+      });
+
+      const match = data?.businesses?.[0];
+      if (match) {
+        const certs = [];
+        if (match['8a_certified'])     certs.push('8(a)');
+        if (match['hubzone_certified']) certs.push('HUBZone');
+        if (match['women_owned'])       certs.push('WOSB');
+        if (match['veteran_owned'])     certs.push('VOSB');
+        if (match['service_disabled'])  certs.push('SDVOSB');
+
+        await supabase.from('suppliers').update({
+          certifications:    certs,
+          socioeconomic:     certs,
+          sba_enriched_at:   new Date().toISOString(),
+        }).eq('id', supplier.id);
+
+        enriched++;
+      }
+
+      await new Promise(r => setTimeout(r, 300));
+    } catch (err) {
+      console.warn(`RECON: SBA enrichment failed for ${supplier.name} —`, err.message);
+    }
+  }
+
+  console.log(`RECON: SBA enrichment complete — ${enriched} suppliers updated`);
+  return enriched;
+}
+
+// ----------------------------------------------------------
+// ENRICH FROM USASPENDING: Add actual federal contract performance history
+// No API key required — public government data
+// ----------------------------------------------------------
+async function enrichFromUSAspending() {
+  const { data: suppliers } = await supabase
+    .from('suppliers')
+    .select('id, uei, name')
+    .is('usaspending_enriched_at', null)
+    .not('uei', 'is', null)
+    .limit(30);
+
+  if (!suppliers || suppliers.length === 0) return 0;
+
+  let enriched = 0;
+  for (const supplier of suppliers) {
+    try {
+      const url = 'https://api.usaspending.gov/api/v2/recipient/duns/';
+      const data = await fetchJSON(`${url}${supplier.uei}/`, {
+        headers: { 'Accept': 'application/json' },
+      });
+
+      if (data) {
+        await supabase.from('suppliers').update({
+          federal_contract_count:  data.total_transaction_count || 0,
+          avg_contract_value:      data.total_obligations ? data.total_obligations / Math.max(data.total_transaction_count || 1, 1) : 0,
+          agencies_worked:         data.top_five_award_types?.length || 0,
+          usaspending_enriched_at: new Date().toISOString(),
+        }).eq('id', supplier.id);
+
+        enriched++;
+      }
+
+      await new Promise(r => setTimeout(r, 400));
+    } catch (err) {
+      // USAspending errors are common for new vendors — just skip
+    }
+  }
+
+  console.log(`RECON: USAspending enrichment complete — ${enriched} suppliers updated`);
+  return enriched;
+}
+
+// ----------------------------------------------------------
+// MATCH SUPPLIERS TO OPPORTUNITY: Calculate 5-factor match score
+// Stores top 10 matches per opportunity in supplier_matches table
+// ----------------------------------------------------------
+async function matchSuppliersToOpportunity(opportunityId) {
+  // Load the opportunity
+  const { data: opp } = await supabase
+    .from('opportunities')
+    .select('id, naics, set_aside, place_of_performance, value, title')
+    .eq('id', opportunityId)
+    .single();
+
+  if (!opp) return 0;
+
+  // Load all active suppliers
+  const { data: suppliers } = await supabase
+    .from('suppliers')
+    .select('*')
+    .eq('status', 'active')
+    .limit(500);
+
+  if (!suppliers || suppliers.length === 0) return 0;
+
+  const matches = [];
+
+  for (const supplier of suppliers) {
+    const score = calcMatchScore(supplier, opp);
+    if (score >= MIN_MATCH_SCORE) {
+      const matchType = determineMatchType(supplier, opp);
+      matches.push({ supplier, score, matchType });
+    }
+  }
+
+  // Sort by score, keep top 10
+  matches.sort((a, b) => b.score - a.score);
+  const top10 = matches.slice(0, 10);
+
+  // Upsert top 10 into supplier_matches
+  for (const match of top10) {
+    await supabase.from('supplier_matches').upsert({
+      opportunity_id:  opp.id,
+      supplier_id:     match.supplier.id,
+      match_score:     match.score,
+      match_type:      match.matchType,
+      score_breakdown: calcMatchBreakdown(match.supplier, opp),
+      created_at:      new Date().toISOString(),
+    }, { onConflict: 'opportunity_id,supplier_id' });
+  }
+
+  console.log(`RECON: Opportunity ${opportunityId} — ${top10.length} supplier matches stored`);
+  return top10.length;
+}
+
+// ----------------------------------------------------------
+// MATCH ALL NEW OPPORTUNITIES: Run matching for all recently scored opps
+// Called automatically after supplier scan completes
+// ----------------------------------------------------------
+async function matchAllNewOpportunities() {
+  const { data: opps } = await supabase
+    .from('opportunities')
+    .select('id')
+    .in('status', ['scored', 'STRONG_BID', 'BID', 'CONDITIONAL'])
+    .gte('scored_at', new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString())
+    .limit(50);
+
+  if (!opps || opps.length === 0) return;
+
+  let matched = 0;
+  for (const opp of opps) {
+    const count = await matchSuppliersToOpportunity(opp.id);
+    matched += count;
+    await new Promise(r => setTimeout(r, 200));
+  }
+
+  await logAction('RECON', 'Supplier matching complete', { opportunities_matched: opps.length, total_matches: matched });
+}
+
+// ----------------------------------------------------------
+// CALC MATCH SCORE: 5-factor scoring (0-100)
+// ----------------------------------------------------------
+function calcMatchScore(supplier, opp) {
+  const naicsScore    = scoreNaicsMatch(supplier, opp);
+  const certScore     = scoreCertMatch(supplier, opp);
+  const locationScore = scoreLocationMatch(supplier, opp);
+  const expScore      = scoreExperienceMatch(supplier, opp);
+  const capScore      = scoreCapacityMatch(supplier, opp);
+
+  return Math.round(
+    naicsScore    * MATCH_WEIGHTS.naics    +
+    certScore     * MATCH_WEIGHTS.cert     +
+    locationScore * MATCH_WEIGHTS.location +
+    expScore      * MATCH_WEIGHTS.experience +
+    capScore      * MATCH_WEIGHTS.capacity
+  );
+}
+
+function calcMatchBreakdown(supplier, opp) {
+  return {
+    naics:      scoreNaicsMatch(supplier, opp),
+    cert:       scoreCertMatch(supplier, opp),
+    location:   scoreLocationMatch(supplier, opp),
+    experience: scoreExperienceMatch(supplier, opp),
+    capacity:   scoreCapacityMatch(supplier, opp),
+  };
+}
+
+function scoreNaicsMatch(supplier, opp) {
+  const supplierNaics = supplier.naics_codes || [];
+  // Direct match = 100
+  if (supplierNaics.includes(opp.naics)) return 100;
+  // Adjacent match (first 4 digits match) = 50
+  const oppPrefix = opp.naics?.substring(0, 4);
+  if (supplierNaics.some(n => n.substring(0, 4) === oppPrefix)) return 50;
+  return 0;
+}
+
+function scoreCertMatch(supplier, opp) {
+  const sa = (opp.set_aside || '').toUpperCase();
+  const certs = supplier.certifications || [];
+
+  if (!sa || sa === 'NONE' || sa === 'SBP') return 60;  // Open — any supplier qualifies
+  if (sa === 'SDB'  && certs.some(c => c.includes('SDB') || c.includes('8(a)'))) return 100;
+  if (sa === '8A'   && certs.includes('8(a)')) return 100;
+  if (sa === 'HZC'  && certs.includes('HUBZone')) return 100;
+  if (sa === 'WOSB' && certs.includes('WOSB')) return 100;
+  if (sa === 'SDVOSBC' && certs.includes('SDVOSB')) return 100;
+  if (certs.length > 0) return 40;  // Has some cert but wrong one
+  return 20;
+}
+
+function scoreLocationMatch(supplier, opp) {
+  const suppState = supplier.state || '';
+  const oppState  = opp.place_of_performance || '';
+
+  if (!suppState || !oppState) return 40;
+  if (suppState === oppState) return 100;  // Same state = best
+
+  const adjacent = ADJACENT_STATES[oppState] || [];
+  if (adjacent.includes(suppState)) return 50;  // Adjacent state
+
+  return 10;  // Remote
+}
+
+function scoreExperienceMatch(supplier, opp) {
+  const avgValue  = supplier.avg_contract_value || 0;
+  const oppValue  = opp.value || 0;
+
+  if (!oppValue) return 50;
+
+  // Ideal: supplier's average contract is at least 25% of opp value
+  if (avgValue >= oppValue * 0.25) return 100;
+  if (avgValue >= oppValue * 0.10) return 60;
+  if (supplier.federal_contract_count > 0) return 40;
+  return 20;  // No federal history
+}
+
+function scoreCapacityMatch(supplier, opp) {
+  // Use company size standard as a proxy for capacity
+  const tier = (supplier.capability_tier || 'small').toLowerCase();
+  if (tier === 'large') return 60;   // Too big for sub role usually
+  if (tier === 'mid')   return 90;
+  if (tier === 'small') return 100;  // Perfect for sub/teaming
+  return 70;
+}
+
+// ----------------------------------------------------------
+// DETERMINE MATCH TYPE: What is the relationship with the supplier?
+// sub = subcontractor, teaming = teaming partner, distributor = supply, mentor_protege = joint bid
+// ----------------------------------------------------------
+function determineMatchType(supplier, opp) {
+  const oppNaics = opp.naics || '';
+  const certs    = supplier.certifications || [];
+  const oppValue = opp.value || 0;
+
+  // Supply vertical — distributors
+  if (['424710','424130','424490','424120','424690','423440','424310'].includes(oppNaics)) {
+    return 'distributor';
+  }
+
+  // If supplier has a cert Walker needs (like 8(a)) and opp is big — potential mentor-protégé
+  const sa = (opp.set_aside || '').toUpperCase();
+  if (oppValue > 1000000 && certs.length > 0 && sa === 'NONE') {
+    return 'mentor_protege';
+  }
+
+  // Has special set-aside cert Walker lacks
+  if (['8(a)','HUBZone','WOSB'].some(c => certs.includes(c))) {
+    return 'teaming';
+  }
+
+  // Default: subcontractor
+  return 'sub';
+}
+
+// ----------------------------------------------------------
+// UPSERT SUPPLIER: Save a SAM Entity record to the suppliers table
+// ----------------------------------------------------------
+async function upsertSupplier(entity, naics) {
+  try {
+    const core = entity.entityRegistration || {};
+    const addr = entity.coreData?.physicalAddress || {};
+
+    const { error } = await supabase.from('suppliers').upsert({
+      uei:                core.ueiSAM || null,
+      name:               core.legalBusinessName || 'Unknown',
+      state:              addr.stateOrProvinceCode || null,
+      city:               addr.cityName || null,
+      naics_codes:        [naics],  // Initial NAICS — may be expanded by SBA enrichment
+      certifications:     [],       // Filled by enrichFromSBA
+      socioeconomic:      core.sbaBusinessTypeList?.map(b => b.sbaBusinessTypeDesc) || [],
+      sam_registered:     true,
+      sam_uei:            core.ueiSAM || null,
+      status:             'active',
+      updated_at:         new Date().toISOString(),
+    }, { onConflict: 'uei' });
+
+    return !error;
+  } catch (err) {
+    return false;
+  }
+}
+
+// Export supplier functions so other agents can call them
+module.exports = { matchSuppliersToOpportunity, matchAllNewOpportunities };
 
 // Run RECON when this file is executed
 runRecon();

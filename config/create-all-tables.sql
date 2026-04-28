@@ -605,8 +605,184 @@ END $$;
 
 
 -- ============================================================
--- VERIFICATION: Count all 29 tables (25 original + 4 system)
+-- MILESTONE 20: T.E.S.T. v2 TABLES (Tables 26-28)
+-- Paste this block into Supabase SQL Editor and click Run
+-- ============================================================
+
+-- TABLE 26: test_results
+-- Every T.E.S.T. assertion is recorded here — LOG, ALERT, or HALT
+-- T.E.S.T. reads consecutive_failures to determine tier escalation
+CREATE TABLE IF NOT EXISTS test_results (
+  id                    UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  test_name             TEXT NOT NULL,
+  category              TEXT NOT NULL,             -- DATA_INTEGRITY, SCORE_VALIDATION, FINANCIAL_MATH, API_CONTRACTS, DELIVERY, DB_HEALTH, AUTH
+  tier                  INTEGER DEFAULT 0,         -- 0=PASS, 1=LOG, 2=ALERT, 3=HALT
+  passed                BOOLEAN NOT NULL,
+  expected              TEXT,
+  actual                TEXT,
+  consecutive_failures  INTEGER DEFAULT 0,
+  action_taken          TEXT DEFAULT 'PASS',       -- PASS, LOG, ALERT, HALT
+  created_at            TIMESTAMPTZ DEFAULT now()
+);
+
+-- Optimized indexes for T.E.S.T. reads
+CREATE INDEX IF NOT EXISTS idx_test_results_date      ON test_results (created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_test_results_name      ON test_results (test_name, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_test_results_failed    ON test_results (passed, created_at DESC) WHERE NOT passed;
+CREATE INDEX IF NOT EXISTS idx_test_results_halts     ON test_results (action_taken, created_at DESC) WHERE action_taken = 'HALT';
+
+
+-- TABLE 27: api_schemas
+-- Stores expected JSON schema snapshots for external APIs
+-- T.E.S.T. compares live API responses against these snapshots to detect breaking changes
+CREATE TABLE IF NOT EXISTS api_schemas (
+  id               UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  api_name         TEXT UNIQUE NOT NULL,           -- 'sam_gov', 'usaspending', 'sendgrid'
+  endpoint_url     TEXT NOT NULL,
+  expected_schema  JSONB DEFAULT '{}',             -- Expected fields/structure
+  last_validated   TIMESTAMPTZ,
+  mismatch_details JSONB,                          -- What changed if status=mismatch
+  status           TEXT DEFAULT 'valid',           -- 'valid', 'mismatch', 'untested'
+  created_at       TIMESTAMPTZ DEFAULT now(),
+  updated_at       TIMESTAMPTZ DEFAULT now()
+);
+
+-- Seed: Store expected schema for SAM.gov v2 API
+INSERT INTO api_schemas (api_name, endpoint_url, expected_schema, status) VALUES
+  ('sam_gov', 'https://api.sam.gov/opportunities/v2/search',
+   '{"fields": ["opportunitiesData", "totalRecords", "limit", "offset"]}',
+   'valid'),
+  ('usaspending', 'https://api.usaspending.gov/api/v2/search/spending_by_award/',
+   '{"fields": ["results", "page_metadata", "messages"]}',
+   'valid'),
+  ('sendgrid', 'https://api.sendgrid.com/v3/mail/send',
+   '{"fields": ["statusCode", "body", "headers"]}',
+   'valid')
+ON CONFLICT (api_name) DO NOTHING;
+
+
+-- system_config already exists — seed agent enable flags
+-- All 10 agents default to enabled
+INSERT INTO system_config (key, value, description) VALUES
+  ('AGENT_SCOUT_ENABLED',     'true',  'S.C.O.U.T. enable flag — set false to halt'),
+  ('AGENT_JUDGE_ENABLED',     'true',  'J.U.D.G.E. enable flag — set false to halt'),
+  ('AGENT_VAULT_ENABLED',     'true',  'V.A.U.L.T. enable flag — set false to halt'),
+  ('AGENT_RECON_ENABLED',     'true',  'R.E.C.O.N. enable flag — set false to halt'),
+  ('AGENT_DRAFT_ENABLED',     'true',  'D.R.A.F.T. enable flag — set false to halt'),
+  ('AGENT_BIDENGINE_ENABLED', 'true',  'B.I.D. ENGINE enable flag — set false to halt'),
+  ('AGENT_LEDGER_ENABLED',    'true',  'L.E.D.G.E.R. enable flag — set false to halt'),
+  ('AGENT_EXEC_ENABLED',      'true',  'E.X.E.C. enable flag — set false to halt'),
+  ('AGENT_TEST_ENABLED',      'true',  'T.E.S.T. enable flag — T.E.S.T. cannot halt itself'),
+  ('AGENT_BRANDI_ENABLED',    'true',  'B.R.A.N.D.I. enable flag — set false to halt'),
+  ('SYSTEM_HALT',             'false', 'Global emergency kill switch — halts ALL agents immediately')
+ON CONFLICT (key) DO NOTHING;
+
+
+-- ============================================================
+-- MILESTONE 22: SUPPLIER INTELLIGENCE TABLES (Tables 29-30)
+-- Paste this block into Supabase SQL Editor and click Run
+-- ============================================================
+
+-- TABLE 29: suppliers
+-- Federal contractor database — subs, teaming partners, distributors
+-- Populated by RECON weekly scan of SAM Entity API + SBA + USAspending
+CREATE TABLE IF NOT EXISTS suppliers (
+  id                     UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  uei                    TEXT UNIQUE,              -- SAM.gov Unique Entity Identifier — primary key in the federal world
+  sam_uei                TEXT,
+  name                   TEXT NOT NULL,
+  state                  TEXT,
+  city                   TEXT,
+  naics_codes            TEXT[] DEFAULT '{}',      -- Array of NAICS codes — GIN indexed for fast search
+  certifications         TEXT[] DEFAULT '{}',      -- 8(a), HUBZone, WOSB, SDVOSB, etc — GIN indexed
+  socioeconomic          TEXT[] DEFAULT '{}',      -- SBA socioeconomic categories
+  sam_registered         BOOLEAN DEFAULT true,
+  -- Performance data from USAspending
+  federal_contract_count INTEGER DEFAULT 0,        -- How many federal contracts have they won?
+  avg_contract_value     DECIMAL(14,2) DEFAULT 0,  -- What's their average contract size?
+  agencies_worked        INTEGER DEFAULT 0,        -- How many different federal agencies?
+  capability_tier        TEXT DEFAULT 'small',     -- 'small', 'mid', 'large' — inferred from avg contract value
+  -- Specialties (Haiku-generated on demand, not bulk)
+  specialties            TEXT[] DEFAULT '{}',
+  -- Enrichment timestamps
+  sba_enriched_at        TIMESTAMPTZ,
+  usaspending_enriched_at TIMESTAMPTZ,
+  status                 TEXT DEFAULT 'active',    -- 'active', 'inactive', 'debarred'
+  updated_at             TIMESTAMPTZ DEFAULT now(),
+  created_at             TIMESTAMPTZ DEFAULT now()
+);
+
+-- GIN indexes for fast array searches (NAICS and cert matching)
+CREATE INDEX IF NOT EXISTS idx_suppliers_naics     ON suppliers USING GIN (naics_codes);
+CREATE INDEX IF NOT EXISTS idx_suppliers_certs     ON suppliers USING GIN (certifications);
+CREATE INDEX IF NOT EXISTS idx_suppliers_socio     ON suppliers USING GIN (socioeconomic);
+CREATE INDEX IF NOT EXISTS idx_suppliers_state     ON suppliers (state);
+CREATE INDEX IF NOT EXISTS idx_suppliers_status    ON suppliers (status);
+-- Full-text search on supplier name and specialties
+CREATE INDEX IF NOT EXISTS idx_suppliers_name_fts  ON suppliers USING GIN (to_tsvector('english', coalesce(name, '') || ' ' || array_to_string(specialties, ' ')));
+
+
+-- TABLE 30: supplier_matches
+-- Per-opportunity supplier matches — top 10 per opportunity, minimum score 40
+-- Populated by RECON after JUDGE scores each opportunity
+CREATE TABLE IF NOT EXISTS supplier_matches (
+  id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  opportunity_id  UUID REFERENCES opportunities(id) ON DELETE CASCADE,
+  supplier_id     UUID REFERENCES suppliers(id) ON DELETE CASCADE,
+  match_score     INTEGER NOT NULL CHECK (match_score >= 0 AND match_score <= 100),
+  match_type      TEXT NOT NULL,                   -- 'sub', 'teaming', 'distributor', 'mentor_protege'
+  score_breakdown JSONB DEFAULT '{}',              -- {naics: 30, cert: 25, location: 20, experience: 15, capacity: 10}
+  created_at      TIMESTAMPTZ DEFAULT now(),
+  updated_at      TIMESTAMPTZ DEFAULT now(),
+  UNIQUE (opportunity_id, supplier_id)             -- One record per opp-supplier pair
+);
+
+CREATE INDEX IF NOT EXISTS idx_supplier_matches_opp    ON supplier_matches (opportunity_id, match_score DESC);
+CREATE INDEX IF NOT EXISTS idx_supplier_matches_type   ON supplier_matches (match_type);
+CREATE INDEX IF NOT EXISTS idx_supplier_matches_score  ON supplier_matches (match_score DESC);
+
+
+-- ============================================================
+-- MILESTONE 24: REAL ESTATE COLUMN ADDITIONS
+-- Adds lease_score and scored_at to opportunities for 3rd vertical
+-- ============================================================
+
+DO $$
+BEGIN
+  -- Add LEASE Score column for Real Estate & Rental opportunities
+  ALTER TABLE opportunities ADD COLUMN IF NOT EXISTS lease_score  INTEGER;
+
+  -- Add scored_at timestamp (used by T.E.S.T. for score drift detection)
+  ALTER TABLE opportunities ADD COLUMN IF NOT EXISTS scored_at    TIMESTAMPTZ;
+
+  -- Add decision tracking (used by T.E.S.T.)
+  ALTER TABLE opportunities ADD COLUMN IF NOT EXISTS decision_made_at  TIMESTAMPTZ;
+  ALTER TABLE opportunities ADD COLUMN IF NOT EXISTS decision_age_days INTEGER;
+
+  -- Add site visit tracking (used by VAULT)
+  ALTER TABLE opportunities ADD COLUMN IF NOT EXISTS site_visit_required  BOOLEAN DEFAULT false;
+  ALTER TABLE opportunities ADD COLUMN IF NOT EXISTS site_visit_date       DATE;
+  ALTER TABLE opportunities ADD COLUMN IF NOT EXISTS site_visit_attended   BOOLEAN DEFAULT false;
+
+  -- Add bid tracking columns
+  ALTER TABLE bids ADD COLUMN IF NOT EXISTS bond_required     BOOLEAN DEFAULT false;
+  ALTER TABLE bids ADD COLUMN IF NOT EXISTS bond_received     BOOLEAN DEFAULT false;
+  ALTER TABLE bids ADD COLUMN IF NOT EXISTS debrief_requested BOOLEAN DEFAULT false;
+
+  -- Add retainage and payment tracking to active_contracts
+  ALTER TABLE active_contracts ADD COLUMN IF NOT EXISTS retainage_held  DECIMAL(14,2) DEFAULT 0;
+  ALTER TABLE active_contracts ADD COLUMN IF NOT EXISTS total_invoiced   DECIMAL(14,2) DEFAULT 0;
+  ALTER TABLE active_contracts ADD COLUMN IF NOT EXISTS total_paid       DECIMAL(14,2) DEFAULT 0;
+
+EXCEPTION WHEN OTHERS THEN
+  RAISE NOTICE 'Column addition note: %', SQLERRM;
+END $$;
+
+
+-- ============================================================
+-- VERIFICATION: Count all 30 tables
 -- Run this after the above to confirm everything created
+-- Expected: 30 tables in public schema
 -- ============================================================
 SELECT table_name
 FROM information_schema.tables
