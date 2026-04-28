@@ -1,0 +1,240 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>T.E.S.T. Eval Viewer — PRIME IQE</title>
+<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+:root{--bg:#06080F;--panel:#0B0F1A;--card:#0F1424;--cardHi:#131B30;--bd:rgba(255,255,255,.06);--t1:#EDF0F7;--t2:#8B95AB;--t3:#4D5669;--gold:#E9C46A;--goldDim:rgba(233,196,106,.12);--goldBd:rgba(233,196,106,.25);--cyan:#00E5FF;--cyanDim:rgba(0,229,255,.10);--cyanBd:rgba(0,229,255,.25);--green:#34D399;--greenDim:rgba(52,211,153,.10);--greenBd:rgba(52,211,153,.25);--red:#F87171;--redDim:rgba(248,113,113,.10);--redBd:rgba(248,113,113,.25);--amber:#F59E0B;--amberDim:rgba(245,158,11,.10);--violet:#A78BFA;--violetDim:rgba(167,139,250,.10);--rose:#FB7185}
+body{font-family:'Outfit',system-ui,sans-serif;background:var(--bg);color:var(--t1);min-height:100vh}
+.header{background:rgba(8,11,20,.9);border-bottom:1px solid var(--bd);padding:16px 32px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:10;backdrop-filter:blur(12px)}
+.logo{display:flex;align-items:center;gap:12px}
+.mark{width:36px;height:36px;border-radius:8px;background:linear-gradient(135deg,#E9C46A,#8B6914);display:flex;align-items:center;justify-content:center;font-size:16px;font-weight:900;color:#fff}
+.title-group .t1{font-size:16px;font-weight:800}.t1 span{color:var(--gold)}
+.title-group .t2{font-size:9px;color:var(--t3);letter-spacing:.14em;text-transform:uppercase;margin-top:1px}
+.controls{display:flex;align-items:center;gap:10px}
+.filter-btn{padding:6px 12px;border-radius:6px;border:1px solid var(--bd);background:transparent;color:var(--t2);font-family:'Outfit',sans-serif;font-size:11px;cursor:pointer;transition:all .15s}
+.filter-btn:hover{border-color:var(--cyanBd);color:var(--cyan)}
+.filter-btn.active{background:var(--cyanDim);border-color:var(--cyanBd);color:var(--cyan);font-weight:700}
+.main{max-width:1100px;margin:0 auto;padding:24px 32px 60px}
+.kpi-row{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:24px}
+.kpi{background:var(--card);border:1px solid var(--bd);border-radius:8px;padding:12px 16px;flex:1;min-width:100px}
+.kpi-val{font-size:24px;font-weight:900;line-height:1}
+.kpi-lbl{font-size:10px;color:var(--t2);margin-top:3px;text-transform:uppercase;letter-spacing:.06em}
+.cat-header{display:flex;align-items:center;justify-content:space-between;padding:12px 16px;background:var(--cardHi);border:1px solid var(--bd);border-radius:8px 8px 0 0;cursor:pointer;margin-top:16px}
+.cat-header:not(.open)+.cat-body{display:none}
+.cat-body{border:1px solid var(--bd);border-top:none;border-radius:0 0 8px 8px;overflow:hidden}
+.cat-label{font-size:13px;font-weight:700}
+.cat-desc{font-size:10px;color:var(--t2);margin-top:2px;max-width:70%}
+.cat-meta{display:flex;gap:8px;align-items:center}
+.badge{font-size:9px;font-weight:700;letter-spacing:.06em;padding:2px 8px;border-radius:4px;text-transform:uppercase;white-space:nowrap;display:inline-block}
+.test-row{padding:14px 16px;border-top:1px solid var(--bd);display:grid;grid-template-columns:60px minmax(0,1fr) 100px 100px;gap:12px;align-items:start;cursor:pointer;transition:background .12s}
+.test-row:hover{background:var(--card)}
+.test-row.expanded{background:var(--card)}
+.test-id{font-size:10px;font-weight:700;color:var(--t3);font-variant-numeric:tabular-nums}
+.test-name{font-size:11px;font-weight:700;color:var(--t1);margin-bottom:3px;font-family:'Courier New',monospace;letter-spacing:.02em}
+.test-desc{font-size:10px;color:var(--t2);line-height:1.6}
+.test-detail{padding:0 16px 14px;background:var(--card);border-top:1px solid rgba(255,255,255,.04);display:none}
+.test-detail.open{display:block}
+.detail-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:12px}
+.detail-block{background:var(--cardHi);border-radius:6px;padding:10px 12px}
+.detail-label{font-size:8px;font-weight:700;color:var(--t3);text-transform:uppercase;letter-spacing:.12em;margin-bottom:6px}
+.detail-val{font-size:10px;color:var(--t2);line-height:1.6;font-family:'Courier New',monospace}
+.remediation-block{background:var(--cardHi);border-radius:6px;padding:10px 12px;margin-top:10px;border-left:3px solid var(--amber)}
+.remediation-label{font-size:8px;font-weight:700;color:var(--amber);text-transform:uppercase;letter-spacing:.12em;margin-bottom:6px}
+.remediation-val{font-size:10px;color:var(--t2);line-height:1.7}
+.tier-halt{background:var(--redDim);color:var(--red);border:1px solid var(--redBd)}
+.tier-alert{background:var(--amberDim);color:var(--amber)}
+.tier-log{background:rgba(139,149,171,.1);color:var(--t2)}
+.cat-halt{background:var(--redDim);color:var(--red)}
+.cat-no-halt{background:var(--cyanDim);color:var(--cyan)}
+.search{width:100%;padding:10px 14px;background:var(--card);border:1px solid var(--bd);border-radius:8px;color:var(--t1);font-family:'Outfit',sans-serif;font-size:13px;outline:none;margin-bottom:20px}
+.search:focus{border-color:var(--cyanBd)}
+.search::placeholder{color:var(--t3)}
+.empty{text-align:center;padding:60px 20px;color:var(--t3);font-size:12px}
+.chevron{font-size:12px;transition:transform .2s}
+.cat-header.open .chevron{transform:rotate(180deg)}
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div class="logo">
+    <div class="mark">T</div>
+    <div class="title-group">
+      <div class="t1">T.E.S.T. <span>Eval Viewer</span></div>
+      <div class="t2">PRIME IQE · Axiom Federal Solutions · CAGE 7JKKO</div>
+    </div>
+  </div>
+  <div class="controls">
+    <button class="filter-btn active" onclick="setFilter('all',this)">All</button>
+    <button class="filter-btn" onclick="setFilter('HALT',this)" style="color:var(--red)">🛑 HALT</button>
+    <button class="filter-btn" onclick="setFilter('ALERT',this)" style="color:var(--amber)">⚠ ALERT</button>
+    <button class="filter-btn" onclick="setFilter('LOG',this)">📋 LOG</button>
+  </div>
+</div>
+
+<div class="main">
+  <input type="text" class="search" id="search" placeholder="Search test name, category, description, remediation…" oninput="applyFilter()">
+
+  <div class="kpi-row" id="kpi-row"></div>
+  <div id="categories"></div>
+</div>
+
+<script>
+let DATA = null;
+let activeFilter = 'all';
+
+async function loadData() {
+  try {
+    const resp = await fetch('./test-cases.json');
+    DATA = await resp.json();
+  } catch(e) {
+    // Inline fallback — dev mode
+    DATA = { categories: [], tests: [], meta: { total_tests: 0, halt_tests: 0, alert_tests: 0, log_tests: 0 } };
+    document.getElementById('categories').innerHTML = '<div class="empty">Could not load test-cases.json — make sure eval-viewer.html and test-cases.json are in the same folder.</div>';
+    return;
+  }
+  render();
+}
+
+function tierBadge(tier) {
+  if (tier === 3) return '<span class="badge tier-halt">🛑 HALT</span>';
+  if (tier === 2) return '<span class="badge tier-alert">⚠ ALERT</span>';
+  return '<span class="badge tier-log">📋 LOG</span>';
+}
+
+function tierKey(tier) {
+  if (tier === 3) return 'HALT';
+  if (tier === 2) return 'ALERT';
+  return 'LOG';
+}
+
+function catBadge(halt) {
+  return halt
+    ? '<span class="badge cat-halt">HALT ENABLED</span>'
+    : '<span class="badge cat-no-halt">ALERT ONLY</span>';
+}
+
+function render() {
+  const meta = DATA.meta;
+  // KPIs
+  document.getElementById('kpi-row').innerHTML = `
+    <div class="kpi" style="border-left:3px solid var(--cyan)"><div class="kpi-val" style="color:var(--cyan)">${meta.total_tests}</div><div class="kpi-lbl">Total Tests</div></div>
+    <div class="kpi" style="border-left:3px solid var(--red)"><div class="kpi-val" style="color:var(--red)">${meta.halt_tests}</div><div class="kpi-lbl">HALT Triggers</div></div>
+    <div class="kpi" style="border-left:3px solid var(--amber)"><div class="kpi-val" style="color:var(--amber)">${meta.alert_tests}</div><div class="kpi-lbl">ALERT Tests</div></div>
+    <div class="kpi" style="border-left:3px solid var(--t2)"><div class="kpi-val">${meta.log_tests}</div><div class="kpi-lbl">LOG Tests</div></div>
+    <div class="kpi" style="border-left:3px solid var(--violet)"><div class="kpi-val" style="color:var(--violet)">${DATA.categories.length}</div><div class="kpi-lbl">Categories</div></div>
+    <div class="kpi" style="border-left:3px solid var(--green)"><div class="kpi-val" style="color:var(--green)">$0</div><div class="kpi-lbl">Cost / Month</div></div>
+  `;
+  applyFilter();
+}
+
+function applyFilter() {
+  const q = (document.getElementById('search').value || '').toLowerCase();
+  const catEl = document.getElementById('categories');
+
+  let html = '';
+  for (const cat of DATA.categories) {
+    // Get tests for this category matching filter and search
+    const tests = DATA.tests.filter(t => {
+      if (t.category !== cat.id) return false;
+      if (activeFilter !== 'all' && tierKey(t.tier_on_fail) !== activeFilter) return false;
+      if (q) {
+        const blob = [t.name, t.description, t.expected, t.pass_condition, t.remediation, t.category, t.id].join(' ').toLowerCase();
+        if (!blob.includes(q)) return false;
+      }
+      return true;
+    });
+
+    if (tests.length === 0) continue;
+
+    html += `
+      <div>
+        <div class="cat-header open" onclick="toggleCat(this)">
+          <div>
+            <div class="cat-label" style="color:${cat.halt_on_fail ? 'var(--red)' : 'var(--cyan)'}">${cat.label} <span style="color:var(--t3);font-size:10px;font-weight:400">${cat.id}</span></div>
+            <div class="cat-desc">${cat.description}</div>
+          </div>
+          <div class="cat-meta">
+            ${catBadge(cat.halt_on_fail)}
+            <span class="badge" style="background:var(--violetDim);color:var(--violet)">${tests.length} tests</span>
+            <span class="chevron" style="color:var(--t3)">▼</span>
+          </div>
+        </div>
+        <div class="cat-body">
+          ${tests.map(t => testRow(t)).join('')}
+        </div>
+      </div>`;
+  }
+
+  if (!html) {
+    html = '<div class="empty">No tests match your filter or search.</div>';
+  }
+
+  catEl.innerHTML = html;
+}
+
+function testRow(t) {
+  return `
+    <div class="test-row" onclick="toggleDetail('d-${t.id}',this)">
+      <div class="test-id">${t.id}</div>
+      <div>
+        <div class="test-name">${t.name}</div>
+        <div class="test-desc">${t.description.substring(0, 120)}${t.description.length > 120 ? '…' : ''}</div>
+      </div>
+      <div>${tierBadge(t.tier_on_fail)}</div>
+      <div><span class="badge" style="background:var(--violetDim);color:var(--violet)">${t.agent_target || 'SYSTEM'}</span></div>
+    </div>
+    <div class="test-detail" id="d-${t.id}">
+      <div style="font-size:11px;color:var(--t2);line-height:1.7;padding-top:10px">${t.description}</div>
+      <div class="detail-grid">
+        <div class="detail-block">
+          <div class="detail-label">Query / Check</div>
+          <div class="detail-val">${t.query}</div>
+        </div>
+        <div class="detail-block">
+          <div class="detail-label">Expected</div>
+          <div class="detail-val">${t.expected}</div>
+        </div>
+        <div class="detail-block">
+          <div class="detail-label">Pass Condition</div>
+          <div class="detail-val">${t.pass_condition}</div>
+        </div>
+        <div class="detail-block">
+          <div class="detail-label">Tier on Fail</div>
+          <div class="detail-val">${tierKey(t.tier_on_fail)}${t.tier_on_fail === 3 ? ' — halts ' + (t.agent_target || 'system') : t.tier_on_fail === 2 ? ' — BRANDI alerts after 3×' : ' — logged, re-tested next cycle'}</div>
+        </div>
+      </div>
+      <div class="remediation-block">
+        <div class="remediation-label">⚒ Remediation Steps</div>
+        <div class="remediation-val">${t.remediation}</div>
+      </div>
+    </div>`;
+}
+
+function toggleCat(el) {
+  el.classList.toggle('open');
+}
+
+function toggleDetail(id, row) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  const isOpen = el.classList.contains('open');
+  el.classList.toggle('open');
+  row.classList.toggle('expanded', !isOpen);
+}
+
+function setFilter(f, btn) {
+  activeFilter = f;
+  document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  applyFilter();
+}
+
+loadData();
+</script>
+</body>
+</html>
