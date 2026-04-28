@@ -44,10 +44,9 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '20'
-          cache: 'npm'
 
       - name: Install dependencies
-        run: npm ci
+        run: npm install
 
       - name: Send BRANDI daily brief
         run: node agents/brandi.js ${{ github.event.inputs.mode || 'daily' }}
@@ -74,10 +73,9 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '20'
-          cache: 'npm'
 
       - name: Install dependencies
-        run: npm ci
+        run: npm install
 
       - name: Send Monday supply digest
         run: node agents/brandi.js supply
