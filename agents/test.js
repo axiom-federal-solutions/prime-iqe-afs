@@ -164,12 +164,12 @@ async function testDataIntegrity() {
   // Test 4: NAICS codes are exactly 6 digits
   const { data: recentOpps } = await supabase
     .from('opportunities')
-    .select('id, naics_code')
+    .select('id, naics')
     .gte('created_at', new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString())
-    .not('naics_code', 'is', null)
+    .not('naics', 'is', null)
     .limit(50);
 
-  const badNaics = (recentOpps || []).filter(o => o.naics_code && !/^\d{6}$/.test(String(o.naics_code)));
+  const badNaics = (recentOpps || []).filter(o => o.naics && !/^\d{6}$/.test(String(o.naics)));
   await recordTest(
     'scout_naics_six_digits',
     'DATA_INTEGRITY',
