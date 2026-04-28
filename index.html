@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1.0">
-<title>IQE PRIME v18 — Axiom Federal Solutions</title>
+<title>IQE PRIME v19 — Axiom Federal Solutions</title>
 <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
 <style>
@@ -106,7 +106,7 @@ body{font-family:'Outfit',system-ui,sans-serif;background:var(--bg);color:var(--
 </div>
 
 <nav class="sb">
-  <div class="sb-logo"><div class="sb-mark">P</div><div><div class="sb-title">IQE <span>PRIME</span></div><div class="sb-ver">v18 · 3 Verticals</div></div></div>
+  <div class="sb-logo"><div class="sb-mark">P</div><div><div class="sb-title">IQE <span>PRIME</span></div><div class="sb-ver">v19 · 3 Verticals</div></div></div>
   <div class="sb-group">Command</div><button class="sb-btn active" onclick="go('home',this)">🏠 Command Center</button>
   <div class="sb-group">Alerts</div>
   <button class="sb-btn" onclick="go('action',this)" id="sb-action">🚨 Action Queue</button>
@@ -126,7 +126,7 @@ body{font-family:'Outfit',system-ui,sans-serif;background:var(--bg);color:var(--
   <div class="sb-group">System</div>
   <button class="sb-btn" onclick="go('system',this)">⚙️ Agents & Config</button>
   <button class="sb-btn" onclick="go('help',this)">❓ Help & FAQ</button>
-  <div class="sb-foot">Walker Contractors LLC<br>Axiom Federal Solutions · CAGE 7JKKO<br>~$9.50/mo · 32 NAICS · 19 workflows<br>30 tables · T.E.S.T. v2 Active<br><span id="last-load" style="color:var(--t3)">Loading…</span></div>
+  <div class="sb-foot">Walker Contractors LLC<br>Axiom Federal Solutions · CAGE 7JKKO<br>~$9.50/mo · 32 NAICS · 19 workflows<br>30 tables · T.E.S.T. v2 Active<br><span id="last-load" style="color:var(--t3)">Loading…</span><br><span style="display:inline-flex;align-items:center;gap:4px;margin-top:4px">SAM Quota: <span id="sb-quota" style="font-weight:700">—</span></span></div>
 </nav>
 
 <div class="main" id="mc">
@@ -220,16 +220,15 @@ function rb(r){const m={'STRONG BID':{bg:'var(--greenDim)',c:'var(--green)',i:'�
 function fmt(v){if(!v&&v!==0)return '—';return v>=1e6?'$'+(v/1e6).toFixed(1)+'M':v>=1000?'$'+(v/1000).toFixed(0)+'K':'$'+Math.round(v);}
 function daysLeft(deadline){if(!deadline)return null;const d=Math.ceil((new Date(deadline)-new Date())/86400000);return Math.max(0,d);}
 // Derive vertical from NAICS if DB column not yet set
-// Supply NAICS: IT, training, janitorial, food, logistics, manufacturing
-const SUPPLY_NAICS=['541511','541512','541519','541330','561110','561210','424410',
-  '332999','339999','611420','611430','541611','541618','238910','488490'];
-// Real Estate NAICS
-const RE_NAICS=['531110','531120','531210','531311','531312','531390'];
+// Supply NAICS: IT, training, janitorial, food, logistics, manufacturing, etc.
+const SUPPLY_NAICS_PREFIXES=['541511','541512','541519','541330','561110','561210','424410','332999','339999','611420','611430','541611','541618','488490','424710','424130','424490','424120','424690','423440','424310'];
+// Real Estate / rental NAICS
+const RE_NAICS_PREFIXES=['531110','531120','531210','531311','531312','531390','532412','532120'];
 function getVertical(o){
-  if(o.vertical&&o.vertical!=='null')return o.vertical;
+  if(o.vertical&&o.vertical!=='null'&&o.vertical!=='')return o.vertical;
   const n=(o.naics||'').trim();
-  if(RE_NAICS.some(c=>n.startsWith(c)))return 'realestate';
-  if(SUPPLY_NAICS.some(c=>n.startsWith(c)))return 'supply';
+  if(RE_NAICS_PREFIXES.some(p=>n.startsWith(p)))return 'realestate';
+  if(SUPPLY_NAICS_PREFIXES.some(p=>n.startsWith(p)))return 'supply';
   return 'construction';
 }
 function scoreOf(o){const v=getVertical(o);return v==='supply'?o.acq_score:v==='realestate'?(o.lease_score||o.prime_score):(o.prime_score||o.acq_score||o.lease_score)||0;}
@@ -270,6 +269,14 @@ async function loadData(manual=false){
 
     const ll=document.getElementById('last-load');
     if(ll){const n=new Date();ll.textContent='Updated '+n.toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'});}
+    // Update SAM quota display in sidebar
+    const samCallsNow=parseInt(cfgVal('SAM_CALLS_TODAY')||0,10);
+    const qEl=document.getElementById('sb-quota');
+    if(qEl){
+      const qColor=samCallsNow>600?'var(--red)':samCallsNow>=400?'var(--amber)':'var(--green)';
+      qEl.textContent=samCallsNow+'/450';
+      qEl.style.color=qColor;
+    }
     renderAll();
   }catch(e){
     console.error('Supabase load failed:',e);
@@ -296,6 +303,14 @@ function oppRow(o,idx){
   const s=scoreOf(o), sl=slOf(o), days=daysLeft(o.response_deadline);
   const sa=o.set_aside_type||o.set_aside||'';
   const src=o.source||'';
+  // If the full score is missing but SCOUT left a rough pre_prime_score, show it with ~ prefix and gray color
+  const hasRealScore=!!(o.prime_score||o.acq_score||o.lease_score);
+  const preScore=o.pre_prime_score;
+  const scoreDisplay=hasRealScore
+    ?`<span style="font-size:18px;font-weight:800;color:${sc(s)}">${s}</span><span style="font-size:8px;color:var(--t3);letter-spacing:.1em;margin-left:3px">${sl}</span>`
+    :preScore
+      ?`<span style="font-size:15px;font-weight:700;color:var(--steel)">~${preScore}</span><span style="font-size:8px;color:var(--t3);letter-spacing:.1em;margin-left:3px">SCOUT</span>`
+      :`<span style="font-size:18px;font-weight:800;color:var(--t3)">—</span>`;
   return `<div class="opp" onclick="showDetail(${idx})" style="border-left:3px solid ${vtColor(getVertical(o))}">
     <div>
       <div style="font-size:12px;font-weight:500;line-height:1.3">${o.title||'Untitled'}</div>
@@ -307,7 +322,7 @@ function oppRow(o,idx){
       </div>
     </div>
     <div style="text-align:right;font-size:13px;font-weight:700">${fmt(o.value)}</div>
-    <div style="text-align:center"><span style="font-size:18px;font-weight:800;color:${sc(s)}">${s||'—'}</span><span style="font-size:8px;color:var(--t3);letter-spacing:.1em;margin-left:3px">${sl}</span></div>
+    <div style="text-align:center">${scoreDisplay}</div>
     <div style="text-align:center">${rb(o.recommendation||'BID')}</div>
     <div style="text-align:right;font-size:10px;color:${days!=null&&days<=10?'var(--red)':'var(--t3)'}">🕐 ${days!=null?days+'d':'—'}</div>
   </div>`;
@@ -332,8 +347,9 @@ async function showDetail(idx){
 
     <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:16px">
       <div style="background:var(--card);border-radius:8px;padding:12px;text-align:center;border:1px solid ${sc(s)}44">
-        <div style="font-size:26px;font-weight:800;color:${sc(s)}">${s||'—'}</div>
-        <div style="font-size:9px;color:var(--t3);text-transform:uppercase;margin-top:2px">${sl} Score</div>
+        ${s?`<div style="font-size:26px;font-weight:800;color:${sc(s)}">${s}</div><div style="font-size:9px;color:var(--t3);text-transform:uppercase;margin-top:2px">${sl} Score</div>`
+          :o.pre_prime_score?`<div style="font-size:22px;font-weight:800;color:var(--steel)">~${o.pre_prime_score}</div><div style="font-size:9px;color:var(--t3);text-transform:uppercase;margin-top:2px">SCOUT Estimate</div><div style="font-size:8px;color:var(--t3);margin-top:1px">Pending JUDGE</div>`
+          :`<div style="font-size:26px;font-weight:800;color:var(--t3)">—</div><div style="font-size:9px;color:var(--t3);text-transform:uppercase;margin-top:2px">${sl} Score</div>`}
       </div>
       <div style="background:var(--card);border-radius:8px;padding:12px;text-align:center;border:1px solid var(--bd)">
         <div style="font-size:16px;font-weight:800;color:var(--gold)">${fmt(o.value)}</div>
@@ -1256,24 +1272,42 @@ function renderSystem(){
   const samCalls=cfgVal('SAM_CALLS_TODAY')||0;
   const samPct=Math.min(100,Math.round(samCalls/450*100));
 
-  // Group test results by category, show pass/fail
+  // Group test results by category, show pass/fail rate per category
   const testByCategory={};
   TESTS.forEach(t=>{
     if(!testByCategory[t.category])testByCategory[t.category]=[];
     testByCategory[t.category].push(t);
   });
-  const testHtml=Object.keys(testByCategory).length?Object.entries(testByCategory).map(([cat,tests])=>{
-    const passed=tests.filter(t=>t.passed).length;
-    const total=tests.length;
-    const halting=tests.some(t=>!t.passed&&t.tier>=3);
-    const c=halting?'var(--red)':passed===total?'var(--green)':'var(--amber)';
-    return `<div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--bd)">
-      <span style="width:8px;height:8px;border-radius:99px;background:${c};flex-shrink:0"></span>
-      <span style="font-size:11px;flex:1;color:var(--t2)">${cat}</span>
-      <span style="font-size:10px;color:${c};font-weight:600">${passed}/${total}</span>
-      ${halting?'<span class="badge" style="background:var(--redDim);color:var(--red)">HALT</span>':''}
-    </div>`;
-  }).join(''):'<div style="font-size:10px;color:var(--t3);padding:10px 0">T.E.S.T. has not run yet.</div>';
+  const totalTests=TESTS.length;
+  const totalPassed=TESTS.filter(t=>t.passed).length;
+  const passRate=totalTests>0?Math.round(totalPassed/totalTests*100):null;
+  const failingTests=TESTS.filter(t=>!t.passed);
+  const lastTestTime=TESTS.length?new Date(TESTS[0].run_at).toLocaleString('en-US',{month:'short',day:'numeric',hour:'numeric',minute:'2-digit'}):'Never';
+  const testHtml=Object.keys(testByCategory).length?`
+    <div style="display:flex;align-items:center;gap:12px;margin-bottom:8px;padding:8px 10px;background:var(--cardHi);border-radius:6px">
+      <div style="font-size:22px;font-weight:900;color:${passRate>=90?'var(--green)':passRate>=70?'var(--amber)':'var(--red)'}">${passRate!=null?passRate+'%':'—'}</div>
+      <div>
+        <div style="font-size:10px;color:var(--t2)">${totalPassed}/${totalTests} tests passed</div>
+        <div style="font-size:9px;color:var(--t3)">Last run: ${lastTestTime}</div>
+      </div>
+    </div>
+    ${Object.entries(testByCategory).map(([cat,tests])=>{
+      const passed=tests.filter(t=>t.passed).length;
+      const total=tests.length;
+      const halting=tests.some(t=>!t.passed&&t.tier>=3);
+      const c=halting?'var(--red)':passed===total?'var(--green)':'var(--amber)';
+      return `<div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--bd)">
+        <span style="width:8px;height:8px;border-radius:99px;background:${c};flex-shrink:0"></span>
+        <span style="font-size:11px;flex:1;color:var(--t2)">${cat}</span>
+        <span style="font-size:10px;color:${c};font-weight:600">${passed}/${total}</span>
+        ${halting?'<span class="badge" style="background:var(--redDim);color:var(--red)">HALT</span>':''}
+      </div>`;
+    }).join('')}
+    ${failingTests.length?`<div style="margin-top:8px;padding:8px 10px;background:var(--redDim);border-radius:6px;border:1px solid rgba(248,113,113,.2)">
+      <div style="font-size:9px;font-weight:700;color:var(--red);margin-bottom:4px">FAILING TESTS</div>
+      ${failingTests.slice(0,5).map(t=>`<div style="font-size:10px;color:var(--t2);padding:2px 0">• ${t.test_name||t.category}: <span style="color:var(--red)">${t.error_message||'failed'}</span></div>`).join('')}
+    </div>`:''}
+  `:'<div style="font-size:10px;color:var(--t3);padding:10px 0">T.E.S.T. has not run yet. Run T.E.S.T. from GitHub Actions to validate system health.</div>';
 
   document.getElementById('t-system').innerHTML=`
     <div style="font-size:16px;font-weight:700;margin-bottom:14px">⚙️ System · 10 Agents · 3 Verticals · 32 NAICS</div>
