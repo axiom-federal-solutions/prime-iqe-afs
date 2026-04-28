@@ -15,12 +15,13 @@ on:
     - cron: '0 10 * * *'
 
   # Triggered after other agents complete
+  # NOTE: Names must exactly match the 'name:' field in each workflow file
   workflow_run:
     workflows:
-      - "SCOUT SAM Scan"
-      - "JUDGE Scoring"
-      - "EXEC Prompt Payment Check"
-      - "BRANDI Morning Brief"
+      - "SCOUT — SAM.gov Scanner"
+      - "JUDGE - Opportunity Scoring"
+      - "EXEC - Prompt Payment Check"
+      - "BRANDI — Daily Brief & Supply Digest"
     types:
       - completed
 
@@ -31,6 +32,9 @@ on:
         description: 'Why are you running T.E.S.T. manually?'
         required: false
         default: 'Manual validation check'
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
 
 jobs:
   run-test-validation:
