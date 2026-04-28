@@ -7,7 +7,7 @@ import React, { useState, useEffect } from "react";
    UEI:     USMQMFAGL9M4
    Exec Agent: BRANDI (CEO) → 8 specialist subordinates
    Stack:   SAM.gov → Supabase → Claude Haiku → GitHub Actions
-   Built by: Noble Erne, LLC
+   Built by: Walker Contractors LLC / Axiom Federal Solutions
    Score:   100/100 · 70 gaps closed · $8–9/mo · 17 workflows
    ============================================================ */
 
@@ -544,8 +544,8 @@ export default function PrimeDashboard() {
 
         {/* Sidebar footer */}
         <div style={{ marginTop: 'auto', padding: '16px 12px 8px', fontSize: 9, color: V.t3, lineHeight: 1.6, borderTop: `1px solid ${V.bd}` }}>
-          Built by Noble Erne, LLC<br />
-          Axiom Federal Solutions<br />
+          Walker Contractors LLC<br />
+          Axiom Federal Solutions · CAGE 7JKKO<br />
           Score: 100/100 · $8–9/mo<br />
           70 gaps closed · 17 workflows
         </div>
