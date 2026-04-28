@@ -285,6 +285,9 @@ async function upsertOpportunity(opp, type, naics) {
     primeScore = calcPrePrimeScore(opp, naics, state);
   }
 
+  // NOTE: 'status' is intentionally omitted from this payload.
+  // The DB column has DEFAULT 'new' so new rows start as 'new' automatically.
+  // Updates must never overwrite a status set by the user (passed, pursuing, reviewing).
   const { error } = await supabase.from('opportunities').upsert({
     solicitation_number: solNum,
     title:               opp.title || 'Federal Opportunity',
@@ -300,13 +303,21 @@ async function upsertOpportunity(opp, type, naics) {
     source:              'SAM.gov',
     vertical:            deriveVertical(naics),
     pre_prime_score:     primeScore,   // SCOUT rough estimate — JUDGE overwrites prime_score
-    status:              'new',
     raw_data:            opp,
   }, { onConflict: 'solicitation_number' });
 
   if (error) {
     console.warn('SCOUT: Failed to upsert ' + solNum + ' —', error.message);
     return false;
+  }
+
+  // Auto-expire: if the deadline has already passed, mark as expired
+  // (only affects rows with status='new' — never touch passed/pursuing/reviewing)
+  if (deadline && new Date(deadline) < new Date()) {
+    await supabase.from('opportunities')
+      .update({ status: 'expired' })
+      .eq('solicitation_number', solNum)
+      .eq('status', 'new'); // Only expire if user hasn't taken action
   }
 
   return true;
@@ -362,6 +373,8 @@ async function scanDLADIBBS() {
       const deadline    = deadlineRaw ? deadlineRaw.toISOString().split('T')[0] : null;
       const primeScore  = 55; // Default pre-score for DIBBS items — JUDGE will re-score
 
+      // NOTE: 'status' omitted — DB DEFAULT 'new' handles new rows,
+      // updates must never overwrite user-set status (passed/pursuing/reviewing)
       const { error } = await supabase.from('opportunities').upsert({
         solicitation_number: solNum,
         title:               title || 'DLA DIBBS Supply Solicitation',
@@ -369,7 +382,6 @@ async function scanDLADIBBS() {
         naics,
         vertical:            'supply',
         source:              'DLA DIBBS',
-        status:              'new',
         pre_prime_score:     primeScore,
         deadline,
         description:         desc || null,

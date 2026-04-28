@@ -1,0 +1,50 @@
+name: Deploy Dashboard to GitHub Pages
+
+# Runs on every push to main — team always gets the latest build at the Pages URL
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:   # Allow manual trigger from Actions tab
+
+# Required for GitHub Pages deployment
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Only one deploy at a time — cancel in-flight if a new push lands
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    name: Deploy to GitHub Pages
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+
+    steps:
+      # ── 1. Pull the repo ──────────────────────────────────────────────
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # ── 2. Package the dashboard ──────────────────────────────────────
+      # We only need index.html for the dashboard — it pulls everything
+      # from Supabase at runtime. No build step required.
+      - name: Prepare deploy folder
+        run: |
+          mkdir -p _site
+          cp index.html _site/index.html
+
+      # ── 3. Upload to Pages ───────────────────────────────────────────
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+
+      # ── 4. Deploy ────────────────────────────────────────────────────
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
