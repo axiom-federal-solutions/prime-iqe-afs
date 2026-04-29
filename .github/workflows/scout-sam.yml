@@ -63,6 +63,20 @@ jobs:
           SUPABASE_URL:              ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
 
+      - name: Debug — verify Supabase connection
+        run: |
+          echo "SUPABASE_URL length: ${#SUPABASE_URL}"
+          echo "SUPABASE_URL prefix: ${SUPABASE_URL:0:30}"
+          echo "SERVICE_KEY length: ${#SUPABASE_SERVICE_KEY}"
+          echo "SERVICE_KEY prefix: ${SUPABASE_SERVICE_KEY:0:20}"
+          curl -s -o /dev/null -w "Supabase HTTP status: %{http_code}\n" \
+            -H "apikey: $SUPABASE_SERVICE_KEY" \
+            -H "Authorization: Bearer $SUPABASE_SERVICE_KEY" \
+            "$SUPABASE_URL/rest/v1/system_config?select=key&limit=1"
+        env:
+          SUPABASE_URL:         ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+
       - name: Run SCOUT — SAM.gov scanner
         run: node agents/scout.js
         env:
