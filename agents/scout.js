@@ -246,15 +246,18 @@ async function scanSAMGov(type, naicsCodes, globalCallsUsed = 0) {
     }
 
     try {
+      // NOTE: typeOfSetAside is intentionally excluded from this request.
+      // Passing ['SDB',''].join(',') produces 'SDB,' (trailing comma) which is
+      // a malformed SAM.gov parameter — the API returns HTTP 200 with 0 results.
+      // Solution: fetch all active opps and let JUDGE score set-aside eligibility.
       const params = new URLSearchParams({
-        api_key:        SAM_API_KEY,
-        naicsCode:      naics,
-        postedFrom:     weekAgo,
-        postedTo:       today,
-        limit:          '50',
-        offset:         '0',
-        active:         'true',
-        typeOfSetAside: SET_ASIDE_TYPES.join(','),
+        api_key:    SAM_API_KEY,
+        naicsCode:  naics,
+        postedFrom: weekAgo,
+        postedTo:   today,
+        limit:      '50',
+        offset:     '0',
+        active:     'true',
       });
 
       const data = await fetchJSON(SAM_API_BASE + '?' + params.toString(), {
