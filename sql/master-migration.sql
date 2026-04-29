@@ -593,7 +593,7 @@ CREATE INDEX IF NOT EXISTS idx_suppliers_state    ON suppliers (state);
 CREATE INDEX IF NOT EXISTS idx_suppliers_status   ON suppliers (status);
 CREATE INDEX IF NOT EXISTS idx_suppliers_cage     ON suppliers (cage_code);
 CREATE INDEX IF NOT EXISTS idx_suppliers_name_fts ON suppliers USING GIN (
-  to_tsvector('english', coalesce(name, '') || ' ' || array_to_string(specialties, ' '))
+  to_tsvector('english', coalesce(name, ''))
 );
 
 
