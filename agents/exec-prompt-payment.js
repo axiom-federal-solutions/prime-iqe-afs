@@ -8,7 +8,7 @@
 // COST: ~$0 (no LLM — pure math)
 // =============================================================
 
-const { supabase, logAction } = require('../lib/supabase');
+const { supabase, logAction, isAgentEnabled } = require('../lib/supabase');
 
 // Prompt Payment Act: government must pay within 14 days
 const PAYMENT_DEADLINE_DAYS = 14;
@@ -21,6 +21,9 @@ const TREASURY_RATE_FALLBACK = 0.0575; // 5.75% — update quarterly
 // MAIN: Run daily prompt payment check
 // ----------------------------------------------------------
 async function runPromptPaymentCheck() {
+  // T.E.S.T. integration: check if agent is enabled before running
+  if (!(await isAgentEnabled('EXEC'))) return;
+
   console.log('EXEC PROMPT PAYMENT: Starting daily check...');
 
   try {

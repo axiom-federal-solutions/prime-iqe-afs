@@ -477,7 +477,7 @@ async function loadData(manual=false){
       sb.from('supplier_matches').select('*, suppliers(name,city,state,certifications,socioeconomic,federal_contract_count,avg_contract_value,naics_codes,capability_tier,contact_email)').order('match_score',{ascending:false}).limit(100), // GAP1 FIX: join suppliers table
       sb.from('audit_log').select('*').order('created_at',{ascending:false}).limit(50),  // GAP1 FIX: was agent_logs
       sb.from('system_config').select('*'),
-      sb.from('test_results').select('*').order('run_at',{ascending:false}).limit(30),
+      sb.from('test_results').select('*').order('created_at',{ascending:false}).limit(30),
       sb.from('prompt_payment_claims').select('*').order('payment_due',{ascending:true}).limit(30),
       sb.from('osdbu_events').select('*').order('created_at',{ascending:false}).limit(20),
       sb.from('active_contracts').select('*').limit(50)
@@ -1700,7 +1700,7 @@ function renderSystem(){
   const totalPassed=TESTS.filter(t=>t.passed).length;
   const passRate=totalTests>0?Math.round(totalPassed/totalTests*100):null;
   const failingTests=TESTS.filter(t=>!t.passed);
-  const lastTestTime=TESTS.length?new Date(TESTS[0].run_at).toLocaleString('en-US',{month:'short',day:'numeric',hour:'numeric',minute:'2-digit'}):'Never';
+  const lastTestTime=TESTS.length?new Date(TESTS[0].created_at||TESTS[0].run_at).toLocaleString('en-US',{month:'short',day:'numeric',hour:'numeric',minute:'2-digit'}):'Never';
   const testHtml=Object.keys(testByCategory).length?`
     <div style="display:flex;align-items:center;gap:12px;margin-bottom:8px;padding:8px 10px;background:var(--cardHi);border-radius:6px">
       <div style="font-size:22px;font-weight:900;color:${passRate>=90?'var(--green)':passRate>=70?'var(--amber)':'var(--red)'}">${passRate!=null?passRate+'%':'—'}</div>

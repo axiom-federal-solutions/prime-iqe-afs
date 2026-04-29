@@ -68,16 +68,18 @@ async function sendDailyBrief() {
   const ctTime    = new Date().toLocaleTimeString('en-US', { timeZone:'America/Chicago', hour:'numeric', minute:'2-digit', hour12:true });
 
   // Parallelize all DB reads — drops brief generation from ~9s to ~2s
-  const [topOpps, urgent, pending, vaultIssues, costData] = await Promise.all([
+  const [topOpps, urgent, pending, vaultIssues, costData, supplierSection, testHealth] = await Promise.all([
     getTopOpportunities('construction', 5),
     getUrgentOpportunities(48),
     getPendingApprovals(),
     getVaultIssues(),
     getMonthlySpend(),
+    getSupplierAlerts(),
+    getTestHealthSection(),
   ]);
 
   // Build the email HTML
-  const body = buildDailyBriefBody({ topOpps, urgent, pending, vaultIssues, costData, today, ctTime });
+  const body = buildDailyBriefBody({ topOpps, urgent, pending, vaultIssues, costData, supplierSection, testHealth, today, ctTime });
 
   const subject = buildDailySubject(topOpps, urgent, pending);
 
@@ -230,7 +232,7 @@ function buildDailySubject(topOpps, urgent, pending) {
   return 'PRIME Morning Brief — ' + today + (parts.length ? ' · ' + parts.join(' · ') : '');
 }
 
-function buildDailyBriefBody({ topOpps, urgent, pending, vaultIssues, costData, today, ctTime }) {
+function buildDailyBriefBody({ topOpps, urgent, pending, vaultIssues, costData, supplierSection, testHealth, today, ctTime }) {
   let html = '';
 
   // --- Urgent Section ---
@@ -268,6 +270,29 @@ function buildDailyBriefBody({ topOpps, urgent, pending, vaultIssues, costData, 
     <div style="background:rgba(248,113,113,0.06);border:1px solid rgba(248,113,113,0.2);border-radius:8px;padding:16px;margin-bottom:20px;">
       <div style="font-size:12px;font-weight:700;letter-spacing:2px;color:#F87171;margin-bottom:10px;">COMPLIANCE ALERTS</div>
       ${vaultIssues.map(issue => `<div style="font-size:13px;color:#EDF0F7;padding:4px 0;">${issue}</div>`).join('')}
+    </div>`;
+  }
+
+  // --- Supplier Matches Section ---
+  if (supplierSection) {
+    html += `
+    <div style="background:rgba(52,211,153,0.06);border:1px solid rgba(52,211,153,0.2);border-radius:8px;padding:16px;margin-bottom:20px;">
+      <div style="font-size:12px;font-weight:700;letter-spacing:2px;color:#34D399;margin-bottom:10px;">🤝 NEW SUPPLIER MATCHES</div>
+      <div style="font-size:13px;color:#EDF0F7;white-space:pre-line;">${supplierSection}</div>
+    </div>`;
+  }
+
+  // --- T.E.S.T. System Health ---
+  if (testHealth) {
+    const isHealthy = testHealth.includes('ALL') || testHealth.includes('passed');
+    const isCritical = testHealth.includes('HALT') || testHealth.includes('🔴');
+    const color = isCritical ? '#F87171' : isHealthy ? '#34D399' : '#E9C46A';
+    const bg    = isCritical ? 'rgba(248,113,113,0.06)' : isHealthy ? 'rgba(52,211,153,0.06)' : 'rgba(233,196,106,0.06)';
+    const border = isCritical ? 'rgba(248,113,113,0.2)' : isHealthy ? 'rgba(52,211,153,0.2)' : 'rgba(233,196,106,0.2)';
+    html += `
+    <div style="background:${bg};border:1px solid ${border};border-radius:8px;padding:16px;margin-bottom:20px;">
+      <div style="font-size:12px;font-weight:700;letter-spacing:2px;color:${color};margin-bottom:10px;">🧪 SYSTEM HEALTH — T.E.S.T.</div>
+      <div style="font-size:13px;color:#EDF0F7;white-space:pre-line;">${testHealth}</div>
     </div>`;
   }
 

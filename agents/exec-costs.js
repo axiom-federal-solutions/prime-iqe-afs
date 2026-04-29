@@ -6,7 +6,7 @@
 // COST: ~$0 (no LLM — pure data comparison)
 // =============================================================
 
-const { supabase, logAction } = require('../lib/supabase');
+const { supabase, logAction, isAgentEnabled } = require('../lib/supabase');
 
 // Alert threshold — flag any cost variance over 10%
 const VARIANCE_ALERT_PCT = 10;
@@ -15,6 +15,9 @@ const VARIANCE_ALERT_PCT = 10;
 // MAIN: Run Monday cost sync
 // ----------------------------------------------------------
 async function runCostSync() {
+  // T.E.S.T. integration: check if agent is enabled before running
+  if (!(await isAgentEnabled('EXEC'))) return;
+
   console.log('EXEC COSTS: Starting Monday cost sync...');
 
   try {

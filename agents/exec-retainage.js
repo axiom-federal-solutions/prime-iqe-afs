@@ -9,7 +9,7 @@
 // COST: ~$0 (no LLM)
 // =============================================================
 
-const { supabase, logAction } = require('../lib/supabase');
+const { supabase, logAction, isAgentEnabled } = require('../lib/supabase');
 
 // Days after requesting release before escalating to URGENT
 const FOLLOWUP_DAYS = 30;
@@ -18,6 +18,9 @@ const FOLLOWUP_DAYS = 30;
 // MAIN: Run weekly retainage monitor
 // ----------------------------------------------------------
 async function runRetainageMonitor() {
+  // T.E.S.T. integration: check if agent is enabled before running
+  if (!(await isAgentEnabled('EXEC'))) return;
+
   console.log('EXEC RETAINAGE: Starting weekly monitor...');
 
   try {

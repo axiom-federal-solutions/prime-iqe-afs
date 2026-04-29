@@ -7,7 +7,7 @@
 // COST: ~$0.50/month (Haiku for report narrative)
 // =============================================================
 
-const { supabase, logAction } = require('../lib/supabase');
+const { supabase, logAction, isAgentEnabled } = require('../lib/supabase');
 const { claudeHaiku } = require('../lib/claude');
 
 // Concentration risk threshold — flag if one agency > 40% of revenue
@@ -17,6 +17,9 @@ const CONCENTRATION_THRESHOLD = 40;
 // MAIN: Run monthly performance report
 // ----------------------------------------------------------
 async function runMonthlyReport() {
+  // T.E.S.T. integration: check if agent is enabled before running
+  if (!(await isAgentEnabled('LEDGER'))) return;
+
   console.log('LEDGER MONTHLY: Generating monthly performance report...');
 
   const reportMonth = getLastMonthLabel();

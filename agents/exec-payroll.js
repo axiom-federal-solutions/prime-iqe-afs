@@ -8,7 +8,7 @@
 // COST: ~$0 (no LLM — form generation only)
 // =============================================================
 
-const { supabase, logAction } = require('../lib/supabase');
+const { supabase, logAction, isAgentEnabled } = require('../lib/supabase');
 
 // Minimum Davis-Bacon hourly rates by state (construction)
 // These back up the live DOL rates for validation
@@ -28,6 +28,9 @@ const MINIMUM_RATES = {
 // MAIN: Run weekly certified payroll generation
 // ----------------------------------------------------------
 async function runCertifiedPayroll() {
+  // T.E.S.T. integration: check if agent is enabled before running
+  if (!(await isAgentEnabled('EXEC'))) return;
+
   console.log('EXEC PAYROLL: Starting weekly WH-347 generation...');
 
   try {
