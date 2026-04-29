@@ -1,17 +1,12 @@
-<<<<<<< HEAD
 name: RECON - Congressional Intel
 
 # Runs every Monday at 8 AM UTC (3 AM CT)
 # Scans Congress.gov for appropriations bills affecting
 # construction and supply budgets. 12-18 month early warning.
-=======
-name: RECON - Congressional District Monitor
->>>>>>> prime-system/main
 on:
   schedule:
     - cron: '0 8 * * 1'
   workflow_dispatch:
-<<<<<<< HEAD
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
@@ -38,19 +33,3 @@ jobs:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-=======
-jobs:
-  recon-congressional:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-      - run: npm ci
-      - run: node agents/recon-congress.js
-        env:
-          CONGRESS_API_KEY: ${{ secrets.CONGRESS_API_KEY }}
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
->>>>>>> prime-system/main

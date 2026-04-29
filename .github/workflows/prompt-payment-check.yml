@@ -1,17 +1,13 @@
 name: EXEC - Prompt Payment Check
-<<<<<<< HEAD
 
 # Runs daily at 7 AM UTC (2 AM CT)
 # Checks all invoices for late government payments.
 # Calculates Prompt Payment Act interest owed (FAR 52.232-25).
 # Drafts claim letters and queues in Brandi's brief.
-=======
->>>>>>> prime-system/main
 on:
   schedule:
     - cron: '0 7 * * *'
   workflow_dispatch:
-<<<<<<< HEAD
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
@@ -38,19 +34,3 @@ jobs:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-=======
-jobs:
-  exec-prompt-payment:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-      - run: npm ci
-      - run: node agents/exec-prompt-payment.js
-        env:
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
-          SENDGRID_API_KEY: ${{ secrets.SENDGRID_API_KEY }}
->>>>>>> prime-system/main

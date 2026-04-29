@@ -1,17 +1,13 @@
 name: VAULT - SAM Health Check
-<<<<<<< HEAD
 
 # Runs on the 1st of each month at 5 AM UTC (12 AM CT)
 # Validates SAM.gov registration: status, NAICS alignment,
 # expiry countdown, address accuracy, banking accuracy.
 # Flags any issues to Brandi's brief.
-=======
->>>>>>> prime-system/main
 on:
   schedule:
     - cron: '0 5 1 * *'
   workflow_dispatch:
-<<<<<<< HEAD
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
@@ -38,21 +34,3 @@ jobs:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
           SAM_API_KEY: ${{ secrets.SAM_API_KEY }}
-=======
-jobs:
-  vault-sam-health:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-      - run: npm ci
-      - run: node agents/vault-sam-health.js
-        env:
-          SAM_API_KEY: ${{ secrets.SAM_API_KEY }}
-          SAM_UEI: ${{ secrets.SAM_UEI }}
-          CAGE_CODE: ${{ secrets.CAGE_CODE }}
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
->>>>>>> prime-system/main

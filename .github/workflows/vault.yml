@@ -46,6 +46,6 @@ jobs:
         run: node agents/vault.js
         env:
           SUPABASE_URL:              ${{ secrets.SUPABASE_URL }}
-          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
           CAGE_CODE:                 ${{ secrets.CAGE_CODE }}
           BONDING_COMPANY:           ${{ secrets.BONDING_COMPANY }}

@@ -11,7 +11,6 @@
 const { supabase, logAction } = require('../lib/supabase');
 const { claudeHaiku } = require('../lib/claude');
 
-<<<<<<< HEAD
 // CPARS rating scale: Exceptional, Very Good, Satisfactory, Marginal, Unsatisfactory
 const RATINGS_NEEDING_RESPONSE = ['Marginal', 'Unsatisfactory'];
 
@@ -19,11 +18,7 @@ const RATINGS_NEEDING_RESPONSE = ['Marginal', 'Unsatisfactory'];
 const RESPONSE_WINDOW_DAYS = 14;
 
 // Walker Contractors company info for response letters
-=======
-const RATINGS_NEEDING_RESPONSE = ['Marginal', 'Unsatisfactory'];
-const RESPONSE_WINDOW_DAYS = 14;
 
->>>>>>> prime-system/main
 const COMPANY = {
   name: 'Walker Contractors LLC',
   dba: 'Axiom Federal Solutions',
@@ -37,10 +32,7 @@ async function runCPARSMonitor() {
   console.log('RECON CPARS: Checking for new CPARS evaluations...');
 
   try {
-<<<<<<< HEAD
     // Check existing CPARS records for upcoming response deadlines
-=======
->>>>>>> prime-system/main
     const ratings = await getPendingRatings();
     console.log('RECON CPARS: Found ' + ratings.length + ' evaluations to review.');
 
@@ -68,7 +60,6 @@ async function runCPARSMonitor() {
   }
 }
 
-<<<<<<< HEAD
 // ----------------------------------------------------------
 // GET PENDING: Find evaluations that need attention
 // ----------------------------------------------------------
@@ -79,48 +70,30 @@ async function getPendingRatings() {
     .eq('response_submitted', false)
     .not('evaluation_date', 'is', null);
 
-=======
-async function getPendingRatings() {
-  const { data, error } = await supabase
-    .from('cpars_ratings').select('*')
-    .eq('response_submitted', false).not('evaluation_date', 'is', null);
->>>>>>> prime-system/main
   if (error) throw new Error('Could not load CPARS data: ' + error.message);
   return data || [];
 }
 
-<<<<<<< HEAD
 // ----------------------------------------------------------
 // PROCESS: Check each rating and take action
 // ----------------------------------------------------------
-=======
->>>>>>> prime-system/main
 async function processRating(rating) {
   const today = new Date();
   const evalDate = new Date(rating.evaluation_date);
   const responseDeadline = new Date(evalDate);
   responseDeadline.setDate(evalDate.getDate() + RESPONSE_WINDOW_DAYS);
   const daysToDeadline = Math.floor((responseDeadline - today) / 86400000);
-<<<<<<< HEAD
 
   // Check if this is a rating that needs a response
   const needsResponse = RATINGS_NEEDING_RESPONSE.includes(rating.overall_rating);
 
   if (needsResponse && !rating.response_doc_url) {
     // Draft a response using Claude Haiku
-=======
-  const needsResponse = RATINGS_NEEDING_RESPONSE.includes(rating.overall_rating);
-
-  if (needsResponse && !rating.response_doc_url) {
->>>>>>> prime-system/main
     return await draftCPARSResponse(rating, daysToDeadline);
   }
 
   if (daysToDeadline <= 3 && !rating.response_submitted) {
-<<<<<<< HEAD
     // Deadline warning — 3 days left to respond
-=======
->>>>>>> prime-system/main
     await logAction('RECON', 'CPARS response deadline approaching', {
       contract_id: rating.contract_id,
       overall_rating: rating.overall_rating,
@@ -133,12 +106,9 @@ async function processRating(rating) {
   return 'monitoring';
 }
 
-<<<<<<< HEAD
 // ----------------------------------------------------------
 // DRAFT: Write a professional CPARS response
 // ----------------------------------------------------------
-=======
->>>>>>> prime-system/main
 async function draftCPARSResponse(rating, daysToDeadline) {
   console.log('RECON CPARS: Drafting response for contract ' + rating.contract_id +
     ' (' + rating.overall_rating + ' rating)...');
@@ -157,16 +127,11 @@ async function draftCPARSResponse(rating, daysToDeadline) {
     'Tone: professional, not defensive. Keep it under 300 words.'
   );
 
-<<<<<<< HEAD
   // Update the CPARS record with the draft response
   await supabase
     .from('cpars_ratings')
     .update({ response_doc_url: 'draft_in_audit_log' })
     .eq('id', rating.id);
-=======
-  await supabase.from('cpars_ratings')
-    .update({ response_doc_url: 'draft_in_audit_log' }).eq('id', rating.id);
->>>>>>> prime-system/main
 
   await logAction('RECON', 'CPARS response drafted', {
     contract_id: rating.contract_id,

@@ -1,17 +1,12 @@
-<<<<<<< HEAD
 name: LEDGER - Monthly Report
 
 # Runs on the 1st of each month at 6 AM UTC (1 AM CT)
 # Generates monthly performance report: win rates,
 # scoring accuracy, cost variance trends, concentration risk.
-=======
-name: LEDGER - Monthly P&L Report
->>>>>>> prime-system/main
 on:
   schedule:
     - cron: '0 6 1 * *'
   workflow_dispatch:
-<<<<<<< HEAD
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
@@ -38,20 +33,4 @@ jobs:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-=======
-jobs:
-  ledger:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-      - run: npm ci
-      - run: node agents/ledger-monthly.js
-        env:
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
->>>>>>> prime-system/main
           SENDGRID_API_KEY: ${{ secrets.SENDGRID_API_KEY }}

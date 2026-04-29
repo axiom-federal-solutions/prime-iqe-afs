@@ -1,4 +1,3 @@
-<<<<<<< HEAD
 name: RECON - GAO Protest Scan
 
 # Runs daily at 10 AM UTC (5 AM CT)
@@ -6,14 +5,10 @@ name: RECON - GAO Protest Scan
 # Matches protests to Walker Contractors pipeline.
 # Alerts on won contracts being protested and
 # lost contracts eligible for challenge.
-=======
-name: RECON - GAO Protest Scanner
->>>>>>> prime-system/main
 on:
   schedule:
     - cron: '0 10 * * *'
   workflow_dispatch:
-<<<<<<< HEAD
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
@@ -40,19 +35,3 @@ jobs:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-=======
-jobs:
-  recon-gao:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-      - run: npm ci
-      - run: node agents/recon-gao.js
-        env:
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
->>>>>>> prime-system/main

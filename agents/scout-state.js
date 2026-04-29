@@ -9,7 +9,6 @@
 
 const { supabase, logAction } = require('../lib/supabase');
 
-<<<<<<< HEAD
 // ----------------------------------------------------------
 // VERTICAL DERIVATION: Classify opportunity by NAICS code
 // ----------------------------------------------------------
@@ -26,10 +25,6 @@ function deriveVertical(naics) {
 // Construction: 236220, 238210, 237990, 236116, 561730
 // Supply: 424710 (Fuel), 424130 (Janitorial/Paper), 424490 (PPE), 424120 (Office Supplies), 424410 (Food & Beverage)
 const NAICS_CODES = ['236220', '238210', '237990', '236116', '561730', '424710', '424130', '424490', '424120', '424410'];
-=======
-// Walker Contractors target NAICS codes
-const NAICS_CODES = ['236220', '238210', '237990', '236116', '561730', '424710', '424130', '424490', '424120'];
->>>>>>> prime-system/main
 
 // State procurement portals to scan
 const STATE_PORTALS = [
@@ -166,18 +161,14 @@ async function scanPortal(portal) {
 async function upsertStateOpportunity(opp, portal) {
   const solicitationNumber = opp.solicitation_number || portal.state + '-' + Date.now();
 
-<<<<<<< HEAD
   const naicsCode = opp.naics || '236220';
   const rawDeadline = opp.deadline || null;
   const parsedDeadline = rawDeadline ? new Date(rawDeadline).toISOString().split('T')[0] : null;
 
-=======
->>>>>>> prime-system/main
   const { error } = await supabase.from('opportunities').upsert({
     solicitation_number: solicitationNumber,
     title: opp.title || 'State Procurement Opportunity',
     agency: portal.state + ' ' + (opp.agency || 'State Agency'),
-<<<<<<< HEAD
     naics: naicsCode,
     state: portal.state,
     value: opp.value || null,
@@ -186,15 +177,6 @@ async function upsertStateOpportunity(opp, portal) {
     source: portal.name,
     status: 'new',
     vertical: deriveVertical(naicsCode),
-=======
-    naics: opp.naics || '236220',
-    state: portal.state,
-    value: opp.value || null,
-    posted_date: opp.posted_date || new Date().toISOString().split('T')[0],
-    deadline: opp.deadline || null,
-    source: portal.name,
-    status: 'new',
->>>>>>> prime-system/main
   }, { onConflict: 'solicitation_number' });
 
   if (error) {

@@ -55,7 +55,7 @@ jobs:
         run: node agents/brandi.js ${{ github.event.inputs.mode || 'daily' }}
         env:
           SUPABASE_URL:              ${{ secrets.SUPABASE_URL }}
-          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
           SENDGRID_API_KEY:          ${{ secrets.SENDGRID_API_KEY }}
           FROM_EMAIL:                ${{ secrets.FROM_EMAIL }}
           FROM_NAME:                 ${{ secrets.FROM_NAME }}
@@ -84,7 +84,7 @@ jobs:
         run: node agents/brandi.js supply
         env:
           SUPABASE_URL:              ${{ secrets.SUPABASE_URL }}
-          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
           SENDGRID_API_KEY:          ${{ secrets.SENDGRID_API_KEY }}
           FROM_EMAIL:                ${{ secrets.FROM_EMAIL }}
           FROM_NAME:                 ${{ secrets.FROM_NAME }}

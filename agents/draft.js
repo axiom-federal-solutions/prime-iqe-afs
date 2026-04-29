@@ -1,7 +1,6 @@
 // =============================================================
 // DRAFT.JS — Document & Response Automated Filing Tool
 // JOB: Write federal bid proposals, compliance matrices, memos
-<<<<<<< HEAD
 // SCHEDULE: On-demand only — triggered when Mr. Kemp approves a bid
 // COST: ~$4/month (Claude Sonnet for proposals, Haiku for memos)
 // SAFETY RULE: DRAFT NEVER sends anything automatically.
@@ -28,21 +27,6 @@ const COMPANY = {
 // ----------------------------------------------------------
 // MAIN FUNCTION: Generate a complete proposal package
 // Called when Mr. Kemp approves a bid in the morning briefing
-=======
-// SCHEDULE: On-demand only — triggered when Joe approves a bid
-// COST: ~$4/month (Claude Sonnet for proposals, Haiku for memos)
-// SAFETY RULE: DRAFT NEVER sends anything automatically.
-//              Everything goes to BRANDI for Joe's review first.
-// =============================================================
-
-// Load helper tools
-const { supabase, logAction } = require('../lib/supabase');
-const { claudeSonnet, claudeHaiku } = require('../lib/claude');
-
-// ----------------------------------------------------------
-// MAIN FUNCTION: Generate a complete proposal package
-// Called when Joe approves a bid in the morning briefing
->>>>>>> prime-system/main
 // ----------------------------------------------------------
 async function runDraft() {
   // Get the bid ID from the command line argument
@@ -58,11 +42,7 @@ async function runDraft() {
 
   try {
     await generateProposal(bidId);
-<<<<<<< HEAD
     console.log('DRAFT: Proposal complete — queued for Mr. Kemp review in BRANDI.');
-=======
-    console.log('DRAFT: Proposal complete — queued for Joe review in BRANDI.');
->>>>>>> prime-system/main
   } catch (err) {
     console.error('DRAFT ERROR:', err.message);
     await logAction('DRAFT', 'Proposal generation failed', { bidId, error: err.message });
@@ -70,7 +50,6 @@ async function runDraft() {
   }
 }
 
-<<<<<<< HEAD
 // Supply NAICS codes — these get a short-form proposal, not 4-volume
 const SUPPLY_NAICS = ['424710', '424130', '424490', '424120', '424410'];
 
@@ -78,21 +57,12 @@ const SUPPLY_NAICS = ['424710', '424130', '424490', '424120', '424410'];
 // GENERATE PROPOSAL: Route to construction or supply format
 //   Construction: 4-volume federal proposal package
 //   Supply: 1-2 page short-form quote + capability statement
-=======
-// ----------------------------------------------------------
-// GENERATE PROPOSAL: Build a full 4-volume federal proposal
-// Volume 1: Technical Approach
-// Volume 2: Management Plan
-// Volume 3: Past Performance
-// Volume 4: Price Proposal
->>>>>>> prime-system/main
 // ----------------------------------------------------------
 async function generateProposal(bidId) {
   // Load the bid and its linked opportunity from the database
   const bid = await getBidWithOpportunity(bidId);
   if (!bid) throw new Error('Bid not found: ' + bidId);
 
-<<<<<<< HEAD
   // Route to supply short-form if this is a supply NAICS
   if (SUPPLY_NAICS.includes(bid.opportunities.naics)) {
     console.log('DRAFT: Supply opportunity detected — using short-form template');
@@ -106,32 +76,17 @@ async function generateProposal(bidId) {
 
   // Get the pricing from BID ENGINE (already stored in the bid record)
   const pricing = await getBidEnginePricing(bidId);
-=======
-  // Load past performance on similar contracts
-  const pastPerf = await getRelevantPastPerformance(bid.opportunities.naics);
-
-  // Get the pricing from BID ENGINE
-  const pricing  = await getBidEnginePricing(bidId);
->>>>>>> prime-system/main
 
   // ----------------------------------------------------------
   // STEP 1: Build the compliance matrix
   // This maps every RFP requirement to the proposal page that answers it
   // ----------------------------------------------------------
   const requirements = await extractRequirements(bid.opportunities);
-<<<<<<< HEAD
   const matrix = await buildComplianceMatrix(requirements, bidId);
 
   // ----------------------------------------------------------
   // STEP 2: Write the 4 proposal volumes using Claude Sonnet
   // Sonnet writes higher-quality proposals than Haiku
-=======
-  const matrix       = await buildComplianceMatrix(requirements, bidId);
-
-  // ----------------------------------------------------------
-  // STEP 2: Write the 4 proposal volumes using Claude Sonnet
-  // Sonnet is smarter and writes better proposals than Haiku
->>>>>>> prime-system/main
   // ----------------------------------------------------------
   console.log('DRAFT: Writing Technical Approach (Volume 1)...');
   const technical = await claudeSonnet(buildTechnicalPrompt(bid, requirements));
@@ -146,7 +101,6 @@ async function generateProposal(bidId) {
   const price = buildPriceVolume(pricing);
 
   // ----------------------------------------------------------
-<<<<<<< HEAD
   // STEP 3: Write a bid/no-bid recommendation memo
   // Short summary for Mr. Kemp's morning review
   // ----------------------------------------------------------
@@ -163,24 +117,10 @@ async function generateProposal(bidId) {
       set_aside: bid.opportunities.set_aside,
     }) +
     '. Format: (1) Opportunity overview, (2) Why we are competitive, (3) Recommendation and key risks. Be direct.'
-=======
-  // STEP 3: Also write a bid/no-bid memo
-  // This is a short document explaining why we should bid
-  // ----------------------------------------------------------
-  const bidMemo = await claudeHaiku(
-    'Write a brief 3-paragraph bid/no-bid recommendation memo for this opportunity. ' +
-    'Be concise and business-like. Opportunity: ' + JSON.stringify({
-      title: bid.opportunities.title,
-      agency: bid.opportunities.agency,
-      value: bid.opportunities.value,
-      prime_score: bid.opportunities.prime_score,
-    })
->>>>>>> prime-system/main
   );
 
   // ----------------------------------------------------------
   // STEP 4: Save everything — NEVER auto-send
-<<<<<<< HEAD
   // All documents wait in the database for Mr. Kemp's approval
   // ----------------------------------------------------------
   await storeDraft(bidId, {
@@ -260,23 +200,11 @@ async function generateSupplyProposal(bidId, bid) {
     naics: opp.naics,
     format: 'short-form supply quote + capability statement',
     pricing_available: !!pricing,
-=======
-  // All documents wait in the database for Joe's approval
-  // ----------------------------------------------------------
-  await storeDraft(bidId, { technical, management, pastPerformance, price, bidMemo, matrix });
-  await queueForBrandiReview(bidId, 'PROPOSAL_READY');
-
-  await logAction('DRAFT', 'Proposal generated — awaiting Joe approval', {
-    bidId,
-    volumes: ['technical', 'management', 'past_performance', 'price'],
-    compliance_requirements: requirements.length,
->>>>>>> prime-system/main
   });
 }
 
 // ----------------------------------------------------------
 // EXTRACT REQUIREMENTS: Pull the RFP requirements from the opportunity
-<<<<<<< HEAD
 // These are the items the proposal must address
 // ----------------------------------------------------------
 async function extractRequirements(opportunity) {
@@ -304,22 +232,6 @@ async function extractRequirements(opportunity) {
   }
 
   return baseReqs;
-=======
-// These are the things the proposal must address
-// ----------------------------------------------------------
-async function extractRequirements(opportunity) {
-  // In a full implementation this would fetch and parse the actual PDF
-  // For now we return a standard federal RFP structure
-  return [
-    { section: 'L.1', requirement: 'Technical Approach — describe methodology', volume: 1 },
-    { section: 'L.2', requirement: 'Management Plan — staffing and timeline', volume: 2 },
-    { section: 'L.3', requirement: 'Past Performance — 3 relevant examples', volume: 3 },
-    { section: 'L.4', requirement: 'Price Proposal — fully loaded cost breakdown', volume: 4 },
-    { section: 'M.1', requirement: 'Technical evaluation factor', volume: 1 },
-    { section: 'M.2', requirement: 'Past performance evaluation', volume: 3 },
-    { section: 'M.3', requirement: 'Price — lowest price technically acceptable', volume: 4 },
-  ];
->>>>>>> prime-system/main
 }
 
 // ----------------------------------------------------------
@@ -331,10 +243,7 @@ async function buildComplianceMatrix(requirements, bidId) {
     requirement: req.requirement,
     volume: req.volume,
     page_reference: 'Volume ' + req.volume + ', Section ' + req.section,
-<<<<<<< HEAD
     addressed_by: COMPANY.legal_name,
-=======
->>>>>>> prime-system/main
     compliant: true,
   }));
 
@@ -352,16 +261,11 @@ async function buildComplianceMatrix(requirements, bidId) {
 }
 
 // ----------------------------------------------------------
-<<<<<<< HEAD
 // PROMPT BUILDERS: Instructions for Claude Sonnet on what to write
-=======
-// PROMPT BUILDERS: These tell Claude Sonnet what to write
->>>>>>> prime-system/main
 // ----------------------------------------------------------
 
 function buildTechnicalPrompt(bid, requirements) {
   return (
-<<<<<<< HEAD
     'You are writing Volume 1 (Technical Approach) of a federal government IT proposal. ' +
     'Contractor: ' + COMPANY.legal_name + ' (DBA: ' + COMPANY.dba + '). ' +
     'Specialty: ' + COMPANY.specialty + '. ' +
@@ -376,23 +280,11 @@ function buildTechnicalPrompt(bid, requirements) {
     '. Target length: 3 pages. Include: construction methodology, safety plan (EM 385-1-1), ' +
     'phasing approach, quality control plan, understanding of the facility mission, ' +
     'and why ' + COMPANY.legal_name + ' is uniquely qualified for federal construction in the Gulf South.'
-=======
-    'You are writing Volume 1 (Technical Approach) of a federal government bid proposal. ' +
-    'Contractor: Axiom Federal Solutions / Walker Contractors LLC. ' +
-    'Opportunity: ' + bid.opportunities.title + '. ' +
-    'Agency: ' + bid.opportunities.agency + '. ' +
-    'Value: $' + bid.opportunities.value + '. ' +
-    'NAICS: ' + bid.opportunities.naics + '. ' +
-    'Write a professional, FAR-compliant technical approach. ' +
-    'Address these RFP requirements: ' + requirements.filter(r => r.volume === 1).map(r => r.requirement).join('; ') + '. ' +
-    'Keep it to 3 pages. Use active voice. Be specific.'
->>>>>>> prime-system/main
   );
 }
 
 function buildManagementPrompt(bid) {
   return (
-<<<<<<< HEAD
     'You are writing Volume 2 (Management Plan) of a federal government IT proposal. ' +
     'Contractor: ' + COMPANY.legal_name + ' (DBA: ' + COMPANY.dba + '). ' +
     'Opportunity: ' + bid.opportunities.title + '. ' +
@@ -402,19 +294,10 @@ function buildManagementPrompt(bid) {
     'project schedule methodology (CPM schedule), safety program (EM 385-1-1 compliance), ' +
     'risk management, and small business subcontracting approach. ' +
     'Target length: 2 pages. Include an org chart description. Reference relevant federal construction standards.'
-=======
-    'You are writing Volume 2 (Management Plan) of a federal government bid proposal. ' +
-    'Contractor: Axiom Federal Solutions / Walker Contractors LLC. ' +
-    'Opportunity: ' + bid.opportunities.title + '. ' +
-    'Write a management plan covering: project organization, key personnel, ' +
-    'quality control, schedule, and subcontracting approach. ' +
-    'Keep it to 2 pages. Include an org chart description.'
->>>>>>> prime-system/main
   );
 }
 
 function buildPPPrompt(pastPerf, bid) {
-<<<<<<< HEAD
   const examples = pastPerf.length > 0
     ? pastPerf.slice(0, 3).map(c =>
         (c.title || 'Federal IT Contract') +
@@ -433,24 +316,10 @@ function buildPPPrompt(pastPerf, bid) {
     'period of performance, relevance to this opportunity, and performance outcomes. ' +
     'Use CPARS-style format. If limited past performance, emphasize key personnel experience ' +
     'and relevant commercial/state/local government work. Target length: 2 pages.'
-=======
-  const examples = pastPerf.slice(0, 3).map(c =>
-    c.title + ' — ' + c.agency + ' — $' + c.value
-  ).join('; ');
-
-  return (
-    'You are writing Volume 3 (Past Performance) of a federal government bid proposal. ' +
-    'Contractor: Axiom Federal Solutions / Walker Contractors LLC. ' +
-    'List and describe these 3 relevant past contracts: ' + examples + '. ' +
-    'For each, include: project description, customer, dollar value, period of performance, ' +
-    'and relevance to this opportunity (' + bid.opportunities.title + '). ' +
-    'Use the CPARS-style format.'
->>>>>>> prime-system/main
   );
 }
 
 function buildPriceVolume(pricing) {
-<<<<<<< HEAD
   // Price volume comes from BID ENGINE output — just format it
   if (!pricing) {
     return {
@@ -469,15 +338,6 @@ function buildPriceVolume(pricing) {
     odcs: pricing.odcs,
     indirect_rates: pricing.indirect_rates,
     notes: 'Pricing includes fully burdened labor rates per FAR 52.215-2. ODCs itemized separately.',
-=======
-  // Price volume uses BID ENGINE output — no AI needed, just math
-  return {
-    base_year: pricing?.base || 0,
-    option_years: pricing?.escalated || 0,
-    breakdown: pricing?.breakdown || {},
-    total: (pricing?.escalated || pricing?.base || 0),
-    notes: 'Pricing includes Davis-Bacon prevailing wages, material escalation, and bond premium.',
->>>>>>> prime-system/main
   };
 }
 
@@ -495,10 +355,7 @@ async function getBidWithOpportunity(bidId) {
 }
 
 async function getRelevantPastPerformance(naics) {
-<<<<<<< HEAD
   // Pull our own past contracts as past performance examples
-=======
->>>>>>> prime-system/main
   const { data } = await supabase
     .from('active_contracts')
     .select('*')
@@ -508,16 +365,9 @@ async function getRelevantPastPerformance(naics) {
 }
 
 async function getBidEnginePricing(bidId) {
-<<<<<<< HEAD
   const { data } = await supabase
     .from('bids')
     .select('pricing_data')
-=======
-  // BID ENGINE saves pricing to the bids table — we read it back
-  const { data } = await supabase
-    .from('bids')
-    .select('*')
->>>>>>> prime-system/main
     .eq('id', bidId)
     .single();
   return data?.pricing_data || null;
@@ -528,19 +378,13 @@ async function storeDraft(bidId, volumes) {
     .from('bids')
     .update({
       status: 'draft_ready',
-<<<<<<< HEAD
       proposal_url: 'stored_in_db',
-=======
-      proposal_url: 'stored_in_db', // Future: Google Drive link
-      // Store documents as JSON — future version saves to Google Drive
->>>>>>> prime-system/main
       proposal_data: volumes,
     })
     .eq('id', bidId);
 }
 
 async function queueForBrandiReview(bidId, eventType) {
-<<<<<<< HEAD
   // Log the review request — BRANDI picks it up in the morning briefing
   await logAction('DRAFT', 'Queued for BRANDI review', {
     bidId,
@@ -597,13 +441,6 @@ async function getSubsForPlan(opportunityId) {
 module.exports = { getSubsForPlan };
 
 // ----------------------------------------------------------
-=======
-  // Log the review request so BRANDI picks it up in the morning brief
-  await logAction('DRAFT', 'Queued for BRANDI review', { bidId, event: eventType });
-}
-
-// ----------------------------------------------------------
->>>>>>> prime-system/main
 // START: Run DRAFT when this file is executed
 // ----------------------------------------------------------
 runDraft();

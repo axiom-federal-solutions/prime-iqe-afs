@@ -1,18 +1,13 @@
-<<<<<<< HEAD
 name: SCOUT - State Portal Scan
 
 # Runs daily at 4 AM UTC (11 PM CT prior night)
 # Scans state procurement portals: LaPAC, MyFlorida,
 # GeorgiaFirst, TX DIR, VA eVA. Captures state/local
 # opportunities not on SAM.gov.
-=======
-name: SCOUT - State Portal Scanner
->>>>>>> prime-system/main
 on:
   schedule:
     - cron: '0 4 * * *'
   workflow_dispatch:
-<<<<<<< HEAD
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
@@ -37,19 +32,4 @@ jobs:
         run: node agents/scout-state.js
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
-=======
-jobs:
-  scout-state:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-      - run: npm ci
-      - run: node agents/scout-state.js
-        env:
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
->>>>>>> prime-system/main

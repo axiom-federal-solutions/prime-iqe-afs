@@ -1,17 +1,13 @@
 name: EXEC - Retainage Monitor
-<<<<<<< HEAD
 
 # Runs every Monday at 6 AM UTC (1 AM CT)
 # Checks retainage balances on all active projects.
 # Drafts release requests for completed projects.
 # Escalates to URGENT if no release after 30 days.
-=======
->>>>>>> prime-system/main
 on:
   schedule:
     - cron: '0 6 * * 1'
   workflow_dispatch:
-<<<<<<< HEAD
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
@@ -38,19 +34,3 @@ jobs:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-=======
-jobs:
-  exec-retainage:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-      - run: npm ci
-      - run: node agents/exec-retainage.js
-        env:
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
-          SENDGRID_API_KEY: ${{ secrets.SENDGRID_API_KEY }}
->>>>>>> prime-system/main

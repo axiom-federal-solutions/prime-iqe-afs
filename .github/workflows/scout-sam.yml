@@ -61,13 +61,13 @@ jobs:
           "
         env:
           SUPABASE_URL:              ${{ secrets.SUPABASE_URL }}
-          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
 
       - name: Run SCOUT — SAM.gov scanner
         run: node agents/scout.js
         env:
           SUPABASE_URL:              ${{ secrets.SUPABASE_URL }}
-          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
           SAM_API_KEY:               ${{ secrets.SAM_API_KEY }}
           CAGE_CODE:                 ${{ secrets.CAGE_CODE }}
 
@@ -75,7 +75,7 @@ jobs:
         run: node agents/scout-state.js
         env:
           SUPABASE_URL:              ${{ secrets.SUPABASE_URL }}
-          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
         # Continue even if state scanner fails — SAM.gov is the priority
         continue-on-error: true
 
@@ -83,14 +83,14 @@ jobs:
         run: node agents/judge.js
         env:
           SUPABASE_URL:              ${{ secrets.SUPABASE_URL }}
-          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
           ANTHROPIC_API_KEY:         ${{ secrets.ANTHROPIC_API_KEY }}
 
       - name: Check for STRONG BID alerts
         run: node agents/brandi.js alert
         env:
           SUPABASE_URL:              ${{ secrets.SUPABASE_URL }}
-          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
           SENDGRID_API_KEY:          ${{ secrets.SENDGRID_API_KEY }}
           FROM_EMAIL:                ${{ secrets.FROM_EMAIL }}
         # Continue even if no alerts to send — this is normal
