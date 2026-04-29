@@ -1,0 +1,159 @@
+name: PRIME Diagnostic — Full System Check
+
+on:
+  workflow_dispatch:
+
+jobs:
+  diagnose:
+    name: Run Full System Diagnostic
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+
+      - name: Install dependencies
+        run: npm install
+
+      # ── LAYER 1: Environment Variables ─────────────────────────────────
+      - name: CHECK 1 — Environment variables present
+        run: |
+          echo "=== ENVIRONMENT CHECK ==="
+          echo "SUPABASE_URL set:          $([ -n "$SUPABASE_URL" ] && echo YES || echo NO)"
+          echo "SUPABASE_URL value:        ${SUPABASE_URL:0:40}"
+          echo "SUPABASE_SERVICE_KEY set:  $([ -n "$SUPABASE_SERVICE_KEY" ] && echo YES || echo NO)"
+          echo "SUPABASE_SERVICE_KEY len:  ${#SUPABASE_SERVICE_KEY}"
+          echo "SAM_API_KEY set:           $([ -n "$SAM_API_KEY" ] && echo YES || echo NO)"
+          echo "SAM_API_KEY len:           ${#SAM_API_KEY}"
+          echo "ANTHROPIC_API_KEY set:     $([ -n "$ANTHROPIC_API_KEY" ] && echo YES || echo NO)"
+          echo "ANTHROPIC_API_KEY len:     ${#ANTHROPIC_API_KEY}"
+          echo "SENDGRID_API_KEY set:      $([ -n "$SENDGRID_API_KEY" ] && echo YES || echo NO)"
+          echo "FROM_EMAIL set:            $([ -n "$FROM_EMAIL" ] && echo YES || echo NO)"
+          echo "FROM_EMAIL value:          $FROM_EMAIL"
+          echo "CAGE_CODE set:             $([ -n "$CAGE_CODE" ] && echo YES || echo NO)"
+          echo "CAGE_CODE value:           $CAGE_CODE"
+        env:
+          SUPABASE_URL:         ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+          SAM_API_KEY:          ${{ secrets.SAM_API_KEY }}
+          ANTHROPIC_API_KEY:    ${{ secrets.ANTHROPIC_API_KEY }}
+          SENDGRID_API_KEY:     ${{ secrets.SENDGRID_API_KEY }}
+          FROM_EMAIL:           ${{ secrets.FROM_EMAIL }}
+          CAGE_CODE:            ${{ secrets.CAGE_CODE }}
+
+      # ── LAYER 2: Supabase HTTP Connection ──────────────────────────────
+      - name: CHECK 2 — Supabase HTTP connection
+        run: |
+          echo "=== SUPABASE CONNECTION CHECK ==="
+          STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
+            -H "apikey: $SUPABASE_SERVICE_KEY" \
+            -H "Authorization: Bearer $SUPABASE_SERVICE_KEY" \
+            "$SUPABASE_URL/rest/v1/system_config?select=key,value&limit=5")
+          echo "HTTP Status: $STATUS"
+          if [ "$STATUS" = "200" ]; then
+            echo "RESULT: Supabase connection OK"
+            curl -s \
+              -H "apikey: $SUPABASE_SERVICE_KEY" \
+              -H "Authorization: Bearer $SUPABASE_SERVICE_KEY" \
+              "$SUPABASE_URL/rest/v1/system_config?select=key,value&limit=5"
+          else
+            echo "RESULT: Supabase connection FAILED (HTTP $STATUS)"
+          fi
+        env:
+          SUPABASE_URL:         ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+
+      # ── LAYER 3: Supabase opportunities count ──────────────────────────
+      - name: CHECK 3 — Opportunities table row count
+        run: |
+          echo "=== OPPORTUNITIES COUNT ==="
+          RESULT=$(curl -s \
+            -H "apikey: $SUPABASE_SERVICE_KEY" \
+            -H "Authorization: Bearer $SUPABASE_SERVICE_KEY" \
+            -H "Prefer: count=exact" \
+            "$SUPABASE_URL/rest/v1/opportunities?select=id" \
+            -I 2>&1 | grep -i "content-range")
+          echo "Content-Range: $RESULT"
+          if [ -z "$RESULT" ]; then
+            echo "Table is empty or unreachable"
+          fi
+        env:
+          SUPABASE_URL:         ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+
+      # ── LAYER 4: SAM.gov API Test ───────────────────────────────────────
+      - name: CHECK 4 — SAM.gov API single call
+        run: |
+          echo "=== SAM.GOV API CHECK ==="
+          echo "Testing with NAICS 236220 (Commercial Construction)..."
+          TODAY=$(date +%Y-%m-%d)
+          WEEKAGO=$(date -d '7 days ago' +%Y-%m-%d)
+          echo "Date range: $WEEKAGO to $TODAY"
+          RESPONSE=$(curl -s -w "\nHTTP_STATUS:%{http_code}" \
+            "https://api.sam.gov/opportunities/v2/search?api_key=${SAM_API_KEY}&naicsCode=236220&postedFrom=${WEEKAGO}&postedTo=${TODAY}&limit=5&active=true" \
+            -H "Accept: application/json")
+          HTTP_STATUS=$(echo "$RESPONSE" | grep "HTTP_STATUS:" | cut -d: -f2)
+          BODY=$(echo "$RESPONSE" | grep -v "HTTP_STATUS:")
+          echo "HTTP Status: $HTTP_STATUS"
+          echo "Response (first 500 chars):"
+          echo "${BODY:0:500}"
+
+          # Extract count
+          TOTAL=$(echo "$BODY" | node -e "
+            let d=''; process.stdin.on('data',c=>d+=c);
+            process.stdin.on('end',()=>{
+              try { const j=JSON.parse(d); console.log('totalRecords:',j.totalRecords,'opportunitiesData count:',j.opportunitiesData?.length??0); }
+              catch(e) { console.log('JSON parse error:', e.message, 'Raw:', d.substring(0,200)); }
+            });
+          ")
+          echo "$TOTAL"
+        env:
+          SAM_API_KEY: ${{ secrets.SAM_API_KEY }}
+
+      # ── LAYER 5: Anthropic API Test ─────────────────────────────────────
+      - name: CHECK 5 — Anthropic API connection
+        run: |
+          echo "=== ANTHROPIC API CHECK ==="
+          STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
+            -H "x-api-key: $ANTHROPIC_API_KEY" \
+            -H "anthropic-version: 2023-06-01" \
+            "https://api.anthropic.com/v1/models")
+          echo "HTTP Status: $STATUS"
+          if [ "$STATUS" = "200" ]; then
+            echo "RESULT: Anthropic API OK"
+          else
+            echo "RESULT: Anthropic API FAILED (HTTP $STATUS)"
+          fi
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+
+      # ── LAYER 6: SendGrid API Test ──────────────────────────────────────
+      - name: CHECK 6 — SendGrid API connection
+        run: |
+          echo "=== SENDGRID API CHECK ==="
+          STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
+            -H "Authorization: Bearer $SENDGRID_API_KEY" \
+            "https://api.sendgrid.com/v3/user/profile")
+          echo "HTTP Status: $STATUS"
+          if [ "$STATUS" = "200" ]; then
+            echo "RESULT: SendGrid API OK"
+          else
+            echo "RESULT: SendGrid API FAILED (HTTP $STATUS)"
+          fi
+        env:
+          SENDGRID_API_KEY: ${{ secrets.SENDGRID_API_KEY }}
+
+      # ── SUMMARY ─────────────────────────────────────────────────────────
+      - name: SUMMARY
+        run: |
+          echo ""
+          echo "========================================"
+          echo "  PRIME Diagnostic Complete"
+          echo "  Check each step above for PASS/FAIL"
+          echo "========================================"
