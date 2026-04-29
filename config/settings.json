@@ -1,0 +1,91 @@
+{
+  "_comment": "PRIME System Configuration — Axiom Federal Solutions / Walker Contractors LLC",
+  "_warning": "Do NOT put API keys here. Keys live in GitHub Secrets only.",
+
+  "system": {
+    "name": "PRIME",
+    "full_name": "Procurement & Renovation Intelligence Matching Engine",
+    "company": "Axiom Federal Solutions",
+    "dba": "Walker Contractors LLC",
+    "owner": "Joseph Walker IV",
+    "email": "PrimeOpps1@gmail.com",
+    "version": "1.0.0",
+    "build_date": "2026-04-26"
+  },
+
+  "business": {
+    "hq_state": "TX",
+    "hq_city": "Dallas",
+    "hq_lat": 32.7767,
+    "hq_lng": -96.7970,
+    "target_states": ["TX", "OK", "LA", "AR", "NM", "CO", "KS", "MO"],
+    "naics_codes": ["236220", "238210", "237990", "236116", "561730",
+                    "424710", "424130", "424490", "424120"],
+    "supply_naics": ["424710", "424130", "424490", "424120"],
+    "construction_naics": ["236220", "238210", "237990", "236116", "561730"]
+  },
+
+  "scoring": {
+    "min_score_to_brief": 70,
+    "weights": {
+      "alignment":   0.25,
+      "winProb":     0.20,
+      "financial":   0.25,
+      "strategic":   0.15,
+      "feasibility": 0.15
+    },
+    "decision_aging_threshold_hours": 48
+  },
+
+  "compliance": {
+    "warn_days_before_expiry":   45,
+    "urgent_days_before_expiry": 15,
+    "pricing_stale_days":        14,
+    "concentration_risk_pct":    40,
+    "sub_payment_days":          7,
+    "prompt_payment_terms_days": 30,
+    "debrief_request_window_days": 3,
+    "cpars_response_days":       14
+  },
+
+  "financial": {
+    "treasury_rate":             0.055,
+    "default_retainage_rate":    0.10,
+    "overhead_rate":             0.15,
+    "profit_rate":               0.10,
+    "bond_premium_rate":         0.02,
+    "labor_escalation_annual":   0.04,
+    "material_escalation_annual":0.03,
+    "supply_markup_rate":        0.12
+  },
+
+  "email": {
+    "sender":    "PrimeOpps1@gmail.com",
+    "sender_name": "PRIME System",
+    "recipient": "renkemp2@gmail.com",
+    "send_time": "06:00",
+    "timezone":  "America/Chicago"
+  },
+
+  "apis": {
+    "sam_base_url":        "https://api.sam.gov/opportunities/v2/search",
+    "sam_entity_url":      "https://api.sam.gov/entity-information/v3/entities",
+    "usaspending_url":     "https://api.usaspending.gov/api/v2/search/spending_by_award/",
+    "gao_docket_url":      "https://www.gao.gov/legal/bid-protests/docket",
+    "dol_wage_url":        "https://api.dol.gov/V1/SCA/wage-determination"
+  },
+
+  "agents": {
+    "scout":     { "schedule": "0 0,6,12,18 * * *", "cost_mo": 2 },
+    "judge":     { "schedule": "triggered",          "cost_mo": 6 },
+    "vault":     { "schedule": "30 5 * * *",         "cost_mo": 0 },
+    "recon":     { "schedule": "0 11 * * *",         "cost_mo": 3 },
+    "draft":     { "schedule": "on-demand",          "cost_mo": 4 },
+    "bidengine": { "schedule": "on-demand",          "cost_mo": 1 },
+    "ledger":    { "schedule": "0 22 * * 0",         "cost_mo": 1 },
+    "exec":      { "schedule": "0 7 * * *",          "cost_mo": 2 },
+    "brandi":    { "schedule": "0 6 * * *",          "cost_mo": 0 }
+  },
+
+  "total_monthly_cost_usd": 9
+}

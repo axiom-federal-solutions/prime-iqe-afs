@@ -6,7 +6,11 @@
 // COST: ~$0 (no LLM — pure data comparison)
 // =============================================================
 
+<<<<<<< HEAD
 const { supabase, logAction, isAgentEnabled } = require('../lib/supabase');
+=======
+const { supabase, logAction } = require('../lib/supabase');
+>>>>>>> prime-system/main
 
 // Alert threshold — flag any cost variance over 10%
 const VARIANCE_ALERT_PCT = 10;
@@ -15,9 +19,12 @@ const VARIANCE_ALERT_PCT = 10;
 // MAIN: Run Monday cost sync
 // ----------------------------------------------------------
 async function runCostSync() {
+<<<<<<< HEAD
   // T.E.S.T. integration: check if agent is enabled before running
   if (!(await isAgentEnabled('EXEC'))) return;
 
+=======
+>>>>>>> prime-system/main
   console.log('EXEC COSTS: Starting Monday cost sync...');
 
   try {
@@ -53,21 +60,30 @@ async function runCostSync() {
 
 // ----------------------------------------------------------
 // SYNC CONTRACT COSTS: Compare actuals vs. bid estimates
+<<<<<<< HEAD
 // QuickBooks integration placeholder — logs estimated costs
 // until QuickBooks OAuth is configured
+=======
+>>>>>>> prime-system/main
 // ----------------------------------------------------------
 async function syncContractCosts(contract) {
   console.log('EXEC COSTS: Syncing ' + contract.contract_number + '...');
 
+<<<<<<< HEAD
   // Pull existing job cost records for this contract
+=======
+>>>>>>> prime-system/main
   const { data: existingCosts } = await supabase
     .from('job_costs')
     .select('*')
     .eq('contract_id', contract.id);
 
+<<<<<<< HEAD
   // NOTE: QuickBooks API integration goes here
   // Until configured, we check existing cost records for variances
   // and alert if any exceed the threshold
+=======
+>>>>>>> prime-system/main
   const costs = existingCosts || [];
 
   let varianceCount = 0;

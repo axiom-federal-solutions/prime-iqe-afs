@@ -5,6 +5,7 @@
 //      Escalate to URGENT if no release after 30 days.
 // SCHEDULE: Monday 6 AM UTC (retainage-monitor.yml)
 // LAW: FAR 52.232-5 — Payments on Fixed-Price Construction
+<<<<<<< HEAD
 //      Retainage typically 5-10% withheld until completion
 // COST: ~$0 (no LLM)
 // =============================================================
@@ -12,15 +13,25 @@
 const { supabase, logAction, isAgentEnabled } = require('../lib/supabase');
 
 // Days after requesting release before escalating to URGENT
+=======
+// COST: ~$0 (no LLM)
+// =============================================================
+
+const { supabase, logAction } = require('../lib/supabase');
+
+>>>>>>> prime-system/main
 const FOLLOWUP_DAYS = 30;
 
 // ----------------------------------------------------------
 // MAIN: Run weekly retainage monitor
 // ----------------------------------------------------------
 async function runRetainageMonitor() {
+<<<<<<< HEAD
   // T.E.S.T. integration: check if agent is enabled before running
   if (!(await isAgentEnabled('EXEC'))) return;
 
+=======
+>>>>>>> prime-system/main
   console.log('EXEC RETAINAGE: Starting weekly monitor...');
 
   try {
@@ -57,18 +68,26 @@ async function runRetainageMonitor() {
 async function processTracker(tracker) {
   const today = new Date();
 
+<<<<<<< HEAD
   // If retainage already released — skip
   if (tracker.release_received) {
     return 'done';
   }
 
   // If release was requested, check if it is overdue for follow-up
+=======
+  if (tracker.release_received) return 'done';
+
+>>>>>>> prime-system/main
   if (tracker.release_requested && tracker.release_request_date) {
     const requestDate = new Date(tracker.release_request_date);
     const daysSinceRequest = Math.floor((today - requestDate) / 86400000);
 
     if (daysSinceRequest >= FOLLOWUP_DAYS) {
+<<<<<<< HEAD
       // Escalate to URGENT — no response after 30 days
+=======
+>>>>>>> prime-system/main
       const newCount = (tracker.followup_count || 0) + 1;
       await supabase
         .from('retainage_tracker')
@@ -87,6 +106,7 @@ async function processTracker(tracker) {
     return 'waiting';
   }
 
+<<<<<<< HEAD
   // Check if contract is complete but no release requested yet
   const contract = await getContract(tracker.contract_id);
   if (contract && contract.status === 'completed' && !tracker.release_requested) {
@@ -98,6 +118,14 @@ async function processTracker(tracker) {
         release_requested: true,
         release_request_date: requestDate,
       })
+=======
+  const contract = await getContract(tracker.contract_id);
+  if (contract && contract.status === 'completed' && !tracker.release_requested) {
+    const requestDate = today.toISOString().split('T')[0];
+    await supabase
+      .from('retainage_tracker')
+      .update({ release_requested: true, release_request_date: requestDate })
+>>>>>>> prime-system/main
       .eq('id', tracker.id);
 
     await logAction('EXEC', 'Retainage release requested', {
@@ -113,16 +141,22 @@ async function processTracker(tracker) {
   return 'monitoring';
 }
 
+<<<<<<< HEAD
 // ----------------------------------------------------------
 // HELPERS
 // ----------------------------------------------------------
 
+=======
+>>>>>>> prime-system/main
 async function getRetainageTrackers() {
   const { data, error } = await supabase
     .from('retainage_tracker')
     .select('*')
     .eq('release_received', false);
+<<<<<<< HEAD
 
+=======
+>>>>>>> prime-system/main
   if (error) throw new Error('Could not load retainage data: ' + error.message);
   return data || [];
 }

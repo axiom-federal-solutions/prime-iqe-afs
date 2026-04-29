@@ -1,4 +1,5 @@
 {
+<<<<<<< HEAD
   "name": "prime-iqe",
   "version": "1.0.0",
   "description": "PRIME IQE — Intelligent Qualification Engine for Axiom Federal Solutions (Walker Contractors LLC). Dual-vertical federal contracting: Construction + Supply.",
@@ -33,4 +34,29 @@
   "devDependencies": {
     "dotenv": "^16.4.7"
   }
+=======
+  "name": "prime-system",
+  "version": "1.0.0",
+  "description": "PRIME — Procurement & Renovation Intelligence Matching Engine",
+  "private": true,
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "scripts": {
+    "scout":     "node agents/scout.js",
+    "judge":     "node agents/judge.js",
+    "vault":     "node agents/vault.js",
+    "recon":     "node agents/recon.js",
+    "brandi":    "node agents/brandi.js",
+    "exec":      "node agents/exec.js",
+    "ledger":    "node agents/ledger.js",
+    "test":      "node agents/scout.js && echo 'Scout OK' || echo 'Scout FAILED'"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk":   "^0.39.0",
+    "@supabase/supabase-js": "^2.49.0"
+  },
+  "author": "Joseph Walker IV — Axiom Federal Solutions",
+  "license": "UNLICENSED"
+>>>>>>> prime-system/main
 }

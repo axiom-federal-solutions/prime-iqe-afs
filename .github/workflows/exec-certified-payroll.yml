@@ -1,12 +1,17 @@
+<<<<<<< HEAD
 name: EXEC - Certified Payroll
 
 # Runs every Friday at 4 PM UTC (11 AM CT)
 # Generates WH-347 certified payroll forms for all
 # active Davis-Bacon contracts. Required weekly.
+=======
+name: EXEC - Certified Payroll (WH-347)
+>>>>>>> prime-system/main
 on:
   schedule:
     - cron: '0 16 * * 5'
   workflow_dispatch:
+<<<<<<< HEAD
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
@@ -33,3 +38,19 @@ jobs:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+=======
+jobs:
+  exec:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - run: npm ci
+      - run: node agents/exec-payroll.js
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+          SENDGRID_API_KEY: ${{ secrets.SENDGRID_API_KEY }}
+>>>>>>> prime-system/main

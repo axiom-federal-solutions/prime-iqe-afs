@@ -1,5 +1,6 @@
 // =============================================================
 // BIDENGINE.JS — Bid Intelligence & Dynamic Engineering Network
+<<<<<<< HEAD
 // JOB: Calculate the right price for any government construction contract
 // SCHEDULE: On-demand — triggered when a bid is approved
 // COST: ~$1/month (mostly math, minimal AI)
@@ -14,6 +15,21 @@ const HQ_LOCATION = { state: 'LA', lat: 29.9511, lng: -90.0715 };
 
 // Supply NAICS codes — pricing is handled differently than construction
 const SUPPLY_NAICS = ['424710', '424130', '424490', '424120'];
+=======
+// JOB: Calculate the right price for any government contract
+// SCHEDULE: On-demand — triggered when Joe approves a bid
+// COST: ~$1/month (mostly math, minimal AI)
+// =============================================================
+
+// Load helper tools
+const { supabase, logAction } = require('../lib/supabase');
+
+// Our company headquarters location (for mobilization distance calc)
+const HQ_LOCATION = { state: 'TX', lat: 32.7767, lng: -96.7970 }; // Dallas, TX
+
+// Supply NAICS codes — pricing is handled differently than construction
+const SUPPLY_NAICS = ['424710','424130','424490','424120'];
+>>>>>>> prime-system/main
 
 // DOL Davis-Bacon API for prevailing wages
 const DOL_WAGE_URL = 'https://api.dol.gov/V1/SCA/wage-determination';
@@ -35,6 +51,7 @@ async function runBidEngine() {
   try {
     const result = await calculateBidPrice(opportunityId);
 
+<<<<<<< HEAD
     // Find or create the bid record for this opportunity
     const { data: existingBid } = await supabase
       .from('bids')
@@ -57,12 +74,24 @@ async function runBidEngine() {
 
     console.log('BID ENGINE: Price calculated — $' + result.base.toLocaleString() + ' base');
 
+=======
+    // Save the pricing to the bids table
+    await supabase
+      .from('bids')
+      .update({ pricing_data: result })
+      .eq('opportunity_id', opportunityId);
+
+    console.log('BID ENGINE: Price calculated — $' + result.base.toLocaleString() + ' base');
+>>>>>>> prime-system/main
     await logAction('BID ENGINE', 'Price calculated', {
       opportunity_id: opportunityId,
       base_price: result.base,
       escalated_price: result.escalated,
     });
+<<<<<<< HEAD
 
+=======
+>>>>>>> prime-system/main
   } catch (err) {
     console.error('BID ENGINE ERROR:', err.message);
     await logAction('BID ENGINE', 'Pricing failed', { opportunityId, error: err.message });
@@ -79,9 +108,17 @@ async function calculateBidPrice(opportunityId) {
 
   // Use different pricing models for supply vs construction
   const isSupply = SUPPLY_NAICS.includes(opp.naics);
+<<<<<<< HEAD
   if (isSupply) {
     return calculateSupplyPrice(opp);
   }
+=======
+
+  if (isSupply) {
+    return calculateSupplyPrice(opp);
+  }
+
+>>>>>>> prime-system/main
   return calculateConstructionPrice(opp);
 }
 
@@ -93,7 +130,11 @@ async function calculateConstructionPrice(opp) {
   console.log('BID ENGINE: Using construction pricing model...');
 
   // Get Davis-Bacon prevailing wage rates for this state
+<<<<<<< HEAD
   const wages = await getDavisBaconRates(opp.state, opp.naics);
+=======
+  const wages     = await getDavisBaconRates(opp.state, opp.naics);
+>>>>>>> prime-system/main
 
   // Estimate material costs based on state (RS Means regional factors)
   const materials = await getMaterialCosts(opp.state, opp.value);
@@ -108,7 +149,11 @@ async function calculateConstructionPrice(opp) {
   const overhead = (wages.total + materials.total) * 0.15;
 
   // Profit = 10% of labor + materials (our target margin)
+<<<<<<< HEAD
   const profit = (wages.total + materials.total) * 0.10;
+=======
+  const profit   = (wages.total + materials.total) * 0.10;
+>>>>>>> prime-system/main
 
   // Base year price (all costs combined)
   const basePrice = wages.total + materials.total + mobilization + bondPremium + overhead + profit;
@@ -120,11 +165,20 @@ async function calculateConstructionPrice(opp) {
   // Labor goes up 4% per year, materials 3% per year
   let escalated = basePrice;
   const yearlyBreakdown = [{ year: 0, price: basePrice }];
+<<<<<<< HEAD
   for (let y = 1; y <= optionYears; y++) {
     const laborEscalation = wages.total * 0.04 * y;
     const materialEscalation = materials.total * 0.03 * y;
     const yearPrice = basePrice + laborEscalation + materialEscalation;
     escalated = yearPrice;
+=======
+
+  for (let y = 1; y <= optionYears; y++) {
+    const laborEscalation    = wages.total * 0.04 * y;
+    const materialEscalation = materials.total * 0.03 * y;
+    const yearPrice = basePrice + laborEscalation + materialEscalation;
+    escalated = yearPrice; // Final year is highest
+>>>>>>> prime-system/main
     yearlyBreakdown.push({ year: y, price: Math.round(yearPrice) });
   }
 
@@ -134,12 +188,21 @@ async function calculateConstructionPrice(opp) {
     escalated: Math.round(escalated),
     total_if_all_years: yearlyBreakdown.reduce((sum, y) => sum + y.price, 0),
     breakdown: {
+<<<<<<< HEAD
       wages: Math.round(wages.total),
       materials: Math.round(materials.total),
       mobilization: Math.round(mobilization),
       bond_premium: Math.round(bondPremium),
       overhead: Math.round(overhead),
       profit: Math.round(profit),
+=======
+      wages:        Math.round(wages.total),
+      materials:    Math.round(materials.total),
+      mobilization: Math.round(mobilization),
+      bond_premium: Math.round(bondPremium),
+      overhead:     Math.round(overhead),
+      profit:       Math.round(profit),
+>>>>>>> prime-system/main
     },
     yearly: yearlyBreakdown,
   };
@@ -182,6 +245,10 @@ async function calculateSupplyPrice(opp) {
 
   // Add markup (12% for supply contracts)
   const markup = materialCost * 0.12;
+<<<<<<< HEAD
+=======
+
+>>>>>>> prime-system/main
   const basePrice = materialCost + shipping + markup;
 
   // Check competitor prices from public bid openings
@@ -202,8 +269,13 @@ async function calculateSupplyPrice(opp) {
     escalated: Math.round(basePrice), // Supply = no escalation usually
     breakdown: {
       materials: Math.round(materialCost),
+<<<<<<< HEAD
       shipping: Math.round(shipping),
       markup: Math.round(markup),
+=======
+      shipping:  Math.round(shipping),
+      markup:    Math.round(markup),
+>>>>>>> prime-system/main
     },
     competitor_avg: avgCompetitorPrice ? Math.round(avgCompetitorPrice) : null,
     note: avgCompetitorPrice && basePrice > avgCompetitorPrice
@@ -218,6 +290,7 @@ async function calculateSupplyPrice(opp) {
 // ----------------------------------------------------------
 async function getDavisBaconRates(state, naics) {
   try {
+<<<<<<< HEAD
     // Regional prevailing wage estimates by state ($/hr base + fringe)
     // TODO: Add DOL_API_KEY to GitHub Secrets and query live rates
     const estimatedRates = {
@@ -228,6 +301,14 @@ async function getDavisBaconRates(state, naics) {
       'TN': { hourly: 26, benefits: 8 },
       'FL': { hourly: 27, benefits: 8 },
       'OK': { hourly: 25, benefits: 7 },
+=======
+    // Use DOL API if available — fallback to estimates if not
+    // TODO: Add DOL API key to GitHub Secrets as DOL_API_KEY
+    const estimatedRates = {
+      'TX': { hourly: 28, benefits: 8 },
+      'OK': { hourly: 25, benefits: 7 },
+      'LA': { hourly: 27, benefits: 8 },
+>>>>>>> prime-system/main
       'AR': { hourly: 24, benefits: 7 },
       'NM': { hourly: 26, benefits: 8 },
     };
@@ -241,7 +322,11 @@ async function getDavisBaconRates(state, naics) {
     return {
       hourly_rate: rate.hourly,
       fringe_rate: rate.benefits,
+<<<<<<< HEAD
       total_hours: totalHours,
+=======
+      total_hours:  totalHours,
+>>>>>>> prime-system/main
       total: totalWages,
     };
   } catch (err) {
@@ -256,6 +341,7 @@ async function getDavisBaconRates(state, naics) {
 async function getMaterialCosts(state, contractValue) {
   // RS Means regional cost factors (% of national average)
   const regionalFactors = {
+<<<<<<< HEAD
     'LA': 0.92,  // Walker home state
     'TX': 0.95,
     'MS': 0.85,
@@ -266,13 +352,21 @@ async function getMaterialCosts(state, contractValue) {
     'AR': 0.85,
     'NM': 0.87,
     'CO': 0.98,
+=======
+    'TX': 0.95, 'OK': 0.88, 'LA': 0.92, 'AR': 0.85,
+    'NM': 0.87, 'CO': 0.98, 'KS': 0.89, 'MO': 0.93,
+>>>>>>> prime-system/main
   };
 
   const factor = regionalFactors[state] || 1.0;
 
   // Estimate materials as 35% of contract value, adjusted for region
   const estimatedValue = contractValue || 500000;
+<<<<<<< HEAD
   const materialBase = estimatedValue * 0.35;
+=======
+  const materialBase   = estimatedValue * 0.35;
+>>>>>>> prime-system/main
 
   return {
     regional_factor: factor,
@@ -282,6 +376,7 @@ async function getMaterialCosts(state, contractValue) {
 
 // ----------------------------------------------------------
 // MOBILIZATION: Cost to move our crew and equipment to the site
+<<<<<<< HEAD
 // Walker is based in New Orleans — closer sites = lower cost
 // ----------------------------------------------------------
 function calcMobilization(state) {
@@ -298,14 +393,33 @@ function calcMobilization(state) {
     'CO': 15000,
   };
   return mobilizationCosts[state] || 18000;
+=======
+// The farther the job, the higher the mobilization cost
+// ----------------------------------------------------------
+function calcMobilization(state) {
+  // States we're closest to = lower cost
+  const mobilizationCosts = {
+    'TX': 2000,  'OK': 5000,  'LA': 8000,  'AR': 7000,
+    'NM': 9000,  'CO': 12000, 'KS': 8000,  'MO': 10000,
+  };
+  return mobilizationCosts[state] || 15000;
+>>>>>>> prime-system/main
 }
 
 // ----------------------------------------------------------
 // OPTION YEARS: How many years the contract can be extended
+<<<<<<< HEAD
 // Federal construction contracts typically have base + 4 option years
 // ----------------------------------------------------------
 function getOptionYears(opp) {
   return 4; // Default: base + 4 option years
+=======
+// Federal contracts typically have a base year + 4 option years
+// ----------------------------------------------------------
+function getOptionYears(opp) {
+  // Default to 4 option years for most federal contracts
+  return 4;
+>>>>>>> prime-system/main
 }
 
 // ----------------------------------------------------------
@@ -323,6 +437,7 @@ async function getOpportunity(opportunityId) {
 }
 
 // ----------------------------------------------------------
+<<<<<<< HEAD
 // FIND DISTRIBUTORS: Cross-reference supplier DB for supply bid pricing
 // Instead of guessing at distributor prices, look up matched suppliers
 // who have distributor match type for this opportunity
@@ -365,6 +480,8 @@ async function findDistributors(opportunityId) {
 module.exports = { findDistributors };
 
 // ----------------------------------------------------------
+=======
+>>>>>>> prime-system/main
 // START: Run BID ENGINE when this file is executed
 // ----------------------------------------------------------
 runBidEngine();

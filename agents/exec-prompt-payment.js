@@ -8,6 +8,7 @@
 // COST: ~$0 (no LLM — pure math)
 // =============================================================
 
+<<<<<<< HEAD
 const { supabase, logAction, isAgentEnabled } = require('../lib/supabase');
 
 // Prompt Payment Act: government must pay within 14 days
@@ -15,15 +16,23 @@ const PAYMENT_DEADLINE_DAYS = 14;
 
 // Treasury interest rate (updated quarterly — hard-coded fallback)
 // Get current rate from: https://fiscal.treasury.gov/prompt-payment/rates.html
+=======
+const { supabase, logAction } = require('../lib/supabase');
+
+const PAYMENT_DEADLINE_DAYS = 14;
+>>>>>>> prime-system/main
 const TREASURY_RATE_FALLBACK = 0.0575; // 5.75% — update quarterly
 
 // ----------------------------------------------------------
 // MAIN: Run daily prompt payment check
 // ----------------------------------------------------------
 async function runPromptPaymentCheck() {
+<<<<<<< HEAD
   // T.E.S.T. integration: check if agent is enabled before running
   if (!(await isAgentEnabled('EXEC'))) return;
 
+=======
+>>>>>>> prime-system/main
   console.log('EXEC PROMPT PAYMENT: Starting daily check...');
 
   try {
@@ -59,6 +68,7 @@ async function runPromptPaymentCheck() {
 // FIND LATE PAYMENTS: Scan all open invoices past deadline
 // ----------------------------------------------------------
 async function findLatePayments() {
+<<<<<<< HEAD
   const today = new Date();
   const todayStr = today.toISOString().split('T')[0];
 
@@ -69,6 +79,16 @@ async function findLatePayments() {
     .lt('payment_due', todayStr)       // Due date is in the past
     .is('payment_received', null)       // Not yet paid
     .eq('claim_status', 'pending');     // Not already claimed
+=======
+  const todayStr = new Date().toISOString().split('T')[0];
+
+  const { data: overdue, error } = await supabase
+    .from('prompt_payment_claims')
+    .select('*')
+    .lt('payment_due', todayStr)
+    .is('payment_received', null)
+    .eq('claim_status', 'pending');
+>>>>>>> prime-system/main
 
   if (error) throw new Error('Could not query invoices: ' + error.message);
   return overdue || [];
@@ -84,8 +104,11 @@ async function processClaim(claim) {
 
   if (daysLate <= 0) return;
 
+<<<<<<< HEAD
   // Calculate daily interest: principal × rate / 365
   // Compound interest is NOT typically used — simple daily interest
+=======
+>>>>>>> prime-system/main
   const invoiceAmount = claim.invoice_amount || 0;
   const treasuryRate = claim.treasury_rate || TREASURY_RATE_FALLBACK;
   const dailyRate = treasuryRate / 365;
@@ -94,7 +117,10 @@ async function processClaim(claim) {
   console.log('EXEC PROMPT PAYMENT: Invoice ' + claim.invoice_number +
     ' is ' + daysLate + ' days late. Interest owed: $' + interestOwed.toFixed(2));
 
+<<<<<<< HEAD
   // Update the claim record with calculated interest
+=======
+>>>>>>> prime-system/main
   await supabase
     .from('prompt_payment_claims')
     .update({
@@ -103,7 +129,10 @@ async function processClaim(claim) {
     })
     .eq('id', claim.id);
 
+<<<<<<< HEAD
   // Flag in audit log for Brandi's brief
+=======
+>>>>>>> prime-system/main
   await logAction('EXEC', 'PROMPT PAYMENT INTEREST OWED', {
     invoice_number: claim.invoice_number,
     contract_id: claim.contract_id,

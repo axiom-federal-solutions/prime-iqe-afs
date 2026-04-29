@@ -1,12 +1,17 @@
+<<<<<<< HEAD
 name: JUDGE - Opportunity Scoring
 
 # JUDGE triggers automatically after each SCOUT scan completes.
 # Also can be run manually from the GitHub Actions UI.
+=======
+name: JUDGE - Score Opportunities
+>>>>>>> prime-system/main
 on:
   workflow_run:
     workflows: ["SCOUT - SAM.gov Scan"]
     types: [completed]
   workflow_dispatch:
+<<<<<<< HEAD
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
@@ -29,10 +34,23 @@ jobs:
 
       - name: Run JUDGE
         run: node agents/judge.js
+=======
+jobs:
+  judge:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - run: npm ci
+      - run: node agents/judge.js
+>>>>>>> prime-system/main
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+<<<<<<< HEAD
 
       # After JUDGE scores, immediately match suppliers to newly scored opportunities
       # Uses --match-only to skip the full SAM scan (runs weekly separately)
@@ -42,3 +60,5 @@ jobs:
           SUPABASE_URL:         ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
           ANTHROPIC_API_KEY:    ${{ secrets.ANTHROPIC_API_KEY }}
+=======
+>>>>>>> prime-system/main
