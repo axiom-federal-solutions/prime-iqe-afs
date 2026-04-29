@@ -39,14 +39,14 @@ echo.
 
 :: Step 4: Run JUDGE — score all new opportunities
 echo [4/6] Running JUDGE — scoring all new opportunities...
-gh workflow run judge-score.yml --repo %REPO%
+gh workflow run judge-scoring.yml --repo %REPO%
 echo Triggered. Waiting 60 seconds for JUDGE to complete...
 timeout /t 60 /nobreak >nul
 echo.
 
 :: Step 5: Run RECON — build supplier matches
 echo [5/6] Running RECON — building supplier intelligence...
-gh workflow run recon-suppliers.yml --repo %REPO%
+gh workflow run recon-supplier-scan.yml --repo %REPO%
 echo Triggered. Waiting 45 seconds...
 timeout /t 45 /nobreak >nul
 echo.

@@ -57,39 +57,22 @@ jobs:
       - name: Install dependencies
         run: npm install
 
-      # 4. Run the supplier scan as an inline script
-      #    This calls scanSuppliers(), enrichFromSBA(), enrichFromUSAspending(),
-      #    then matchAllNewOpportunities() in sequence
+      # 4. Full scan (SAM entity pull + USAspending enrichment + matching)
+      #    --match-only flag skips the SAM scan when triggered by JUDGE workflow_run
       - name: Run supplier scan and matching
-        run: node agents/recon.js
-        env:
-          SUPABASE_URL:              ${{ secrets.SUPABASE_URL }}
-          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
-          SAM_API_KEY:               ${{ secrets.SAM_API_KEY }}
-          ANTHROPIC_API_KEY:         ${{ secrets.ANTHROPIC_API_KEY }}
-          SENDGRID_API_KEY:          ${{ secrets.SENDGRID_API_KEY }}
-          CAGE_CODE:                 ${{ secrets.CAGE_CODE }}
-
-      # 5. Run matching against all recently scored opportunities
-      - name: Match suppliers to recent opportunities
         run: |
-          node -e "
-          const { matchAllNewOpportunities } = require('./agents/recon.js');
-          matchAllNewOpportunities().then(() => {
-            console.log('Supplier matching complete');
-            process.exit(0);
-          }).catch(err => {
-            console.error('Matching failed:', err.message);
-            process.exit(1);
-          });
-          "
+          if [ "${{ github.event.inputs.mode }}" = "match_only" ] || [ "${{ github.event_name }}" = "workflow_run" ]; then
+            echo "Mode: match-only (triggered by JUDGE or manual match_only selection)"
+            node agents/recon-suppliers.js --match-only
+          else
+            echo "Mode: full scan"
+            node agents/recon-suppliers.js
+          fi
         env:
           SUPABASE_URL:              ${{ secrets.SUPABASE_URL }}
-          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          SUPABASE_SERVICE_KEY:      ${{ secrets.SUPABASE_SERVICE_KEY }}
           SAM_API_KEY:               ${{ secrets.SAM_API_KEY }}
           ANTHROPIC_API_KEY:         ${{ secrets.ANTHROPIC_API_KEY }}
-          SENDGRID_API_KEY:          ${{ secrets.SENDGRID_API_KEY }}
-          CAGE_CODE:                 ${{ secrets.CAGE_CODE }}
 
       - name: Log completion
         if: always()

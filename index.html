@@ -378,6 +378,70 @@ const STATE_META={
 // ─── HELPERS ───────────────────────────────────────────────────────────
 function sc(s){return s>=85?'var(--green)':s>=70?'var(--gold)':s>=55?'var(--amber)':'var(--red)';}
 function rb(r){const m={'STRONG BID':{bg:'var(--greenDim)',c:'var(--green)',i:'✅'},'BID':{bg:'var(--cyanDim)',c:'var(--cyan)',i:'✅'},'CONDITIONAL':{bg:'var(--amberDim)',c:'var(--amber)',i:'⚠️'},'NO BID':{bg:'var(--redDim)',c:'var(--red)',i:'❌'},'STRONG LEASE':{bg:'var(--greenDim)',c:'var(--green)',i:'🏢'},'LEASE':{bg:'var(--roseDim)',c:'var(--rose)',i:'🏢'}};const s=m[r]||m['BID'];return '<span class="badge" style="background:'+s.bg+';color:'+s.c+'">'+s.i+' '+r+'</span>';}
+
+// GAP FIX 3 — Tier badge (STRONG_BID / BID / CONDITIONAL / NO_BID from JUDGE)
+function tierBadge(t){
+  const m={
+    'STRONG_BID':{bg:'var(--greenDim)',c:'var(--green)',icon:'🔥',label:'STRONG BID'},
+    'BID':{bg:'var(--cyanDim)',c:'var(--cyan)',icon:'✅',label:'BID'},
+    'CONDITIONAL':{bg:'var(--amberDim)',c:'var(--amber)',icon:'⚠️',label:'CONDITIONAL'},
+    'NO_BID':{bg:'var(--redDim)',c:'var(--red)',icon:'❌',label:'NO BID'},
+  };
+  const s=m[t]||m['BID'];
+  return `<span class="badge" style="background:${s.bg};color:${s.c};border:1px solid ${s.c}33;font-size:10px;padding:3px 9px">${s.icon} TIER: ${s.label}</span>`;
+}
+
+// GAP FIX 1 — Score factor breakdown bars per scoring model
+const FACTOR_MAPS={
+  construction:[
+    {key:'alignment',  label:'Alignment',       weight:30},
+    {key:'win_prob',   label:'Win Probability', weight:25},
+    {key:'financial',  label:'Financial',       weight:20},
+    {key:'strategic',  label:'Strategic Value', weight:15},
+    {key:'feasibility',label:'Feasibility',     weight:10},
+  ],
+  supply:[
+    {key:'set_aside',  label:'Set-Aside Fit',   weight:30},
+    {key:'competition',label:'Competition',     weight:25},
+    {key:'recurring',  label:'Recurring/IDIQ',  weight:20},
+    {key:'simplicity', label:'Simplicity',      weight:15},
+    {key:'drop_ship',  label:'Drop-Ship Ready', weight:10},
+  ],
+  realestate:[
+    {key:'asset_ownership',  label:'Asset Ownership',   weight:30},
+    {key:'location_match',   label:'Location Match',    weight:25},
+    {key:'lease_term_fit',   label:'Lease Term Fit',    weight:20},
+    {key:'cert_match',       label:'Cert Match',        weight:15},
+    {key:'revenue_stability',label:'Revenue Stability', weight:10},
+  ],
+};
+function scoreFactorsHtml(o){
+  const vt=getVertical(o);
+  const sf=o.score_factors;
+  // Parse if stored as a JSON string
+  let factors={};
+  try{ factors=(typeof sf==='string'?JSON.parse(sf):sf)||{}; }catch(e){}
+  if(!sf||Object.keys(factors).length===0)return '';
+  const map=FACTOR_MAPS[vt]||FACTOR_MAPS.construction;
+  const color=vtColor(vt);
+  const rows=map.map(f=>{
+    const val=factors[f.key]??null;
+    const pct=val!==null?Math.round(val):'—';
+    const barW=val!==null?Math.min(100,Math.round(val))+'%':'0%';
+    const barC=val>=70?'var(--green)':val>=55?'var(--gold)':'var(--amber)';
+    return `<div style="margin-bottom:7px">
+      <div style="display:flex;justify-content:space-between;font-size:9px;margin-bottom:3px">
+        <span style="color:var(--t2)">${f.label} <span style="color:var(--t3)">(${f.weight}%)</span></span>
+        <span style="font-weight:700;color:${val!==null?barC:'var(--t3)'}">${pct}</span>
+      </div>
+      <div class="bar"><div class="bar-fill" style="width:${barW};background:${barC}"></div></div>
+    </div>`;
+  }).join('');
+  return `<div class="det-section">
+    <div class="det-sec-label">📊 ${slOf(o)} Score Breakdown</div>
+    ${rows}
+  </div>`;
+}
 function fmt(v){if(!v&&v!==0)return '—';return v>=1e6?'$'+(v/1e6).toFixed(1)+'M':v>=1000?'$'+(v/1000).toFixed(0)+'K':'$'+Math.round(v);}
 function daysLeft(deadline){if(!deadline)return null;const d=Math.ceil((new Date(deadline)-new Date())/86400000);return Math.max(0,d);}
 // Derive vertical from NAICS if DB column not yet set
@@ -392,7 +456,8 @@ function getVertical(o){
   if(SUPPLY_NAICS_PREFIXES.some(p=>n.startsWith(p)))return 'supply';
   return 'construction';
 }
-function scoreOf(o){const v=getVertical(o);return v==='supply'?o.acq_score:v==='realestate'?(o.lease_score||o.prime_score):(o.prime_score||o.acq_score||o.lease_score)||0;}
+// GAP3 FIX — supply falls back to prime_score (JUDGE writes all scores to prime_score column)
+function scoreOf(o){const v=getVertical(o);return v==='supply'?(o.acq_score||o.prime_score):v==='realestate'?(o.lease_score||o.prime_score):(o.prime_score||o.acq_score||o.lease_score)||0;}
 function slOf(o){const v=getVertical(o);return v==='supply'?'ACQ':v==='realestate'?'LEASE':'PRIME';}
 function vtColor(v){return v==='supply'?'var(--cyan)':v==='realestate'?'var(--rose)':'var(--green)';}
 function vtLabel(v){return v==='supply'?'SUPPLY':v==='realestate'?'RE&R':'CONSTR';}
@@ -407,10 +472,10 @@ async function loadData(manual=false){
   if(icon)icon.classList.add('spinning');
   try{
     const [o,b,s,r,cfg,tst,cl,ev,ac]=await Promise.all([
-      sb.from('opportunities').select('*').order('prime_score',{ascending:false}).limit(200),
+      sb.from('opportunities').select('*').order('prime_score',{ascending:false,nullsFirst:false}).order('acq_score',{ascending:false,nullsFirst:false}).order('created_at',{ascending:false}).limit(200), // GAP5 FIX: multi-col sort so supply/RE opps aren't buried
       sb.from('bids').select('*').order('created_at',{ascending:false}).limit(50),
-      sb.from('supplier_matches').select('*').order('match_score',{ascending:false}).limit(100),
-      sb.from('agent_logs').select('*').order('created_at',{ascending:false}).limit(50),
+      sb.from('supplier_matches').select('*, suppliers(name,city,state,certifications,socioeconomic,federal_contract_count,avg_contract_value,naics_codes,capability_tier,contact_email)').order('match_score',{ascending:false}).limit(100), // GAP1 FIX: join suppliers table
+      sb.from('audit_log').select('*').order('created_at',{ascending:false}).limit(50),  // GAP1 FIX: was agent_logs
       sb.from('system_config').select('*'),
       sb.from('test_results').select('*').order('run_at',{ascending:false}).limit(30),
       sb.from('prompt_payment_claims').select('*').order('payment_due',{ascending:true}).limit(30),
@@ -501,7 +566,8 @@ async function showDetail(idx){
   if(!o)return;
   const s=scoreOf(o), sl=slOf(o), days=daysLeft(o.response_deadline);
   const deadline=o.response_deadline?new Date(o.response_deadline).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'2-digit'}):'—';
-  const matched=SUPS.filter(sp=>sp.opportunity_id===o.id||sp.notice_id===o.notice_id).slice(0,5);
+  // GAP1 FIX: join on solicitation_number (not opportunity_id/notice_id which don't exist)
+  const matched=SUPS.filter(sp=>sp.solicitation_number&&o.solicitation_number&&sp.solicitation_number===o.solicitation_number).slice(0,5);
 
   // Open panel immediately with core info + loading skeletons for async sections
   document.getElementById('det-content').innerHTML=`
@@ -528,7 +594,17 @@ async function showDetail(idx){
       </div>
     </div>
 
-    <div style="margin-bottom:14px">${rb(o.recommendation||'BID')}</div>
+    <!-- GAP FIX 2+3 — Tier badge + recommendation -->
+    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:14px">
+      ${rb(o.recommendation||'BID')}
+      ${o.tier?tierBadge(o.tier):''}
+    </div>
+
+    <!-- GAP FIX 2 — JUDGE Reasoning -->
+    ${o.reasoning?`<div style="background:var(--card);border-radius:8px;padding:12px;margin-bottom:12px;border:1px solid var(--goldBd)">
+      <div style="font-size:9px;font-weight:700;color:var(--t3);text-transform:uppercase;letter-spacing:.1em;margin-bottom:6px">🧠 JUDGE Reasoning</div>
+      <div style="font-size:10px;color:var(--t2);line-height:1.75">${o.reasoning}</div>
+    </div>`:''}
 
     <div style="background:var(--card);border-radius:8px;padding:14px;margin-bottom:12px;border:1px solid var(--bd)">
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;font-size:10px;line-height:1.8">
@@ -536,7 +612,7 @@ async function showDetail(idx){
         <div><span style="color:var(--t3)">Set-Aside</span><br><b>${o.set_aside_type||o.set_aside||'Full & Open'}</b></div>
         <div><span style="color:var(--t3)">State</span><br><b>${o.state||'—'}</b></div>
         <div><span style="color:var(--t3)">Deadline</span><br><b>${deadline}</b></div>
-        ${o.sol_number||o.notice_id?`<div style="grid-column:1/-1"><span style="color:var(--t3)">Solicitation #</span><br><b style="font-size:9px;word-break:break-all">${o.sol_number||o.notice_id}</b></div>`:''}
+        ${o.solicitation_number||o.sol_number||o.notice_id?`<div style="grid-column:1/-1"><span style="color:var(--t3)">Solicitation #</span><br><b style="font-size:9px;word-break:break-all">${o.solicitation_number||o.sol_number||o.notice_id}</b></div>`:''}
       </div>
     </div>
 
@@ -546,6 +622,9 @@ async function showDetail(idx){
     </div>`:''}
 
     ${o.notice_url?`<a href="${o.notice_url}" target="_blank" style="display:block;text-align:center;padding:10px;border-radius:6px;background:var(--cyanDim);border:1px solid var(--cyanBd);color:var(--cyan);font-size:11px;font-weight:600;text-decoration:none;margin-bottom:14px">🔗 View Full Posting on SAM.gov ↗</a>`:''}
+
+    <!-- GAP FIX 1 — Score factor breakdown (rendered from score_factors JSONB) -->
+    ${scoreFactorsHtml(o)}
 
     <!-- BID PRICING — loaded async below -->
     <div class="det-section" id="det-pricing">
@@ -614,7 +693,7 @@ function renderBidPricing(bid, o, competitors){
   const bd=pd.breakdown||{};
   const yr=pd.yearly||[];
 
-  el.innerHTML=`<div class="det-sec-label">💰 Bid Pricing — ${pd.model==='supply'?'Supply':'Construction'} Model</div>
+  el.innerHTML=`<div class="det-sec-label">💰 Bid Pricing — ${pd.model==='supply'?'Supply':pd.model==='realestate'?'Lease':'Construction'} Model</div>
     <div class="price-tiers">
       <div class="price-tier" style="border-color:var(--cyanBd)">
         <div class="label" style="color:var(--cyan)">Low</div>
@@ -700,27 +779,38 @@ function renderCompetitorIntel(rows, o){
 }
 
 // Full supplier card for detail panel
+// sp = supplier_matches row with joined suppliers(name,city,state,...) under sp.suppliers
 function supplierCard(sp){
-  const mt=sp.match_type||sp.relationship_type||'sub';
-  const mtColor=mt==='teaming'?'var(--cyan)':mt==='distributor'?'var(--gold)':'var(--green)';
-  const certs=sp.certifications||sp.certification_flags||'';
-  const fed=sp.federal_contract_count||0;
-  const avg=sp.avg_contract_value||0;
-  return `<div class="sup-card">
+  const mt    = sp.match_type||'sub';
+  const mtC   = mt==='teaming'?'var(--cyan)':mt==='distributor'?'var(--gold)':'var(--green)';
+  const sup   = sp.suppliers||{};  // joined supplier row
+  const name  = sup.name||sp.entity_name||'Unknown Supplier';
+  const city  = sup.city?sup.city+', ':'';
+  const state = sup.state||sp.state||'';
+  const certs = [...(sup.certifications||[]),...(sup.socioeconomic||[])].filter(Boolean);
+  const fed   = sup.federal_contract_count||0;
+  const avg   = sup.avg_contract_value||0;
+  const naics = (sup.naics_codes||[]).slice(0,2).join(', ');
+  // Score bar color
+  const sc2   = sp.match_score>=70?'var(--green)':sp.match_score>=55?'var(--gold)':'var(--amber)';
+  // Match reasons tooltip
+  const reasons=(Array.isArray(sp.match_reasons)?sp.match_reasons:(typeof sp.match_reasons==='string'?JSON.parse(sp.match_reasons||'[]'):[])).slice(0,3);
+  return `<div class="sup-card" style="background:var(--cardHi);border-radius:6px;padding:8px 10px;margin-bottom:6px;border-left:3px solid ${mtC}">
     <div style="display:flex;align-items:flex-start;gap:10px">
-      <div class="sup-score" style="color:${sc(sp.match_score||0)}">${sp.match_score||'—'}</div>
-      <div style="flex:1">
-        <div style="font-size:12px;font-weight:600;margin-bottom:3px">${sp.entity_name||sp.name||'Unknown'}</div>
-        <div style="display:flex;gap:5px;flex-wrap:wrap;margin-bottom:5px">
-          <span class="badge" style="background:${mtColor}18;color:${mtColor}">${mt.toUpperCase()}</span>
-          ${sp.state?`<span class="badge" style="background:var(--violetDim);color:var(--violet)">${sp.state}</span>`:''}
-          ${certs?certs.split(',').filter(Boolean).slice(0,3).map(c=>`<span class="badge" style="background:var(--goldDim);color:var(--gold)">${c.trim()}</span>`).join(''):''}
+      <div style="font-size:16px;font-weight:800;color:${sc2};min-width:30px;text-align:center;padding-top:2px">${sp.match_score||'—'}</div>
+      <div style="flex:1;min-width:0">
+        <div style="font-size:11px;font-weight:600;margin-bottom:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${name}</div>
+        <div style="display:flex;gap:4px;flex-wrap:wrap;margin-bottom:5px">
+          <span class="badge" style="background:${mtC}22;color:${mtC};font-size:9px">${mt.toUpperCase()}</span>
+          ${state?`<span class="badge" style="background:var(--violetDim);color:var(--violet);font-size:9px">${city}${state}</span>`:''}
+          ${certs.slice(0,3).map(c=>`<span class="badge" style="background:var(--goldDim);color:var(--gold);font-size:9px">${c}</span>`).join('')}
         </div>
-        <div style="display:flex;gap:14px;font-size:9px;color:var(--t3)">
-          ${fed?`<span>📋 ${fed} fed contracts</span>`:''}
+        <div style="display:flex;gap:12px;font-size:9px;color:var(--t3)">
+          ${fed?`<span>📋 ${fed} fed contracts</span>`:'<span style="color:var(--t3)">No fed history</span>'}
           ${avg?`<span>💵 ${fmt(avg)} avg</span>`:''}
-          ${sp.naics_code||sp.naics_codes?`<span>🏷️ ${sp.naics_code||sp.naics_codes}</span>`:''}
+          ${naics?`<span>🏷️ ${naics}</span>`:''}
         </div>
+        ${reasons.length?`<div style="font-size:8px;color:var(--t3);margin-top:4px">✓ ${reasons.join(' · ')}</div>`:''}
       </div>
     </div>
   </div>`;
@@ -1018,9 +1108,10 @@ function renderHome(){
 
   const feedHtml=RUNS.length?RUNS.slice(0,10).map(r=>{
     const colors={'BRANDI':'var(--gold)','SCOUT':'var(--green)','JUDGE':'var(--cyan)','VAULT':'var(--green)','RECON':'var(--violet)','EXEC':'var(--cyan)','DRAFT':'var(--green)','TEST':'var(--green)','T.E.S.T.':'var(--green)','LEDGER':'var(--cyan)','BID ENGINE':'var(--cyan)'};
-    const c=colors[r.agent_name]||'var(--t2)';
+    const agentKey=r.agent||r.agent_name||'—'; // GAP2 FIX: audit_log uses 'agent' not 'agent_name'
+    const c=colors[agentKey]||'var(--t2)';
     const ago=r.created_at?Math.round((Date.now()-new Date(r.created_at))/60000)+'m':'—';
-    return `<div class="feed-item"><span style="font-size:9px;font-weight:700;min-width:52px;color:${c}">${r.agent_name||'—'}</span><span style="font-size:10px;color:var(--t2);flex:1;line-height:1.4">${r.summary||r.status||'—'}</span><span style="font-size:9px;color:var(--t3)">${ago}</span></div>`;
+    return `<div class="feed-item"><span style="font-size:9px;font-weight:700;min-width:52px;color:${c}">${agentKey}</span><span style="font-size:10px;color:var(--t2);flex:1;line-height:1.4">${r.action||r.summary||r.outcome||'—'}</span><span style="font-size:9px;color:var(--t3)">${ago}</span></div>`;
   }).join(''):`<div style="font-size:10px;color:var(--t3);padding:20px 0;text-align:center">No agent activity yet.<br>Run SCOUT to start.</div>`;
 
   const topHtml=topOpps.length?topOpps.map((o,i)=>`<div class="opp" onclick="showDetail(${i})" style="border-left:3px solid ${vtColor(getVertical(o))}">
@@ -1280,13 +1371,46 @@ function renderVertical(vt){
       </div>
     </div>
     <div id="${vt[0]}-map"></div><div id="${vt[0]}-detail"></div>
+    <!-- GAP FIX 4 — Score tier filter buttons -->
     <div style="display:flex;justify-content:space-between;align-items:center;margin:20px 0 8px">
       <div style="font-size:10px;font-weight:700;color:var(--t3);letter-spacing:.12em;text-transform:uppercase">Active ${vt==='realestate'?'Real Estate & Rental':vt.charAt(0).toUpperCase()+vt.slice(1)} Opportunities</div>
-      <button class="refresh-btn" onclick="loadData(true)"><span>↻</span> Refresh</button>
+      <div style="display:flex;gap:6px;align-items:center">
+        <div id="${vt}-filters" style="display:flex;gap:4px">
+          <button onclick="vtFilter('${vt}','all')" id="${vt}-f-all" style="padding:4px 10px;border-radius:5px;border:1px solid var(--cyanBd);background:var(--cyanDim);color:var(--cyan);font-family:'Outfit',sans-serif;font-size:9px;font-weight:700;cursor:pointer;letter-spacing:.06em">ALL</button>
+          <button onclick="vtFilter('${vt}','strong')" id="${vt}-f-strong" style="padding:4px 10px;border-radius:5px;border:1px solid var(--bd);background:transparent;color:var(--t2);font-family:'Outfit',sans-serif;font-size:9px;font-weight:700;cursor:pointer;letter-spacing:.06em">🔥 ≥85</button>
+          <button onclick="vtFilter('${vt}','bid')" id="${vt}-f-bid" style="padding:4px 10px;border-radius:5px;border:1px solid var(--bd);background:transparent;color:var(--t2);font-family:'Outfit',sans-serif;font-size:9px;font-weight:700;cursor:pointer;letter-spacing:.06em">✅ ≥70</button>
+          <button onclick="vtFilter('${vt}','pending')" id="${vt}-f-pending" style="padding:4px 10px;border-radius:5px;border:1px solid var(--bd);background:transparent;color:var(--t2);font-family:'Outfit',sans-serif;font-size:9px;font-weight:700;cursor:pointer;letter-spacing:.06em">⏳ Unscored</button>
+        </div>
+        <button class="refresh-btn" onclick="loadData(true)"><span>↻</span> Refresh</button>
+      </div>
     </div>
+    <div id="${vt}-opp-list">
     ${activeOpps.length?activeOpps.map(o=>oppRow(o,OPPS.indexOf(o))).join(''):emptyState(`No active ${vt} opportunities`,'Opportunities you pass on move to the Passed Archive. Run SCOUT to pull fresh contracts.')}
+    </div>
   `;
   renderGrid(document.getElementById(vt[0]+'-map'),stateData,vt);
+}
+
+// GAP FIX 4 — Vertical tier filter (All / Strong ≥85 / BID ≥70 / Unscored)
+function vtFilter(vt, tier){
+  const activeOpps=OPPS.filter(o=>getVertical(o)===vt&&(!o.status||o.status==='new'||o.status==='reviewing'||o.status==='pursuing'));
+  let filtered;
+  if(tier==='strong') filtered=activeOpps.filter(o=>scoreOf(o)>=85);
+  else if(tier==='bid') filtered=activeOpps.filter(o=>scoreOf(o)>=70&&scoreOf(o)<85);
+  else if(tier==='pending') filtered=activeOpps.filter(o=>!o.prime_score&&!o.acq_score&&!o.lease_score);
+  else filtered=activeOpps;
+  // Update opp list
+  const listEl=document.getElementById(vt+'-opp-list');
+  if(listEl) listEl.innerHTML=filtered.length?filtered.map(o=>oppRow(o,OPPS.indexOf(o))).join(''):`<div class="empty"><div class="empty-icon">🔍</div><div class="empty-title">No opportunities in this tier</div></div>`;
+  // Update active filter button styling
+  ['all','strong','bid','pending'].forEach(f=>{
+    const btn=document.getElementById(vt+'-f-'+f);
+    if(!btn)return;
+    const isActive=f===tier;
+    btn.style.background=isActive?'var(--cyanDim)':'transparent';
+    btn.style.color=isActive?'var(--cyan)':'var(--t2)';
+    btn.style.borderColor=isActive?'var(--cyanBd)':'var(--bd)';
+  });
 }
 
 // ─── BIDS ──────────────────────────────────────────────────────────────
@@ -1504,7 +1628,7 @@ function renderEvents(){
 
 // ─── BRIEF ARCHIVE ──────────────────────────────────────────────────────
 function renderBriefs(){
-  const briefs=RUNS.filter(r=>r.agent_name==='BRANDI').slice(0,10);
+  const briefs=RUNS.filter(r=>(r.agent||r.agent_name)==='BRANDI').slice(0,10);
   const briefHtml=briefs.length
     ?briefs.map(b=>{
       const d=new Date(b.created_at);
@@ -1562,7 +1686,7 @@ function renderIntel(){
 // ─── SYSTEM (with T.E.S.T. live data) ─────────────────────────────────
 function renderSystem(){
   const lastRun=RUNS.length?new Date(RUNS[0].created_at).toLocaleString('en-US',{month:'short',day:'numeric',hour:'numeric',minute:'2-digit'}):'No runs yet';
-  const testRun=RUNS.find(r=>r.agent_name==='T.E.S.T.'||r.agent_name==='TEST');
+  const testRun=RUNS.find(r=>(r.agent||r.agent_name)==='T.E.S.T.'||(r.agent||r.agent_name)==='TEST');
   const samCalls=cfgVal('SAM_CALLS_TODAY')||0;
   const samPct=Math.min(100,Math.round(samCalls/450*100));
 
@@ -1607,7 +1731,7 @@ function renderSystem(){
     <div style="font-size:16px;font-weight:700;margin-bottom:14px">⚙️ System · 10 Agents · 3 Verticals · 32 NAICS</div>
     <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:8px;margin-bottom:16px">
       ${[{n:'BRANDI',r:'CEO / Briefer',c:'var(--gold)'},{n:'SCOUT',r:'32 NAICS Finder',c:'var(--green)'},{n:'JUDGE',r:'3-Score Engine',c:'var(--cyan)'},{n:'VAULT',r:'Compliance+Assets',c:'var(--green)'},{n:'RECON',r:'Intel+Suppliers',c:'var(--violet)'},{n:'DRAFT',r:'Proposals',c:'var(--green)'},{n:'BID ENG',r:'Pricing Engine',c:'var(--cyan)'},{n:'LEDGER',r:'Learn+Calibrate',c:'var(--cyan)'},{n:'EXEC',r:'Track+Payroll+$$',c:'var(--green)'},{n:'T.E.S.T.',r:'QA Validator',c:'var(--green)'}].map(a=>{
-        const last=RUNS.find(r=>r.agent_name===a.n||(a.n==='T.E.S.T.'&&r.agent_name==='TEST'));
+        const last=RUNS.find(r=>(r.agent||r.agent_name)===a.n||(a.n==='T.E.S.T.'&&((r.agent||r.agent_name)==='TEST')));
         return `<div class="agent-card" style="border:1px solid ${a.c}22">
           <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px">
             <span style="width:6px;height:6px;border-radius:99px;background:${last?'var(--green)':'var(--t3)'};box-shadow:0 0 6px ${last?'var(--green)':'transparent'}"></span>
