@@ -98,7 +98,7 @@ CREATE TABLE IF NOT EXISTS api_schemas (
 -- Seed with known APIs
 INSERT INTO api_schemas (api_name, endpoint, status) VALUES
   ('SAM.gov',   'https://api.sam.gov/opportunities/v2/search', 'unknown'),
-  ('Supabase',  'https://lsgaifejjoxqudjhkeev.supabase.co',   'unknown'),
+  ('Supabase',  'https://czoyvxyfewqaoewzxlin.supabase.co',   'unknown'),
   ('SendGrid',  'https://api.sendgrid.com/v3',                 'unknown'),
   ('Anthropic', 'https://api.anthropic.com/v1',               'unknown'),
   ('USASpending','https://api.usaspending.gov/api/v2',         'unknown')
