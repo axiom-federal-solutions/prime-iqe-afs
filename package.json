@@ -1,5 +1,4 @@
 {
-<<<<<<< HEAD
   "name": "prime-iqe",
   "version": "1.0.0",
   "description": "PRIME IQE — Intelligent Qualification Engine for Axiom Federal Solutions (Walker Contractors LLC). Dual-vertical federal contracting: Construction + Supply.",
@@ -8,55 +7,33 @@
     "node": ">=20.0.0"
   },
   "scripts": {
-    "scout":      "node agents/scout.js",
-    "scout:state":"node agents/scout-state.js",
-    "judge":      "node agents/judge.js",
-    "vault":      "node agents/vault.js",
-    "brandi":     "node agents/brandi.js daily",
-    "brandi:supply": "node agents/brandi.js supply",
-    "brandi:alert":  "node agents/brandi.js alert",
+    "scout":           "node agents/scout.js",
+    "scout:state":     "node agents/scout-state.js",
+    "judge":           "node agents/judge.js",
+    "vault":           "node agents/vault.js",
+    "brandi":          "node agents/brandi.js daily",
+    "brandi:supply":   "node agents/brandi.js supply",
+    "brandi:alert":    "node agents/brandi.js alert",
     "recon":           "node agents/recon.js",
     "recon:suppliers": "node agents/recon-suppliers.js",
     "recon:match":     "node agents/recon-suppliers.js --match-only",
-    "draft":      "node agents/draft.js",
-    "bidengine":  "node agents/bidengine.js",
-    "ledger":     "node agents/ledger.js",
-    "exec":       "node agents/exec.js",
-    "setup:db":   "node -e \"console.log('Paste config/create-all-tables.sql into Supabase SQL Editor and click Run')\"",
-    "setup:env":  "node -e \"console.log('Copy .env.example to .env and fill in your credentials')\""
+    "draft":           "node agents/draft.js",
+    "bidengine":       "node agents/bidengine.js",
+    "test:suite":      "node agents/test.js",
+    "ledger":          "node agents/ledger.js",
+    "exec":            "node agents/exec.js",
+    "setup:db":        "node -e \"console.log('Paste config/create-all-tables.sql into Supabase SQL Editor and click Run')\"",
+    "setup:env":       "node -e \"console.log('Copy .env.example to .env and fill in your credentials')\""
   },
   "dependencies": {
-    "@anthropic-ai/sdk":   "^0.39.0",
-    "@sendgrid/mail":      "^8.1.4",
+    "@anthropic-ai/sdk":    "^0.39.0",
+    "@sendgrid/mail":       "^8.1.4",
     "@supabase/supabase-js": "^2.49.4",
-    "node-fetch":          "^3.3.2"
+    "node-fetch":           "^3.3.2"
   },
   "devDependencies": {
     "dotenv": "^16.4.7"
-  }
-=======
-  "name": "prime-system",
-  "version": "1.0.0",
-  "description": "PRIME — Procurement & Renovation Intelligence Matching Engine",
-  "private": true,
-  "engines": {
-    "node": ">=18.0.0"
-  },
-  "scripts": {
-    "scout":     "node agents/scout.js",
-    "judge":     "node agents/judge.js",
-    "vault":     "node agents/vault.js",
-    "recon":     "node agents/recon.js",
-    "brandi":    "node agents/brandi.js",
-    "exec":      "node agents/exec.js",
-    "ledger":    "node agents/ledger.js",
-    "test":      "node agents/scout.js && echo 'Scout OK' || echo 'Scout FAILED'"
-  },
-  "dependencies": {
-    "@anthropic-ai/sdk":   "^0.39.0",
-    "@supabase/supabase-js": "^2.49.0"
   },
   "author": "Joseph Walker IV — Axiom Federal Solutions",
   "license": "UNLICENSED"
->>>>>>> prime-system/main
 }
