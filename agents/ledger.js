@@ -65,7 +65,10 @@ async function runLedger() {
     if (mode === 'outcome') {
       // Called when a bid outcome (won/lost) is recorded
       const bidId = process.argv[3];
-      if (bidId) await handleBidOutcome(bidId);
+      if (bidId) {
+        await handleBidOutcome(bidId);
+        await scoreProposal(bidId);       // L6-02: score the proposal after outcome
+      }
     }
 
     await logAction('LEDGER', 'Run complete', { mode });
@@ -457,6 +460,210 @@ async function trainMLModel(outcomes) {
 
   console.log('LEDGER ML: L6-01 active — version ' + newVersion + ', accuracy ' + accuracy + '%');
   console.log('LEDGER ML: Feature importances:', featureImportances);
+}
+
+// ----------------------------------------------------------
+// L6-02: PROPOSAL SCORING RUBRIC
+// Scores each proposal after a bid outcome is recorded.
+// Five criteria × 20 points each = 100 total.
+// After 20 scored proposals, trains a quality ML model so DRAFT
+// can predict which proposal sections need the most attention.
+// ----------------------------------------------------------
+
+const PROPOSAL_SCORE_THRESHOLD = 20; // proposals needed to train quality model
+
+async function scoreProposal(bidId) {
+  console.log('LEDGER L6-02: Scoring proposal for bid ' + bidId);
+
+  // Pull the bid and its linked opportunity
+  const { data: bid } = await supabase
+    .from('bids')
+    .select('*, opportunities(*)')
+    .eq('id', bidId)
+    .single();
+
+  if (!bid || !bid.result) {
+    console.log('LEDGER L6-02: Bid not found or no result recorded — skipping');
+    return;
+  }
+
+  // Don't score twice for the same bid
+  const { data: existing } = await supabase
+    .from('proposal_scores')
+    .select('id')
+    .eq('bid_id', bidId)
+    .single();
+
+  if (existing) {
+    console.log('LEDGER L6-02: Proposal already scored for bid ' + bidId);
+    return;
+  }
+
+  const opp    = bid.opportunities || {};
+  const won    = bid.result === 'won';
+  const score  = opp.prime_score || 50;
+  const value  = opp.value || 0;
+
+  // Heuristic rubric — uses available signals to estimate how each
+  // section likely performed. Real scores come from CPARS/debrief data.
+  // Each criterion: 0-20 points.
+
+  // Technical: did we have matching NAICS + scored high?
+  const scoreTechnical = won
+    ? Math.min(20, Math.round(score / 5))
+    : Math.min(15, Math.round(score / 7));
+
+  // Price: value-based estimate — large contracts won = price was competitive
+  const scorePrice = won
+    ? (value > 1000000 ? 18 : 15)
+    : (value > 1000000 ? 10 : 12);
+
+  // Past performance: check if we have any past_performance records for this agency
+  const { count: ppCount } = await supabase
+    .from('past_performance')
+    .select('id', { count: 'exact', head: true })
+    .eq('agency', opp.agency || '');
+
+  const scorePastPerf = won
+    ? (ppCount > 0 ? 18 : 12)
+    : (ppCount > 0 ? 14 : 8);
+
+  // Management: was this a quick turnaround (good planning = better mgmt section)?
+  const daysToDeadline = opp.deadline
+    ? Math.max(0, Math.round((new Date(opp.deadline) - new Date(bid.created_at)) / (1000 * 60 * 60 * 24)))
+    : 14;
+  const scoreMgmt = won
+    ? (daysToDeadline > 10 ? 17 : 14)
+    : (daysToDeadline > 10 ? 13 : 10);
+
+  // Compliance: did proposal pass VAULT checks? Check compliance table.
+  const { data: compRecord } = await supabase
+    .from('compliance')
+    .select('status')
+    .eq('opportunity_id', opp.id)
+    .single();
+
+  const compOk = compRecord?.status === 'compliant';
+  const scoreCompliance = won ? (compOk ? 18 : 14) : (compOk ? 14 : 9);
+
+  // Generate improvement notes based on result
+  const weaknesses = !won ? [
+    !compOk && 'Compliance gaps detected by VAULT — review FAR clauses',
+    ppCount === 0 && 'No past performance for ' + (opp.agency || 'this agency') + ' — build relationship or team',
+    daysToDeadline < 7 && 'Short turnaround — proposal quality likely suffered from time pressure',
+    score < 65 && 'PRIME score was below 65 — opportunity may not have been a strong fit',
+  ].filter(Boolean).join('; ') : null;
+
+  const strengths = won ? [
+    compOk && 'Full compliance verified by VAULT',
+    ppCount > 0 && 'Past performance with agency strengthened credibility',
+    score >= 70 && 'High PRIME score indicated strong opportunity fit',
+  ].filter(Boolean).join('; ') : null;
+
+  // Save to proposal_scores
+  await supabase.from('proposal_scores').insert({
+    bid_id:              bidId,
+    solicitation_number: opp.solicitation_number,
+    result:              bid.result,
+    score_technical:     scoreTechnical,
+    score_price:         scorePrice,
+    score_past_perf:     scorePastPerf,
+    score_management:    scoreMgmt,
+    score_compliance:    scoreCompliance,
+    strengths,
+    weaknesses,
+    improvement_notes:   weaknesses || 'Winning proposal — document what worked for future reuse',
+    agency:              opp.agency,
+    naics:               opp.naics,
+    contract_value:      value,
+  });
+
+  // Activate L6-02 flag on first score
+  await setConfig('L6_02_PROPOSAL_SCORING_ACTIVE', 'true');
+
+  await logAction('LEDGER', 'L6-02 proposal scored', {
+    bid_id:    bidId,
+    result:    bid.result,
+    technical: scoreTechnical,
+    price:     scorePrice,
+    past_perf: scorePastPerf,
+    mgmt:      scoreMgmt,
+    compliance:scoreCompliance,
+    total:     scoreTechnical + scorePrice + scorePastPerf + scoreMgmt + scoreCompliance,
+  });
+
+  console.log('LEDGER L6-02: Scored — total ' +
+    (scoreTechnical + scorePrice + scorePastPerf + scoreMgmt + scoreCompliance) + '/100 (' + bid.result + ')');
+
+  // Check if we have enough scored proposals to train the quality model
+  await checkProposalMLThreshold();
+}
+
+// ----------------------------------------------------------
+// L6-02: PROPOSAL QUALITY ML — Train after 20 scored proposals
+// Second ML model focused on proposal WRITING quality (not fit).
+// Features: compliance, past perf availability, turnaround days,
+//           and known outcome — finds what predicts winning proposals.
+// ----------------------------------------------------------
+async function checkProposalMLThreshold() {
+  const { data: scores } = await supabase
+    .from('proposal_scores')
+    .select('*')
+    .not('result', 'is', null);
+
+  if (!scores || scores.length < PROPOSAL_SCORE_THRESHOLD) {
+    console.log('LEDGER L6-02: ' + (scores?.length || 0) + '/' + PROPOSAL_SCORE_THRESHOLD +
+      ' proposals scored — quality model pending');
+    return;
+  }
+
+  // Build simple average per criterion for won vs lost — directional signal
+  const won  = scores.filter(s => s.result === 'won');
+  const lost = scores.filter(s => s.result === 'lost');
+
+  const avgCriterion = (arr, field) =>
+    arr.length ? arr.reduce((sum, s) => sum + (s[field] || 0), 0) / arr.length : 0;
+
+  const analysis = {
+    won_count:  won.length,
+    lost_count: lost.length,
+    won_avg_technical:  avgCriterion(won,  'score_technical').toFixed(1),
+    won_avg_price:      avgCriterion(won,  'score_price').toFixed(1),
+    won_avg_past_perf:  avgCriterion(won,  'score_past_perf').toFixed(1),
+    won_avg_mgmt:       avgCriterion(won,  'score_management').toFixed(1),
+    won_avg_compliance: avgCriterion(won,  'score_compliance').toFixed(1),
+    lost_avg_technical: avgCriterion(lost, 'score_technical').toFixed(1),
+    lost_avg_price:     avgCriterion(lost, 'score_price').toFixed(1),
+    lost_avg_past_perf: avgCriterion(lost, 'score_past_perf').toFixed(1),
+    lost_avg_mgmt:      avgCriterion(lost, 'score_management').toFixed(1),
+    lost_avg_compliance:avgCriterion(lost, 'score_compliance').toFixed(1),
+  };
+
+  // Find biggest gap — this is where proposal effort should focus
+  const gaps = [
+    { criterion: 'technical',   gap: parseFloat(analysis.won_avg_technical)  - parseFloat(analysis.lost_avg_technical)  },
+    { criterion: 'price',       gap: parseFloat(analysis.won_avg_price)       - parseFloat(analysis.lost_avg_price)       },
+    { criterion: 'past_perf',   gap: parseFloat(analysis.won_avg_past_perf)   - parseFloat(analysis.lost_avg_past_perf)   },
+    { criterion: 'management',  gap: parseFloat(analysis.won_avg_mgmt)        - parseFloat(analysis.lost_avg_mgmt)        },
+    { criterion: 'compliance',  gap: parseFloat(analysis.won_avg_compliance)  - parseFloat(analysis.lost_avg_compliance)  },
+  ].sort((a, b) => b.gap - a.gap);
+
+  const topGap = gaps[0];
+
+  await setConfig('L6_02_QUALITY_FOCUS', topGap.criterion);
+  await setConfig('L6_02_QUALITY_GAP',   topGap.gap.toFixed(1));
+  await setConfig('L6_02_QUALITY_RUNS',  String(scores.length));
+
+  await logAction('LEDGER', 'L6-02 proposal quality analysis complete', {
+    ...analysis,
+    top_focus_criterion: topGap.criterion,
+    gap_points:          topGap.gap.toFixed(1),
+    recommendation:      'Invest most in "' + topGap.criterion + '" section — ' +
+                         topGap.gap.toFixed(1) + 'pt gap between won and lost proposals',
+  });
+
+  console.log('LEDGER L6-02: Quality model updated — focus on "' + topGap.criterion +
+    '" (' + topGap.gap.toFixed(1) + 'pt win/loss gap)');
 }
 
 // ----------------------------------------------------------

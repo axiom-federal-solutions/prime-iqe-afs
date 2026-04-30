@@ -318,7 +318,7 @@ const sb = createClient(
 );
 
 // ─── GLOBAL STATE ──────────────────────────────────────────────────────
-let OPPS=[], BIDS=[], SUPS=[], RUNS=[], CONFIG={}, TESTS=[], CLAIMS=[], EVENTS=[], CONTRACTS=[], FORECAST=null, loading=false;
+let OPPS=[], BIDS=[], SUPS=[], RUNS=[], CONFIG={}, TESTS=[], CLAIMS=[], EVENTS=[], CONTRACTS=[], FORECAST=null, SUB_PAYMENTS=[], TEAMING=[], PAST_PERF=[], loading=false;
 const GH_ACTIONS='https://github.com/axiom-federal-solutions/prime-iqe-afs/actions';
 
 // ─── STATE METADATA: name, region, notes for all 50 states + DC ───────
@@ -520,7 +520,7 @@ async function loadData(manual=false){
   const icon=document.getElementById('ri');
   if(icon)icon.classList.add('spinning');
   try{
-    const [o,b,s,r,cfg,tst,cl,ev,ac,fc]=await Promise.all([
+    const [o,b,s,r,cfg,tst,cl,ev,ac,fc,sp,tm,pp]=await Promise.all([
       sb.from('opportunities').select('*').order('prime_score',{ascending:false,nullsFirst:false}).order('acq_score',{ascending:false,nullsFirst:false}).order('created_at',{ascending:false}).limit(200),
       sb.from('bids').select('*').order('created_at',{ascending:false}).limit(50),
       sb.from('supplier_matches').select('*, suppliers(name,city,state,certifications,socioeconomic,federal_contract_count,avg_contract_value,naics_codes,capability_tier,contact_email)').order('match_score',{ascending:false}).limit(100),
@@ -531,6 +531,9 @@ async function loadData(manual=false){
       sb.from('osdbu_events').select('*').order('created_at',{ascending:false}).limit(20),
       sb.from('active_contracts').select('*').limit(50),
       sb.from('forecast_snapshots').select('*').order('snapshot_date',{ascending:false}).limit(1), // L6-06 Monte Carlo
+      sb.from('sub_payment_log').select('*').in('status',['pending','overdue']).order('required_pay_date',{ascending:true}).limit(20), // Sub payment compliance
+      sb.from('teaming_agreements').select('*').eq('active',true).order('partner_name',{ascending:true}),                              // L6-03 Teaming partners
+      sb.from('past_performance').select('*').order('performance_end',{ascending:false}).limit(10),                                    // L6-05 Past performance
     ]);
     OPPS=o.data||[];
     BIDS=b.data||[];
@@ -543,6 +546,9 @@ async function loadData(manual=false){
     EVENTS=ev.data||[];
     CONTRACTS=ac.data||[];
     FORECAST=(fc.data||[])[0]||null; // Latest Monte Carlo snapshot — null if L6-06 not yet active
+    SUB_PAYMENTS=sp.data||[];         // Subcontractor prompt payment log
+    TEAMING=tm.data||[];              // L6-03 Active teaming partners
+    PAST_PERF=pp.data||[];            // L6-05 Past performance records
 
     const ll=document.getElementById('last-load');
     if(ll){const n=new Date();ll.textContent='Updated '+n.toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'});}
@@ -1184,6 +1190,29 @@ function renderActionQueue(){
   `;
 }
 
+// ─── SAM EXPIRY BANNER ─────────────────────────────────────────────────
+// Shows a warning at the top of Command Center when SAM registration is
+// within 90 days of expiry. Reads SAM_REGISTRATION_EXPIRY from system_config.
+function renderSAMExpiryBanner(){
+  const expiryStr = cfgVal('SAM_REGISTRATION_EXPIRY');
+  if (!expiryStr) return '';
+  const daysLeft = Math.ceil((new Date(expiryStr) - new Date()) / 86400000);
+  if (daysLeft > 90) return '';
+  const c  = daysLeft <= 30 ? 'var(--red)' : 'var(--amber)';
+  const bg = daysLeft <= 30 ? 'var(--redDim)' : 'var(--amberDim)';
+  const bd = daysLeft <= 30 ? 'rgba(248,113,113,.3)' : 'rgba(245,158,11,.3)';
+  const icon = daysLeft <= 30 ? '🚨' : '⚠️';
+  return `
+  <div style="background:${bg};border:1px solid ${bd};border-radius:8px;padding:10px 14px;margin-bottom:12px;display:flex;align-items:center;gap:12px">
+    <span style="font-size:18px">${icon}</span>
+    <div style="flex:1">
+      <span style="font-size:12px;font-weight:700;color:${c}">SAM.gov Registration Expires in ${daysLeft} Days</span>
+      <span style="font-size:11px;color:var(--t2);margin-left:10px">Expiry: ${new Date(expiryStr).toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric'})}</span>
+    </div>
+    <a href="https://sam.gov" target="_blank" style="font-size:10px;font-weight:700;padding:4px 10px;border-radius:4px;background:${c}22;color:${c};text-decoration:none;border:1px solid ${c}44">Renew at SAM.gov →</a>
+  </div>`;
+}
+
 // ─── L6-06: MONTE CARLO FORECAST ROW ───────────────────────────────────
 // Shows P25/P50/P75 revenue bands once 10+ bid outcomes exist.
 // If not yet active, shows threshold progress bar.
@@ -1346,6 +1375,7 @@ function renderHome(){
   </div>`).join(''):emptyState('No opportunities loaded yet','Run SCOUT SAM Scan from GitHub Actions to pull live contracts. Takes ~2 minutes.');
 
   document.getElementById('t-home').innerHTML=`
+    ${renderSAMExpiryBanner()}
     ${haltBanner}
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
       <div style="background:var(--card);border:1px solid var(--goldBd);border-left:4px solid var(--gold);border-radius:8px;padding:12px 16px;flex:1;margin-right:12px">
@@ -1753,6 +1783,147 @@ function renderMoney(){
   `;
 }
 
+// ─── SUB PAYMENT COMPLIANCE PANEL ──────────────────────────────────────
+// Reads sub_payment_log from Supabase and shows overdue/due-soon items.
+// Called inside renderCompliance() so it stays in the Compliance tab.
+function renderSubPaymentPanel(){
+  // SUB_PAYMENTS is loaded in loadData() below — check if we have it
+  const payments = (typeof SUB_PAYMENTS !== 'undefined' ? SUB_PAYMENTS : []);
+  const today = new Date().toISOString().split('T')[0];
+
+  const overdue  = payments.filter(p => p.status === 'overdue' || (p.required_pay_date && p.required_pay_date < today && p.status !== 'paid'));
+  const dueSoon  = payments.filter(p => p.status === 'pending'  && p.required_pay_date >= today);
+  const paid     = payments.filter(p => p.status === 'paid');
+
+  if (payments.length === 0) {
+    return `
+    <div style="margin-bottom:14px">
+      <div style="font-size:11px;font-weight:700;color:var(--amber);margin-bottom:8px">⚖️ Subcontractor Prompt Payment (FAR 52.232-27)</div>
+      <div style="background:var(--card);border:1px solid var(--bd);border-radius:8px;padding:14px;font-size:11px;color:var(--t3)">
+        No subcontractor payments logged yet. When you receive government payment, log it here — PRIME will track the 14-day pay requirement automatically.
+        <br><br><span style="color:var(--cyan)">To add: Supabase → sub_payment_log → Insert row</span>
+      </div>
+    </div>`;
+  }
+
+  const payRow = (p) => {
+    const daysLate = p.required_pay_date < today
+      ? Math.ceil((new Date(today) - new Date(p.required_pay_date)) / 86400000)
+      : 0;
+    const c = daysLate > 7 ? 'var(--red)' : daysLate > 0 ? 'var(--amber)' : 'var(--cyan)';
+    const label = daysLate > 0 ? daysLate + 'd LATE' : 'Due ' + p.required_pay_date;
+    return `
+    <div style="display:flex;align-items:center;gap:10px;padding:8px 12px;background:var(--card);border:1px solid ${c}22;border-left:3px solid ${c};border-radius:6px;margin-bottom:5px">
+      <div style="flex:1">
+        <div style="font-size:11px;font-weight:600;color:var(--t1)">${p.subcontractor_name}</div>
+        <div style="font-size:10px;color:var(--t3)">${p.contract_number || 'N/A'} · Invoice #${p.invoice_number || '—'}</div>
+      </div>
+      <div style="text-align:right">
+        <div style="font-size:12px;font-weight:700;color:${c}">$${(p.invoice_amount||0).toLocaleString()}</div>
+        <div style="font-size:9px;color:${c};font-weight:700">${label}</div>
+      </div>
+    </div>`;
+  };
+
+  return `
+  <div style="margin-bottom:14px">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+      <div style="font-size:11px;font-weight:700;color:var(--amber)">⚖️ Subcontractor Prompt Payment (FAR 52.232-27)</div>
+      <div style="font-size:9px;color:var(--t3)">${paid.length} paid · ${dueSoon.length} due soon · ${overdue.length} overdue</div>
+    </div>
+    ${overdue.length > 0 ? overdue.map(payRow).join('') : ''}
+    ${dueSoon.length > 0 ? dueSoon.map(payRow).join('') : ''}
+    ${overdue.length === 0 && dueSoon.length === 0 ?
+      `<div style="background:var(--greenDim);border:1px solid var(--greenBd);border-radius:6px;padding:10px;font-size:11px;color:var(--green)">✓ All subcontractor payments current — ${paid.length} paid on record</div>` : ''}
+    <div style="font-size:9px;color:var(--t3);margin-top:6px">14-day rule: Pay subs within 14 days of prime receiving government payment.</div>
+  </div>`;
+}
+
+// ─── TEAMING PANEL ──────────────────────────────────────────────────────
+// Shows active teaming partners from teaming_agreements table.
+// Called inside renderCompliance() — also visible as a quick reference.
+function renderTeamingPanel(){
+  const partners = (typeof TEAMING !== 'undefined' ? TEAMING : []);
+
+  if (partners.length === 0) {
+    return `
+    <div style="margin-bottom:14px">
+      <div style="font-size:11px;font-weight:700;color:var(--violet);margin-bottom:8px">🤝 Teaming Partners (L6-03)</div>
+      <div style="background:var(--card);border:1px solid var(--bd);border-radius:8px;padding:14px;font-size:11px;color:var(--t3)">
+        No teaming agreements on file. Add partners to unlock NAICS gap coverage — SCOUT will tag opportunities your NAICS don't cover when a partner can fill the gap.
+        <br><br><span style="color:var(--cyan)">To add: Supabase → teaming_agreements → Insert row</span>
+      </div>
+    </div>`;
+  }
+
+  return `
+  <div style="margin-bottom:14px">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+      <div style="font-size:11px;font-weight:700;color:var(--violet)">🤝 Teaming Partners (L6-03)</div>
+      <span style="font-size:9px;font-weight:700;padding:2px 6px;border-radius:3px;background:var(--greenDim);color:var(--green)">${partners.filter(p=>p.active).length} ACTIVE</span>
+    </div>
+    ${partners.map(p => {
+      const expiry = p.expiration_date ? Math.ceil((new Date(p.expiration_date) - new Date()) / 86400000) : null;
+      const expiryBadge = expiry !== null
+        ? `<span style="font-size:9px;color:${expiry < 30 ? 'var(--red)' : 'var(--t3)'}">Exp ${p.expiration_date}</span>`
+        : '';
+      return `
+      <div style="background:var(--card);border:1px solid var(--bd);border-radius:6px;padding:10px 12px;margin-bottom:5px;display:flex;align-items:center;gap:10px">
+        <div style="flex:1">
+          <div style="font-size:11px;font-weight:600;color:var(--t1)">${p.partner_name}</div>
+          <div style="font-size:9px;color:var(--t3);margin-top:2px">${p.role?.toUpperCase()} · ${(p.naics_codes||[]).slice(0,4).join(', ')}${(p.naics_codes||[]).length > 4 ? '…' : ''}</div>
+        </div>
+        <div style="text-align:right">
+          ${expiryBadge}
+          ${p.bonding_capacity ? `<div style="font-size:9px;color:var(--violet);margin-top:2px">Bond: $${(p.bonding_capacity/1e6).toFixed(1)}M</div>` : ''}
+        </div>
+      </div>`;
+    }).join('')}
+  </div>`;
+}
+
+// ─── PAST PERFORMANCE PANEL ─────────────────────────────────────────────
+// Shows past performance entries from past_performance table.
+// Called inside renderCompliance() — evaluators score this section heavily.
+function renderPastPerfPanel(){
+  const records = (typeof PAST_PERF !== 'undefined' ? PAST_PERF : []);
+
+  if (records.length === 0) {
+    return `
+    <div style="margin-bottom:14px">
+      <div style="font-size:11px;font-weight:700;color:var(--gold);margin-bottom:8px">🏆 Past Performance Repository (L6-05)</div>
+      <div style="background:var(--card);border:1px solid var(--bd);border-radius:8px;padding:14px;font-size:11px;color:var(--t3)">
+        No past performance records on file. Add contract history here — BRANDI will auto-draft evaluation narratives for each entry using AI.
+        <br><br><span style="color:var(--cyan)">To add: Supabase → past_performance → Insert row</span>
+      </div>
+    </div>`;
+  }
+
+  const ratingColor = r => ({exceptional:'var(--green)',very_good:'var(--cyan)',satisfactory:'var(--amber)',marginal:'var(--red)',unsatisfactory:'var(--red)'}[r] || 'var(--t3)');
+
+  return `
+  <div style="margin-bottom:14px">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+      <div style="font-size:11px;font-weight:700;color:var(--gold)">🏆 Past Performance (L6-05)</div>
+      <span style="font-size:9px;color:var(--t3)">${records.length} record${records.length!==1?'s':''} · AI narratives auto-drafted</span>
+    </div>
+    ${records.map(r => `
+    <div style="background:var(--card);border:1px solid var(--bd);border-left:3px solid ${ratingColor(r.cpars_rating)};border-radius:6px;padding:10px 12px;margin-bottom:5px">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start">
+        <div style="flex:1;min-width:0">
+          <div style="font-size:11px;font-weight:600;color:var(--t1);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${r.agency}</div>
+          <div style="font-size:10px;color:var(--t3);margin-top:2px">${r.contract_number} · ${r.prime_or_sub?.toUpperCase()} · ${r.naics||'—'}</div>
+        </div>
+        <div style="text-align:right;margin-left:10px;flex-shrink:0">
+          ${r.award_value ? `<div style="font-size:12px;font-weight:700;color:var(--gold)">$${r.award_value>=1e6?(r.award_value/1e6).toFixed(1)+'M':(r.award_value/1e3).toFixed(0)+'K'}</div>` : ''}
+          ${r.cpars_rating ? `<div style="font-size:9px;font-weight:700;color:${ratingColor(r.cpars_rating)};text-transform:uppercase">${r.cpars_rating.replace('_',' ')}</div>` : ''}
+        </div>
+      </div>
+      ${r.narrative ? `<div style="font-size:10px;color:var(--t2);margin-top:6px;line-height:1.5;border-top:1px solid var(--bd);padding-top:6px">${r.narrative.slice(0,180)}${r.narrative.length>180?'…':''}</div>` : `<div style="font-size:9px;color:var(--t3);margin-top:5px">⏳ Narrative pending — BRANDI generates on next pastperf run</div>`}
+    </div>`).join('')}
+  </div>`;
+}
+
 // ─── COMPLIANCE (live VAULT data from system_config) ───────────────────
 function renderCompliance(){
   const samCalls=cfgVal('SAM_CALLS_TODAY');
@@ -1791,6 +1962,10 @@ function renderCompliance(){
     <div class="comp-row"><span class="comp-dot" style="background:var(--green)"></span><span style="flex:1;font-size:12px;font-weight:500">SDB Self-Certification</span><span class="badge" style="background:var(--greenDim);color:var(--green)">Active</span><span style="font-size:10px;color:var(--t3);min-width:80px;text-align:right">Self-cert</span></div>
     <div class="comp-row"><span class="comp-dot" style="background:var(--amber)"></span><span style="flex:1;font-size:12px;font-weight:500">Bonding Capacity</span><span class="badge" style="background:var(--amberDim);color:var(--amber)">Verify</span><span style="font-size:10px;color:var(--t3);min-width:80px;text-align:right">Confirm surety</span></div>
     <div style="font-size:10px;color:var(--t3);margin-top:12px;padding:10px;background:var(--card);border-radius:6px;margin-bottom:16px">VAULT populates expiry dates automatically. 90-day warning threshold. Bond required for contracts >$150K (FAR 52.228-1).</div>
+
+    ${renderSubPaymentPanel()}
+    ${renderTeamingPanel()}
+    ${renderPastPerfPanel()}
 
     <div style="font-size:11px;font-weight:700;color:var(--violet);margin-bottom:10px">🎯 Certification Pipeline — Pending Applications</div>
     <div style="background:var(--card);border:1px solid var(--violetBd,rgba(167,139,250,.25));border-radius:8px;padding:16px;margin-bottom:8px">

@@ -46,9 +46,12 @@ async function runBrandi() {
   if (!enabled) process.exit(0);
 
   try {
-    if (mode === 'daily')  await sendDailyBrief();
-    if (mode === 'supply') await sendSupplyDigest();
-    if (mode === 'alert')  await sendCriticalAlerts();
+    if (mode === 'daily')    await sendDailyBrief();
+    if (mode === 'supply')   await sendSupplyDigest();
+    if (mode === 'alert')    await sendCriticalAlerts();
+    if (mode === 'sam')      await sendSAMExpiryAlert();       // SAM registration check
+    if (mode === 'subpay')   await sendSubPaymentAlert();      // Prompt payment compliance
+    if (mode === 'pastperf') await generatePastPerfNarrative();// L6-05: draft narratives
 
     console.log('BRANDI: Brief sent successfully.');
 
@@ -68,7 +71,7 @@ async function sendDailyBrief() {
   const ctTime    = new Date().toLocaleTimeString('en-US', { timeZone:'America/Chicago', hour:'numeric', minute:'2-digit', hour12:true });
 
   // Parallelize all DB reads — drops brief generation from ~9s to ~2s
-  const [topOpps, urgent, pending, vaultIssues, costData, supplierSection, testHealth] = await Promise.all([
+  const [topOpps, urgent, pending, vaultIssues, costData, supplierSection, testHealth, samAlert, subPayAlert] = await Promise.all([
     getTopOpportunities('construction', 5),
     getUrgentOpportunities(48),
     getPendingApprovals(),
@@ -76,10 +79,12 @@ async function sendDailyBrief() {
     getMonthlySpend(),
     getSupplierAlerts(),
     getTestHealthSection(),
+    getSAMExpiryStatus(),       // SAM registration expiry check
+    getOverdueSubPayments(),    // Prompt payment compliance check
   ]);
 
   // Build the email HTML
-  const body = buildDailyBriefBody({ topOpps, urgent, pending, vaultIssues, costData, supplierSection, testHealth, today, ctTime });
+  const body = buildDailyBriefBody({ topOpps, urgent, pending, vaultIssues, costData, supplierSection, testHealth, samAlert, subPayAlert, today, ctTime });
 
   const subject = buildDailySubject(topOpps, urgent, pending);
 
@@ -232,8 +237,39 @@ function buildDailySubject(topOpps, urgent, pending) {
   return 'PRIME Morning Brief — ' + today + (parts.length ? ' · ' + parts.join(' · ') : '');
 }
 
-function buildDailyBriefBody({ topOpps, urgent, pending, vaultIssues, costData, supplierSection, testHealth, today, ctTime }) {
+function buildDailyBriefBody({ topOpps, urgent, pending, vaultIssues, costData, supplierSection, testHealth, samAlert, subPayAlert, today, ctTime }) {
   let html = '';
+
+  // --- SAM.gov Registration Alert (only shows when within 90 days of expiry) ---
+  if (samAlert) {
+    const bg     = samAlert.daysLeft <= 30 ? 'rgba(248,113,113,0.08)' : 'rgba(245,158,11,0.08)';
+    const border = samAlert.daysLeft <= 30 ? 'rgba(248,113,113,0.3)'  : 'rgba(245,158,11,0.3)';
+    const color  = samAlert.daysLeft <= 30 ? '#F87171'                : '#F59E0B';
+    const icon   = samAlert.daysLeft <= 30 ? '🚨' : '⚠️';
+    html += `
+    <div style="background:${bg};border:1px solid ${border};border-radius:8px;padding:16px;margin-bottom:20px;">
+      <div style="font-size:12px;font-weight:700;letter-spacing:2px;color:${color};margin-bottom:8px;">${icon} SAM.GOV REGISTRATION EXPIRY</div>
+      <div style="font-size:14px;font-weight:600;color:#EDF0F7;margin-bottom:6px;">Registration expires ${samAlert.expiryDate} — ${samAlert.daysLeft} days remaining</div>
+      <div style="font-size:12px;color:#8B95AB;">Action required: Log into SAM.gov → Renew your entity registration before the deadline.
+      Expired registration = ineligible for federal contracts.
+      <a href="https://sam.gov/entity/${process.env.UEI || 'USMQMFAGL9M4'}/registration/information" style="color:${color};">Renew at sam.gov →</a></div>
+    </div>`;
+  }
+
+  // --- Sub Payment Compliance Alert ---
+  if (subPayAlert && subPayAlert.length > 0) {
+    html += `
+    <div style="background:rgba(248,113,113,0.06);border:1px solid rgba(248,113,113,0.25);border-radius:8px;padding:16px;margin-bottom:20px;">
+      <div style="font-size:12px;font-weight:700;letter-spacing:2px;color:#F87171;margin-bottom:10px;">⚖️ PROMPT PAYMENT DUE — SUBCONTRACTORS</div>
+      ${subPayAlert.map(p => `
+      <div style="border:1px solid rgba(248,113,113,0.15);border-radius:6px;padding:10px;margin-bottom:6px;">
+        <div style="font-size:13px;font-weight:600;color:#EDF0F7;">${p.subcontractor_name}</div>
+        <div style="font-size:11px;color:#F87171;">$${p.invoice_amount?.toLocaleString() || '0'} — Due ${p.required_pay_date}${p.days_late > 0 ? ' · <strong>' + p.days_late + ' DAYS LATE</strong>' : ' (due soon)'}</div>
+        <div style="font-size:10px;color:#8B95AB;margin-top:3px;">Contract: ${p.contract_number || 'Unknown'} · Invoice #${p.invoice_number || 'N/A'}</div>
+      </div>`).join('')}
+      <div style="font-size:11px;color:#8B95AB;margin-top:8px;">Federal Prompt Payment Act (FAR 52.232-27): Pay subs within 14 days of prime receipt. Log overdue payments in PRIME dashboard.</div>
+    </div>`;
+  }
 
   // --- Urgent Section ---
   if (urgent.length > 0) {
@@ -446,6 +482,216 @@ async function getTestHealthSection() {
     return section;
   } catch (err) {
     return '\n⚠️ SYSTEM HEALTH: Could not load T.E.S.T. results.\n';
+  }
+}
+
+// ----------------------------------------------------------
+// SAM.GOV EXPIRY: Check how many days until registration expires
+// Returns null if > 90 days out (no need to show), or an object with expiry info
+// ----------------------------------------------------------
+async function getSAMExpiryStatus() {
+  try {
+    const expiryStr = await getConfig('SAM_REGISTRATION_EXPIRY', '');
+    if (!expiryStr) return null;
+
+    const expiry   = new Date(expiryStr);
+    const now      = new Date();
+    const daysLeft = Math.ceil((expiry - now) / (1000 * 60 * 60 * 24));
+
+    // Only alert within 90 days
+    if (daysLeft > 90) return null;
+
+    return {
+      expiryDate: expiry.toLocaleDateString('en-US', { month:'long', day:'numeric', year:'numeric' }),
+      daysLeft,
+    };
+  } catch (err) {
+    return null;
+  }
+}
+
+// ----------------------------------------------------------
+// SAM.GOV EXPIRY: Standalone email alert (mode=sam)
+// Use this for a dedicated renewal reminder outside the daily brief
+// ----------------------------------------------------------
+async function sendSAMExpiryAlert() {
+  const samAlert = await getSAMExpiryStatus();
+  if (!samAlert) {
+    console.log('BRANDI: SAM registration expiry > 90 days — no alert needed.');
+    return;
+  }
+
+  const { daysLeft, expiryDate } = samAlert;
+  const urgency = daysLeft <= 30 ? '🚨 URGENT —' : '⚠️';
+  const subject = urgency + ' SAM.gov Registration Expires in ' + daysLeft + ' Days — Action Required';
+
+  const body = `
+  <div style="background:rgba(248,113,113,0.08);border:2px solid rgba(248,113,113,0.4);border-radius:8px;padding:20px;margin-bottom:20px;">
+    <div style="font-size:16px;font-weight:700;color:#F87171;margin-bottom:12px;">SAM.gov Entity Registration Expiring Soon</div>
+    <div style="font-size:22px;font-weight:800;color:#EDF0F7;margin-bottom:8px;">${daysLeft} days remaining</div>
+    <div style="font-size:14px;color:#8B95AB;margin-bottom:16px;">Expiry date: ${expiryDate}</div>
+    <div style="font-size:13px;color:#EDF0F7;line-height:1.7;">
+      <strong>Expired SAM registration = ineligible for ALL federal contracts.</strong><br><br>
+      Steps to renew:<br>
+      1. Go to <a href="https://sam.gov" style="color:#F87171;">sam.gov</a><br>
+      2. Log in with your account<br>
+      3. Navigate to Entity Management → Your Entity<br>
+      4. Click Renew Registration<br>
+      5. Confirm and submit — takes 1-3 business days to process<br><br>
+      UEI: ${process.env.UEI || 'USMQMFAGL9M4'} · CAGE: ${process.env.CAGE_CODE || '7JKKO'}
+    </div>
+  </div>`;
+
+  await sendBrief(subject, wrapEmail('⚠️ SAM Registration Alert', body));
+  await logAction('BRANDI', 'SAM expiry alert sent', { days_left: daysLeft, expiry: expiryDate });
+}
+
+// ----------------------------------------------------------
+// SUB PAYMENT: Get overdue or due-soon subcontractor payments for daily brief
+// Returns payments due within warn days or already overdue
+// ----------------------------------------------------------
+async function getOverdueSubPayments() {
+  try {
+    const warnDays = parseInt(await getConfig('SUB_PAYMENT_WARN_DAYS', '3'), 10);
+    const warnDate = new Date(Date.now() + warnDays * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+    const today    = new Date().toISOString().split('T')[0];
+
+    const { data } = await supabase
+      .from('sub_payment_log')
+      .select('*')
+      .in('status', ['pending','overdue'])
+      .not('prime_received_date', 'is', null)   // Only payments where we've been paid
+      .lte('required_pay_date', warnDate)        // Due within warn window
+      .order('required_pay_date', { ascending: true })
+      .limit(10);
+
+    if (!data || data.length === 0) return null;
+
+    // Tag each payment as overdue if past due date
+    const tagged = data.map(p => ({
+      ...p,
+      days_late: p.required_pay_date < today
+        ? Math.ceil((new Date(today) - new Date(p.required_pay_date)) / (1000 * 60 * 60 * 24))
+        : 0,
+    }));
+
+    // Update overdue status + send escalation if 7+ days late
+    for (const p of tagged) {
+      if (p.days_late > 0 && p.status !== 'overdue') {
+        await supabase.from('sub_payment_log').update({ status: 'overdue', days_late: p.days_late }).eq('id', p.id);
+      }
+      if (p.days_late >= 7 && !p.escalation_sent) {
+        await supabase.from('sub_payment_log').update({ escalation_sent: true }).eq('id', p.id);
+        await logAction('BRANDI', 'Sub payment escalation — 7+ days late', {
+          subcontractor: p.subcontractor_name, days_late: p.days_late, amount: p.invoice_amount,
+        });
+      }
+    }
+
+    return tagged;
+  } catch (err) {
+    console.warn('BRANDI: getOverdueSubPayments failed —', err.message);
+    return null;
+  }
+}
+
+// ----------------------------------------------------------
+// SUB PAYMENT: Standalone email alert (mode=subpay)
+// Sends a dedicated compliance email — use for weekly check
+// ----------------------------------------------------------
+async function sendSubPaymentAlert() {
+  const payments = await getOverdueSubPayments();
+  if (!payments || payments.length === 0) {
+    console.log('BRANDI: No sub payments due or overdue — all clear.');
+    return;
+  }
+
+  const overdue = payments.filter(p => p.days_late > 0);
+  const dueSoon = payments.filter(p => p.days_late === 0);
+  const subject = '⚖️ PRIME Sub Payment Alert — ' + overdue.length + ' overdue, ' + dueSoon.length + ' due soon';
+
+  const rows = payments.map(p => `
+  <div style="border:1px solid ${p.days_late > 0 ? 'rgba(248,113,113,0.3)' : 'rgba(245,158,11,0.3)'};border-radius:6px;padding:12px;margin-bottom:8px;">
+    <div style="font-size:13px;font-weight:600;color:#EDF0F7;">${p.subcontractor_name}</div>
+    <div style="font-size:12px;color:${p.days_late > 0 ? '#F87171' : '#F59E0B'};">
+      $${(p.invoice_amount || 0).toLocaleString()} · Required by ${p.required_pay_date}
+      ${p.days_late > 0 ? ' · <strong>' + p.days_late + ' DAYS LATE</strong>' : ' (due soon)'}
+    </div>
+    <div style="font-size:10px;color:#8B95AB;margin-top:4px;">Invoice #${p.invoice_number || 'N/A'} · Contract: ${p.contract_number || 'Unknown'}</div>
+  </div>`).join('');
+
+  const body = `
+  <div style="font-size:12px;font-weight:700;letter-spacing:2px;color:#F87171;margin-bottom:12px;">SUBCONTRACTOR PAYMENT COMPLIANCE — PROMPT PAYMENT ACT</div>
+  ${rows}
+  <div style="margin-top:16px;font-size:12px;color:#8B95AB;border-top:1px solid rgba(255,255,255,0.06);padding-top:12px;">
+    FAR 52.232-27: Primes must pay subs within 14 days of receiving government payment.
+    Violations can result in interest penalties, debarment, and loss of contract.
+    Update payment dates in the PRIME dashboard under Compliance → Sub Payments.
+  </div>`;
+
+  await sendBrief(subject, wrapEmail('⚖️ Sub Payment Compliance', body));
+  await logAction('BRANDI', 'Sub payment alert sent', { overdue: overdue.length, due_soon: dueSoon.length });
+}
+
+// ----------------------------------------------------------
+// L6-05: PAST PERFORMANCE NARRATIVE GENERATION
+// Reads past_performance records without narratives and drafts
+// professional write-ups using Claude Haiku. These narratives are
+// copy-paste ready for proposals — evaluators score this section heavily.
+// ----------------------------------------------------------
+async function generatePastPerfNarrative() {
+  const { claudeHaiku } = require('../lib/claude');
+
+  // Find past performance records that need narratives generated
+  const { data: records } = await supabase
+    .from('past_performance')
+    .select('*')
+    .is('narrative', null)
+    .limit(5);  // Cap at 5 per run to control AI cost
+
+  if (!records || records.length === 0) {
+    console.log('BRANDI L6-05: All past performance records have narratives — nothing to generate.');
+    return;
+  }
+
+  console.log('BRANDI L6-05: Generating narratives for ' + records.length + ' past performance record(s)...');
+
+  for (const rec of records) {
+    try {
+      const prompt = `You are a federal proposal writer. Write a concise, professional past performance narrative (150-200 words) for this contract reference. Use active voice. Emphasize quality, on-time delivery, and measurable outcomes.
+
+Contract Details:
+- Agency: ${rec.agency}
+- Description: ${rec.description}
+- Contract Type: ${rec.contract_type || 'FFP'}
+- Value: $${rec.award_value?.toLocaleString() || 'Not disclosed'}
+- Performance Period: ${rec.performance_start || 'N/A'} to ${rec.performance_end || 'N/A'}
+- CPARS Rating: ${rec.cpars_rating?.toUpperCase() || 'Satisfactory'}
+- Our Role: ${rec.prime_or_sub}
+- NAICS: ${rec.naics || 'N/A'}
+
+Write the narrative in third person (e.g., "Walker Contractors LLC provided..."). Do not add headers or bullets — one solid paragraph.`;
+
+      const narrative = await claudeHaiku(prompt, 300);
+
+      await supabase.from('past_performance').update({
+        narrative,
+        narrative_generated_at: new Date().toISOString(),
+      }).eq('id', rec.id);
+
+      // Activate L6-05 flag
+      await setConfig('L6_05_PAST_PERF_ACTIVE', 'true');
+
+      await logAction('BRANDI', 'L6-05 past performance narrative generated', {
+        contract_number: rec.contract_number,
+        agency:          rec.agency,
+        words:           narrative.split(' ').length,
+      });
+
+      console.log('BRANDI L6-05: Narrative drafted for ' + rec.contract_number + ' (' + rec.agency + ')');
+    } catch (err) {
+      console.warn('BRANDI L6-05: Failed to generate narrative for ' + rec.contract_number + ' —', err.message);
+    }
   }
 }
 

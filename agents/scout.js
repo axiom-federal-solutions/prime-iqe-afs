@@ -212,6 +212,11 @@ async function runScout() {
       await triggerJudge();
     }
 
+    // L6-03: Check for NAICS coverage gaps across newly found opportunities
+    // If an opp's NAICS isn't in our list but a teaming partner covers it,
+    // SCOUT tags the opp as 'teaming_candidate' so JUDGE can still score it
+    await checkTeamingGaps();
+
   } catch (err) {
     console.error('SCOUT ERROR:', err.message);
     await logAction('SCOUT', 'Scan failed', { error: err.message });
@@ -521,6 +526,97 @@ function extractState(opp) {
     opp.officeAddress?.state ||
     null
   );
+}
+
+// ----------------------------------------------------------
+// L6-03: NAICS GAP DETECTION — Teaming Intelligence
+// Checks recent opportunities against our own NAICS list.
+// If an opp's NAICS isn't covered by us but IS covered by a teaming
+// partner in teaming_agreements, tags it 'teaming_candidate' and
+// records which partner could fill the gap.
+// This means JUDGE scores it instead of silently ignoring it.
+// ----------------------------------------------------------
+async function checkTeamingGaps() {
+  // Only run if L6-03 is active (at least 1 teaming partner on file)
+  const teamingActive = await getConfig('L6_03_TEAMING_ACTIVE', 'false');
+  if (teamingActive !== 'true') {
+    // Check if we now have at least 1 active partner — if so, auto-activate
+    const { count } = await supabase
+      .from('teaming_agreements')
+      .select('id', { count: 'exact', head: true })
+      .eq('active', true);
+
+    if (count && count > 0) {
+      await setConfig('L6_03_TEAMING_ACTIVE', 'true');
+      console.log('SCOUT L6-03: Teaming intelligence activated — ' + count + ' active partners on file');
+    } else {
+      return; // No partners yet — nothing to check against
+    }
+  }
+
+  // Pull all active teaming partners and their NAICS codes
+  const { data: partners } = await supabase
+    .from('teaming_agreements')
+    .select('id, partner_name, naics_codes, role, set_aside_certs')
+    .eq('active', true);
+
+  if (!partners || partners.length === 0) return;
+
+  // Get recent unscored opportunities that may be outside our direct coverage
+  const { data: recentOpps } = await supabase
+    .from('opportunities')
+    .select('id, naics, title, agency, set_aside')
+    .eq('status', 'new')
+    .not('naics', 'is', null)
+    .order('created_at', { ascending: false })
+    .limit(100);
+
+  if (!recentOpps || recentOpps.length === 0) return;
+
+  // Our own full NAICS list — flattened from all verticals
+  const ourNaics = new Set([
+    ...CONSTRUCTION_NAICS,
+    ...SUPPLY_NAICS,
+    ...REAL_ESTATE_NAICS,
+  ]);
+
+  let gapsFound = 0;
+
+  for (const opp of recentOpps) {
+    const naics = (opp.naics || '').trim();
+    if (!naics) continue;
+
+    // Check if we cover this NAICS directly (first 6 digits)
+    const directlyCovered = [...ourNaics].some(n => naics.startsWith(n) || n.startsWith(naics));
+    if (directlyCovered) continue; // We're good — no gap
+
+    // Find which teaming partners cover this NAICS
+    const coveringPartners = partners.filter(p =>
+      (p.naics_codes || []).some(pn => naics.startsWith(pn) || pn.startsWith(naics))
+    );
+
+    if (coveringPartners.length === 0) continue; // Nobody covers it — true gap
+
+    // Tag the opportunity as a teaming candidate so it stays visible
+    await supabase
+      .from('opportunities')
+      .update({
+        status:           'teaming_candidate',
+        teaming_partner:  coveringPartners[0].partner_name,
+        teaming_note:     coveringPartners.map(p => p.partner_name + ' (' + p.role + ')').join(', '),
+      })
+      .eq('id', opp.id);
+
+    gapsFound++;
+  }
+
+  if (gapsFound > 0) {
+    await logAction('SCOUT', 'L6-03 teaming gaps resolved', {
+      opportunities_tagged: gapsFound,
+      partners_checked:     partners.length,
+    });
+    console.log('SCOUT L6-03: ' + gapsFound + ' opportunities tagged as teaming candidates');
+  }
 }
 
 // Run SCOUT when this file is executed
