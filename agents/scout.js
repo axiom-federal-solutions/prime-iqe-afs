@@ -28,7 +28,7 @@ const SUPPLY_NAICS_PREFIXES = [
   '423450',                  // Safety equipment
   '424310','315990',         // Uniforms
 ];
-const RE_NAICS_PREFIXES = ['531110','531120','531210','531311','531312','531390'];
+const RE_NAICS_PREFIXES = ['531110','531120','531190','531210','531311','531312','531390','532120','532412'];
 function deriveVertical(naics) {
   const n = (naics || '').trim();
   if (RE_NAICS_PREFIXES.some(p => n.startsWith(p))) return 'realestate';
@@ -103,13 +103,20 @@ const SUPPLY_NAICS = [
   '424310',  // Piece Goods Merchant — uniforms, work clothing, linens
 ];
 
-// ---- REAL ESTATE & RENTAL NAICS (New 3rd Vertical — LEASE Score) ----
-// Asset-dependent: VAULT checks asset ownership before allowing bid
+// ---- REAL ESTATE & RENTAL NAICS (3rd Vertical — LEASE Score) ----
+// Pulled from SAM.gov using federal leasing & property management criteria.
+// GSA is the #1 federal real estate buyer — over $6B/yr in leases.
+// Priority NAICS are 531120 (GSA office leases) and 531312 (property mgmt for small biz).
 const REAL_ESTATE_NAICS = [
-  '531110',  // Lessors of Residential Buildings — military housing privatization
-  '531120',  // Lessors of Nonresidential Buildings — GSA office/warehouse leases
-  '532412',  // Construction/Mining Equipment Rental — DLA, USACE
+  '531110',  // Lessors of Residential Buildings — military housing, family housing privatization
+  '531120',  // Lessors of Nonresidential Buildings — GSA office/warehouse/industrial leases (HIGHEST VALUE)
+  '531190',  // Lessors of Other Real Estate Property — land, parking, special-use federal sites
+  '531210',  // Offices of Real Estate Agents & Brokers — GSA broker representation contracts
+  '531311',  // Residential Property Managers — BAH-eligible military housing management
+  '531312',  // Nonresidential Property Managers — federal property management (HIGH WIN RATE small biz)
+  '531390',  // Other Real Estate Activities — appraisal, title, real estate advisory services
   '532120',  // Truck, Utility Trailer & RV Rental — FEMA/military disaster response
+  '532412',  // Construction/Mining Equipment Rental — DLA, USACE construction support
 ];
 
 // All 32 NAICS codes we search
@@ -178,7 +185,7 @@ async function runScout() {
     samCalls += supplyNew.apiCalls;
 
     // --- PHASE 3: Scan SAM.gov for Real Estate & Rental contracts (NEW) ---
-    console.log('SCOUT: Scanning SAM.gov for real estate & rental contracts (4 NAICS codes)...');
+    console.log(`SCOUT: Scanning SAM.gov for real estate & rental contracts (${REAL_ESTATE_NAICS.length} NAICS codes — 531xxx + rental)...`);
     const realEstateNew = await scanSAMGov('real_estate', REAL_ESTATE_NAICS, samCalls);
     totalNew += realEstateNew.count;
     samCalls += realEstateNew.apiCalls;
@@ -492,22 +499,46 @@ function calcPreAcqScore(opp, naics) {
   return Math.min(score, 85);
 }
 
-// Pre-score for Real Estate & Rental opportunities
-// JUDGE will run the full LEASE Score — this just flags high-interest opps for Brandi
+// Pre-score for Real Estate & Rental opportunities pulled from SAM.gov
+// Scoring criteria: location match, NAICS priority tier, set-aside, contract value, agency
+// JUDGE will run the full LEASE Score — this just flags high-interest opps for BRANDI
 function calcPreLeaseScore(opp, naics, state) {
-  let score = 40;  // Start lower — asset ownership is the real gating factor
+  let score = 40;  // Base — asset ownership is the real gating factor; JUDGE confirms
 
-  // Gulf Coast state = higher opportunity for disaster response (532120 truck rental)
+  // ── LOCATION — Gulf Coast / LA service area is home turf ────────────────
   if (state && COMPANY.service_states.includes(state)) score += 20;
+  if (state === 'LA') score += 5;  // Home state bonus
 
-  // GSA leases are the most lucrative passive income stream
-  if (naics === '531120') score += 15;
+  // ── NAICS PRIORITY TIERS ────────────────────────────────────────────────
+  // Tier 1 — GSA leasing (highest $ opportunity)
+  if (['531120','531110'].includes(naics)) score += 15;
+  // Tier 2 — Property management (best win rate for small biz SDB)
+  if (['531311','531312'].includes(naics)) score += 12;
+  // Tier 3 — Other leasing/advisory
+  if (['531190','531210','531390'].includes(naics)) score += 8;
+  // Tier 4 — Equipment/vehicle rental (FEMA disaster response surge)
+  if (['532120','532412'].includes(naics)) score += 10;
 
-  // Set-aside boost
+  // ── AGENCY BONUS — GSA is the primary federal real estate buyer ─────────
+  const agency = (opp.departmentName || opp.subtierName || '').toUpperCase();
+  if (agency.includes('GSA') || agency.includes('GENERAL SERVICES')) score += 10;
+  if (agency.includes('HUD') || agency.includes('HOUSING')) score += 8;
+  if (agency.includes('VA') || agency.includes('VETERANS')) score += 6;
+
+  // ── SET-ASIDE — SDB, HUBZone, WOSB, SDVOSB all worth pursuing ───────────
   if (opp.typeOfSetAside && SET_ASIDE_TYPES.includes(opp.typeOfSetAside)) score += 10;
 
-  // Cap lower than construction — asset ownership must be confirmed by VAULT
-  return Math.min(score, 75);
+  // ── VALUE RANGE — Sweet spot for small business: $50K–$5M ───────────────
+  const val = parseValue(opp.award?.amount || opp.estimatedTotalValue);
+  if (val && val >= 50000 && val <= 5000000) score += 5;
+
+  // ── KEYWORD SIGNALS — lease, property management, facilities ─────────────
+  const title = (opp.title || '').toLowerCase();
+  if (title.includes('lease') || title.includes('leasing')) score += 5;
+  if (title.includes('property management') || title.includes('facility management')) score += 5;
+  if (title.includes('grounds') || title.includes('landscape')) score += 5; // Monnie teaming advantage
+
+  return Math.min(score, 85);
 }
 
 // ----------------------------------------------------------

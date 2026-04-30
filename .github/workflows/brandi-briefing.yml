@@ -1,22 +1,35 @@
-name: BRANDI - Daily Briefing
+# ⚠️  DISABLED — Duplicate of brandi-daily.yml
+# This older workflow ran the same 6 AM CT schedule as brandi-daily.yml,
+# causing double emails every morning. Replaced by brandi-daily.yml which
+# also handles the Monday supply digest and uses the correct env vars.
+# DO NOT re-enable — edit brandi-daily.yml instead.
+
+name: BRANDI - Daily Briefing (DISABLED)
 on:
-  schedule:
-    - cron: '0 11 * * *'
+  # Schedule removed — kept as manual-only fallback
   workflow_dispatch:
+    inputs:
+      confirm:
+        description: 'Type OVERRIDE to run this legacy workflow'
+        required: true
 jobs:
   brief:
     runs-on: ubuntu-latest
+    # Gate: only execute if user explicitly typed OVERRIDE
+    if: github.event.inputs.confirm == 'OVERRIDE'
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '24'
       - run: npm install
-      - name: Run BRANDI
+      - name: Run BRANDI (legacy — use brandi-daily.yml instead)
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           SENDGRID_API_KEY: ${{ secrets.SENDGRID_API_KEY }}
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
-        run: node agents/brandi.js
+          FROM_EMAIL: ${{ secrets.FROM_EMAIL }}
+          FROM_NAME: ${{ secrets.FROM_NAME }}
+        run: node agents/brandi.js daily
