@@ -92,27 +92,33 @@ jobs:
         run: |
           echo "=== SAM.GOV API CHECK ==="
           echo "Testing with NAICS 236220 (Commercial Construction)..."
-          TODAY=$(date +%Y-%m-%d)
-          WEEKAGO=$(date -d '7 days ago' +%Y-%m-%d)
-          echo "Date range: $WEEKAGO to $TODAY"
+          # SAM.gov v2 REQUIRES MM/dd/yyyy format — YYYY-MM-DD returns HTTP 200 with 0 results
+          TODAY=$(date +%m/%d/%Y)
+          WEEKAGO=$(date -d '7 days ago' +%m/%d/%Y)
+          echo "Date range (MM/dd/yyyy): $WEEKAGO to $TODAY"
           RESPONSE=$(curl -s -w "\nHTTP_STATUS:%{http_code}" \
-            "https://api.sam.gov/opportunities/v2/search?api_key=${SAM_API_KEY}&naicsCode=236220&postedFrom=${WEEKAGO}&postedTo=${TODAY}&limit=5&active=true" \
+            "https://api.sam.gov/opportunities/v2/search?api_key=${SAM_API_KEY}&naicsCode=236220&postedFrom=${WEEKAGO}&postedTo=${TODAY}&limit=5" \
             -H "Accept: application/json")
           HTTP_STATUS=$(echo "$RESPONSE" | grep "HTTP_STATUS:" | cut -d: -f2)
           BODY=$(echo "$RESPONSE" | grep -v "HTTP_STATUS:")
           echo "HTTP Status: $HTTP_STATUS"
-          echo "Response (first 500 chars):"
-          echo "${BODY:0:500}"
-
-          # Extract count
-          TOTAL=$(echo "$BODY" | node -e "
+          echo "Top-level JSON keys and counts:"
+          echo "$BODY" | node -e "
             let d=''; process.stdin.on('data',c=>d+=c);
             process.stdin.on('end',()=>{
-              try { const j=JSON.parse(d); console.log('totalRecords:',j.totalRecords,'opportunitiesData count:',j.opportunitiesData?.length??0); }
-              catch(e) { console.log('JSON parse error:', e.message, 'Raw:', d.substring(0,200)); }
+              try {
+                const j=JSON.parse(d);
+                console.log('Keys:', Object.keys(j).join(', '));
+                console.log('totalRecords:', j.totalRecords ?? 'N/A');
+                console.log('opportunitiesData count:', j.opportunitiesData?.length ?? 0);
+                if ((j.opportunitiesData?.length ?? 0) > 0) {
+                  console.log('PASS: Data is flowing — first opp title:', j.opportunitiesData[0]?.title?.substring(0,80));
+                } else {
+                  console.log('WARN: 0 results returned — verify API key and date range');
+                }
+              } catch(e) { console.log('JSON parse error:', e.message); console.log('Raw (first 300):', d.substring(0,300)); }
             });
-          ")
-          echo "$TOTAL"
+          "
         env:
           SAM_API_KEY: ${{ secrets.SAM_API_KEY }}
 

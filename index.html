@@ -37,7 +37,7 @@ body{font-family:'Outfit',system-ui,sans-serif;background:var(--bg);color:var(--
 .ambient{position:fixed;inset:0;pointer-events:none;background:radial-gradient(900px 500px at 70% -10%,var(--cyanDim),transparent 60%),radial-gradient(700px 400px at 10% 110%,var(--goldDim),transparent 60%);z-index:0}
 .sb{width:224px;background:rgba(8,11,20,.85);backdrop-filter:blur(12px);border-right:1px solid var(--bd);padding:16px 10px;display:flex;flex-direction:column;gap:2px;overflow-y:auto;flex-shrink:0;z-index:1}
 .sb-logo{padding:8px 12px 20px;display:flex;align-items:center;gap:10px}
-.sb-mark{width:38px;height:38px;border-radius:8px;background:#0C1428;display:flex;align-items:center;justify-content:center;flex-shrink:0;border:1px solid rgba(233,196,106,.3)}
+.sb-mark{width:42px;height:42px;border-radius:8px;background:#fff;display:flex;align-items:center;justify-content:center;flex-shrink:0;overflow:hidden;padding:2px}
 .sb-title{font-weight:800;font-size:15px}.sb-title span{color:var(--gold)}
 .sb-ver{font-size:8px;color:var(--t3);letter-spacing:.14em;text-transform:uppercase;margin-top:1px}
 .sb-group{font-size:9px;font-weight:700;color:var(--t3);letter-spacing:.16em;padding:12px 12px 4px;text-transform:uppercase}
@@ -288,7 +288,7 @@ document.addEventListener('keydown', e=>{
 </div>
 
 <nav class="sb">
-  <div class="sb-logo"><div class="sb-mark"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 38 38" width="38" height="38"><rect width="38" height="38" rx="8" fill="#0C1428"/><g transform="translate(4,3)"><circle cx="15" cy="18" r="12.5" fill="none" stroke="#E9C46A" stroke-width="0.8" opacity="0.5"/><rect x="6" y="18" width="18" height="8" rx="1" fill="#1E3A5F"/><rect x="8" y="15" width="14" height="4" fill="#2A5080"/><rect x="6" y="22" width="3" height="4" rx="0.5" fill="#3A6898"/><rect x="9" y="22" width="3" height="4" rx="0.5" fill="#3A6898"/><rect x="18" y="22" width="3" height="4" rx="0.5" fill="#3A6898"/><rect x="21" y="22" width="3" height="4" rx="0.5" fill="#3A6898"/><polygon points="15,7 22,14 8,14" fill="#E9C46A"/><rect x="13" y="9" width="4" height="6" rx="1" fill="#0C1428"/><ellipse cx="15" cy="9" rx="2.5" ry="3" fill="#1E3A5F"/><rect x="14.4" y="6" width="1.2" height="3" fill="#E9C46A"/><rect x="13" y="5.5" width="4" height="0.8" rx="0.4" fill="#E9C46A"/></g></svg></div><div><div class="sb-title">IQE <span>PRIME</span></div><div class="sb-ver">v19 · 3 Verticals</div></div></div>
+  <div class="sb-logo"><div class="sb-mark"><img src="Prime logo 1.png" alt="PRIME" style="width:38px;height:38px;object-fit:contain;border-radius:8px;display:block"></div><div><div class="sb-title">IQE <span>PRIME</span></div><div class="sb-ver">v19 · 3 Verticals</div></div></div>
   <div class="sb-group">Command</div><button class="sb-btn active" onclick="go('home',this)">🏠 Command Center</button>
   <div class="sb-group">Alerts</div>
   <button class="sb-btn" onclick="go('action',this)" id="sb-action">🚨 Action Queue</button>

@@ -235,6 +235,13 @@ async function runScout() {
 // SCAN SAM.GOV: Search for contracts by NAICS code
 // Returns { count: number of new opps saved, apiCalls: number of API calls made }
 // ----------------------------------------------------------
+// SAM.gov API v2 requires dates in MM/dd/yyyy format — ISO (YYYY-MM-DD) returns HTTP 200 with 0 results
+function toSAMDate(d) {
+  const m   = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${m}/${day}/${d.getFullYear()}`;
+}
+
 async function scanSAMGov(type, naicsCodes, globalCallsUsed = 0) {
   if (!SAM_API_KEY) {
     console.warn('SCOUT: SAM_API_KEY not set — skipping SAM.gov scan');
@@ -242,8 +249,39 @@ async function scanSAMGov(type, naicsCodes, globalCallsUsed = 0) {
   }
 
   let totalApiCalls = 0;
-  const today   = new Date().toISOString().split('T')[0];
-  const weekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+  // SAM.gov v2 requires MM/dd/yyyy — NOT ISO YYYY-MM-DD
+  const today   = toSAMDate(new Date());
+  const weekAgo = toSAMDate(new Date(Date.now() - 7 * 24 * 60 * 60 * 1000));
+  console.log('SCOUT: Date range for SAM.gov query — ' + weekAgo + ' to ' + today);
+
+  // Probe call: verify API key + response shape before full scan
+  // Uses a single known-active NAICS (236220) to confirm data flows end-to-end
+  try {
+    const probeParams = new URLSearchParams({
+      api_key:    SAM_API_KEY,
+      naicsCode:  '236220',
+      postedFrom: weekAgo,
+      postedTo:   today,
+      limit:      '3',
+      offset:     '0',
+    });
+    const probe = await fetchJSON(SAM_API_BASE + '?' + probeParams.toString(), {
+      headers: { 'Accept': 'application/json' },
+    });
+    totalApiCalls++;
+    const probeKeys   = probe ? Object.keys(probe) : [];
+    const probeCount  = probe?.opportunitiesData?.length ?? probe?.data?.length ?? 0;
+    const probeTotal  = probe?.totalRecords ?? probe?.total ?? 0;
+    console.log('SCOUT PROBE: top-level keys =', JSON.stringify(probeKeys));
+    console.log('SCOUT PROBE: totalRecords =', probeTotal, '| opportunitiesData sample count =', probeCount);
+    if (probeCount === 0 && probeTotal === 0) {
+      console.warn('SCOUT PROBE: API returned 0 results for 236220 — check API key validity and date range');
+    }
+    await sleep(500);
+  } catch (probeErr) {
+    console.warn('SCOUT PROBE: Failed —', probeErr.message);
+    totalApiCalls++;
+  }
 
   // Phase 1: Collect all raw opportunities from SAM.gov, deduplicated by solicitation number
   // Collecting first then deduping prevents JUDGE from scoring the same opp twice
@@ -258,18 +296,16 @@ async function scanSAMGov(type, naicsCodes, globalCallsUsed = 0) {
     }
 
     try {
-      // NOTE: typeOfSetAside is intentionally excluded from this request.
-      // Passing ['SDB',''].join(',') produces 'SDB,' (trailing comma) which is
-      // a malformed SAM.gov parameter — the API returns HTTP 200 with 0 results.
-      // Solution: fetch all active opps and let JUDGE score set-aside eligibility.
+      // NOTE: typeOfSetAside is intentionally excluded — 'SDB,' trailing comma returns 0 results.
+      // NOTE: 'active: true' is NOT a valid SAM.gov v2 parameter — omitted to avoid silent filtering.
+      // Active opportunities are the default when no status filter is specified.
       const params = new URLSearchParams({
         api_key:    SAM_API_KEY,
         naicsCode:  naics,
-        postedFrom: weekAgo,
-        postedTo:   today,
+        postedFrom: weekAgo,   // MM/dd/yyyy — required by SAM.gov v2
+        postedTo:   today,     // MM/dd/yyyy — required by SAM.gov v2
         limit:      '50',
         offset:     '0',
-        active:     'true',
       });
 
       const data = await fetchJSON(SAM_API_BASE + '?' + params.toString(), {
@@ -278,7 +314,8 @@ async function scanSAMGov(type, naicsCodes, globalCallsUsed = 0) {
 
       totalApiCalls++;
 
-      const opps = data?.opportunitiesData || [];
+      // Support both field names in case SAM.gov API changes key names
+      const opps = data?.opportunitiesData || data?.data || [];
       console.log('SCOUT: NAICS ' + naics + ' — ' + opps.length + ' raw results (quota: ' + (globalCallsUsed + totalApiCalls) + '/' + SAM_DAILY_LIMIT + ')');
 
       for (const opp of opps) {
