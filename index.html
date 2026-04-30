@@ -14,7 +14,7 @@ body{font-family:'Outfit',system-ui,sans-serif;background:var(--bg);color:var(--
 .ambient{position:fixed;inset:0;pointer-events:none;background:radial-gradient(900px 500px at 70% -10%,var(--cyanDim),transparent 60%),radial-gradient(700px 400px at 10% 110%,var(--goldDim),transparent 60%);z-index:0}
 .sb{width:224px;background:rgba(8,11,20,.85);backdrop-filter:blur(12px);border-right:1px solid var(--bd);padding:16px 10px;display:flex;flex-direction:column;gap:2px;overflow-y:auto;flex-shrink:0;z-index:1}
 .sb-logo{padding:8px 12px 20px;display:flex;align-items:center;gap:10px}
-.sb-mark{width:32px;height:32px;border-radius:8px;background:linear-gradient(135deg,var(--gold),#8B6914);display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:900;color:#fff}
+.sb-mark{width:38px;height:38px;border-radius:8px;background:#0C1428;display:flex;align-items:center;justify-content:center;flex-shrink:0;border:1px solid rgba(233,196,106,.3)}
 .sb-title{font-weight:800;font-size:15px}.sb-title span{color:var(--gold)}
 .sb-ver{font-size:8px;color:var(--t3);letter-spacing:.14em;text-transform:uppercase;margin-top:1px}
 .sb-group{font-size:9px;font-weight:700;color:var(--t3);letter-spacing:.16em;padding:12px 12px 4px;text-transform:uppercase}
@@ -265,7 +265,7 @@ document.addEventListener('keydown', e=>{
 </div>
 
 <nav class="sb">
-  <div class="sb-logo"><div class="sb-mark">P</div><div><div class="sb-title">IQE <span>PRIME</span></div><div class="sb-ver">v19 · 3 Verticals</div></div></div>
+  <div class="sb-logo"><div class="sb-mark"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 38 38" width="38" height="38"><rect width="38" height="38" rx="8" fill="#0C1428"/><g transform="translate(4,3)"><circle cx="15" cy="18" r="12.5" fill="none" stroke="#E9C46A" stroke-width="0.8" opacity="0.5"/><rect x="6" y="18" width="18" height="8" rx="1" fill="#1E3A5F"/><rect x="8" y="15" width="14" height="4" fill="#2A5080"/><rect x="6" y="22" width="3" height="4" rx="0.5" fill="#3A6898"/><rect x="9" y="22" width="3" height="4" rx="0.5" fill="#3A6898"/><rect x="18" y="22" width="3" height="4" rx="0.5" fill="#3A6898"/><rect x="21" y="22" width="3" height="4" rx="0.5" fill="#3A6898"/><polygon points="15,7 22,14 8,14" fill="#E9C46A"/><rect x="13" y="9" width="4" height="6" rx="1" fill="#0C1428"/><ellipse cx="15" cy="9" rx="2.5" ry="3" fill="#1E3A5F"/><rect x="14.4" y="6" width="1.2" height="3" fill="#E9C46A"/><rect x="13" y="5.5" width="4" height="0.8" rx="0.4" fill="#E9C46A"/></g></svg></div><div><div class="sb-title">IQE <span>PRIME</span></div><div class="sb-ver">v19 · 3 Verticals</div></div></div>
   <div class="sb-group">Command</div><button class="sb-btn active" onclick="go('home',this)">🏠 Command Center</button>
   <div class="sb-group">Alerts</div>
   <button class="sb-btn" onclick="go('action',this)" id="sb-action">🚨 Action Queue</button>
@@ -326,21 +326,21 @@ const STATE_META={
   AL:{n:'Alabama',r:'Gulf Coast',notes:'Redstone Arsenal · Maxwell AFB'},
   AK:{n:'Alaska',r:'Pacific',notes:'JBER · Eielson AFB'},
   AZ:{n:'Arizona',r:'Mountain',notes:'Fort Huachuca · Luke AFB'},
-  AR:{n:'Arkansas',r:'South Central',notes:'Little Rock AFB'},
+  AR:{n:'Arkansas',r:'Southeast',notes:'Little Rock AFB'},
   CA:{n:'California',r:'Pacific',notes:'Major market · Multiple bases'},
   CO:{n:'Colorado',r:'Mountain',notes:'Fort Carson · Peterson SFB'},
   CT:{n:'Connecticut',r:'Northeast',notes:'Naval Sub Base'},
   DC:{n:'Wash DC',r:'Mid-Atlantic',notes:'GSA HQ · Pentagon'},
   DE:{n:'Delaware',r:'Mid-Atlantic',notes:'Dover AFB'},
-  FL:{n:'Florida',r:'Gulf Coast / South',notes:'MacDill AFB · NAS Jacksonville'},
-  GA:{n:'Georgia',r:'South',notes:'Fort Moore · Robins AFB'},
+  FL:{n:'Florida',r:'Gulf Coast',notes:'MacDill AFB · NAS Jacksonville'},
+  GA:{n:'Georgia',r:'Southeast',notes:'Fort Moore · Robins AFB'},
   HI:{n:'Hawaii',r:'Pacific',notes:'JBPHH · Schofield'},
   ID:{n:'Idaho',r:'Mountain',notes:'Mountain Home AFB'},
   IL:{n:'Illinois',r:'Midwest',notes:'Scott AFB · Great Lakes'},
   IN:{n:'Indiana',r:'Midwest',notes:'Camp Atterbury'},
   IA:{n:'Iowa',r:'Midwest',notes:'National Guard'},
-  KS:{n:'Kansas',r:'Great Plains',notes:'Fort Riley · McConnell'},
-  KY:{n:'Kentucky',r:'South',notes:'Fort Campbell · Fort Knox'},
+  KS:{n:'Kansas',r:'Plains',notes:'Fort Riley · McConnell'},
+  KY:{n:'Kentucky',r:'Southeast',notes:'Fort Campbell · Fort Knox'},
   LA:{n:'Louisiana',r:'Gulf Coast',notes:'Home · USACE MVN · VA VISN 16',hot:1,lic:1},
   ME:{n:'Maine',r:'Northeast',notes:'Portsmouth Naval'},
   MD:{n:'Maryland',r:'Mid-Atlantic',notes:'Andrews · Aberdeen'},
@@ -350,28 +350,28 @@ const STATE_META={
   MS:{n:'Mississippi',r:'Gulf Coast',notes:'Keesler AFB · Camp Shelby'},
   MO:{n:'Missouri',r:'Midwest',notes:'Fort Leonard Wood · Whiteman'},
   MT:{n:'Montana',r:'Mountain',notes:'Malmstrom AFB'},
-  NE:{n:'Nebraska',r:'Great Plains',notes:'Offutt AFB · Fort Kearny'},
+  NE:{n:'Nebraska',r:'Plains',notes:'Offutt AFB · Fort Kearny'},
   NV:{n:'Nevada',r:'Mountain',notes:'Nellis · Creech AFB'},
   NH:{n:'N. Hampshire',r:'Northeast',notes:'Portsmouth Naval'},
   NJ:{n:'New Jersey',r:'Mid-Atlantic',notes:'McGuire-Dix-Lakehurst'},
   NM:{n:'New Mexico',r:'Mountain',notes:'Kirtland · White Sands'},
   NY:{n:'New York',r:'Northeast',notes:'West Point · Fort Drum'},
-  NC:{n:'N. Carolina',r:'South',notes:'Fort Bragg · Camp Lejeune'},
-  ND:{n:'N. Dakota',r:'Great Plains',notes:'Minot AFB · Grand Forks'},
+  NC:{n:'N. Carolina',r:'Southeast',notes:'Fort Bragg · Camp Lejeune'},
+  ND:{n:'N. Dakota',r:'Plains',notes:'Minot AFB · Grand Forks'},
   OH:{n:'Ohio',r:'Midwest',notes:'Wright-Patterson · DFAS'},
-  OK:{n:'Oklahoma',r:'South Central',notes:'Fort Sill · Tinker AFB'},
+  OK:{n:'Oklahoma',r:'Southwest',notes:'Fort Sill · Tinker AFB'},
   OR:{n:'Oregon',r:'Pacific',notes:'Portland VA'},
   PA:{n:'Pennsylvania',r:'Mid-Atlantic',notes:'Carlisle Barracks · Tobyhanna'},
   RI:{n:'Rhode Island',r:'Northeast',notes:'Newport Naval Station'},
-  SC:{n:'S. Carolina',r:'South',notes:'Fort Jackson · Shaw AFB'},
-  SD:{n:'S. Dakota',r:'Great Plains',notes:'Ellsworth AFB'},
-  TN:{n:'Tennessee',r:'South',notes:'Fort Campbell · Arnold AFB'},
+  SC:{n:'S. Carolina',r:'Southeast',notes:'Fort Jackson · Shaw AFB'},
+  SD:{n:'S. Dakota',r:'Plains',notes:'Ellsworth AFB'},
+  TN:{n:'Tennessee',r:'Southeast',notes:'Fort Campbell · Arnold AFB'},
   TX:{n:'Texas',r:'Gulf Coast',notes:'Fort Hood · Randolph AFB',lic:1,hot:1},
   UT:{n:'Utah',r:'Mountain',notes:'Hill AFB · Dugway'},
   VT:{n:'Vermont',r:'Northeast',notes:'Burlington ANGB'},
   VA:{n:'Virginia',r:'Mid-Atlantic',notes:'Pentagon · Fort Belvoir · Quantico'},
   WA:{n:'Washington',r:'Pacific',notes:'JBLM · Whidbey Island'},
-  WV:{n:'W. Virginia',r:'South',notes:'Shepherd Field'},
+  WV:{n:'W. Virginia',r:'Mid-Atlantic',notes:'Shepherd Field'},
   WI:{n:'Wisconsin',r:'Midwest',notes:'Fort McCoy'},
   WY:{n:'Wyoming',r:'Mountain',notes:'F.E. Warren AFB'},
 };
@@ -1540,24 +1540,42 @@ function buildStateMap(oppsForVertical, vt){
     if(sc2>map[st].s)map[st].s=sc2;
     map[st].jobs.push({t:o.title,v:fmt(o.value),s:sc2,sa:o.set_aside_type||'',cat:o.naics||''});
   });
-  // Only return states that either have opps OR are home/hot states
-  return Object.values(map).filter(s=>s.opps>0||s.hot||s.c==='LA');
+  // Return ALL 50 states + DC regardless of data — empty ones dim automatically.
+  // States light up as SCOUT populates live opportunities.
+  return Object.values(map);
 }
 
+// Fixed region order — consistent across all verticals regardless of data state
+const REGION_ORDER=['Gulf Coast','Southeast','Mid-Atlantic','Northeast','Great Lakes',
+  'Midwest','Plains','Mountain','Southwest','Pacific','Territories','Other'];
+
 function renderGrid(el,states,vt){
-  const regions=[...new Set(states.map(s=>s.r))];
+  // Use fixed region order so layout never jumps as data loads
+  const regionsPresent=new Set(states.map(s=>s.r));
+  const regions=REGION_ORDER.filter(r=>regionsPresent.has(r));
+  // Append any regions not in our fixed order (shouldn't happen but safety net)
+  [...regionsPresent].forEach(r=>{ if(!regions.includes(r)) regions.push(r); });
+
   let h='';
   regions.forEach(rg=>{
-    const rs=states.filter(s=>s.r===rg);
+    const rs=states.filter(s=>s.r===rg).sort((a,b)=>a.c.localeCompare(b.c));
     if(!rs.length)return;
-    h+='<div class="reg-lbl">'+rg+'</div><div class="sgrid">';
+    // Count active opps in this region for the label
+    const regOpps=rs.reduce((sum,s)=>sum+s.opps,0);
+    h+=`<div class="reg-lbl">${rg}${regOpps>0?' · <span style="color:var(--green)">'+regOpps+' opp'+(regOpps>1?'s':'')+'</span>':''}</div><div class="sgrid">`;
     rs.forEach(s=>{
-      const cl=s.hot?'hot':s.opps===0?'dim':'';
-      const co=s.opps>0?vtColor(vt):'var(--t3)';
-      h+=`<div class="stile ${cl}" onclick="showStateDetail('${s.c}','${vt}',this)">${s.hot&&s.opps>0?'<div class="hpb" style="background:var(--greenDim);border:1px solid var(--greenBd);color:var(--green)">●</div>':''}
+      const hasOpps=s.opps>0;
+      const isHome=s.c==='LA';
+      const cl=s.hot&&hasOpps?'hot':!hasOpps&&!isHome?'dim':'';
+      const co=hasOpps?vtColor(vt):isHome?'var(--gold)':'var(--t3)';
+      const oppLabel=hasOpps?s.opps+' opp'+(s.opps>1?'s':''):isHome?'Home':'—';
+      const valLabel=s.v>0?`<div style="font-size:7px;color:var(--t3)">${fmt(s.v)}</div>`:'';
+      h+=`<div class="stile ${cl}" onclick="showStateDetail('${s.c}','${vt}',this)" title="${s.n}${s.notes?' · '+s.notes:''}">
+        ${s.hot&&hasOpps?'<div class="hpb" style="background:var(--greenDim);border:1px solid var(--greenBd);color:var(--green)">●</div>':''}
+        ${isHome&&!hasOpps?'<div class="hpb" style="background:var(--goldDim);border:1px solid var(--goldBd);color:var(--gold)">★</div>':''}
         <div style="font-size:11px;font-weight:900;color:${co}">${s.c}</div>
-        <div style="font-size:8px;font-weight:700;color:${s.opps>0?sc(s.s):'var(--t3)'}">${s.opps>0?s.opps+' opp'+(s.opps>1?'s':''):'—'}</div>
-        ${s.v>0?`<div style="font-size:7px;color:var(--t3)">${fmt(s.v)}</div>`:''}
+        <div style="font-size:8px;font-weight:700;color:${hasOpps?sc(s.s):isHome?'var(--gold)':'var(--t3)'}">${oppLabel}</div>
+        ${valLabel}
       </div>`;
     });
     h+='</div>';
