@@ -51,6 +51,7 @@ jobs:
       - name: CHECK 2 — Supabase HTTP connection
         run: |
           echo "=== SUPABASE CONNECTION CHECK ==="
+          echo "SUPABASE_URL being used: ${SUPABASE_URL:0:60}"
           STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
             -H "apikey: $SUPABASE_SERVICE_KEY" \
             -H "Authorization: Bearer $SUPABASE_SERVICE_KEY" \
