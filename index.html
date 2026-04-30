@@ -1118,22 +1118,34 @@ async function startBid(oppId, title, value, vertical, naics, needsBond){
     const pd=bidFull?.proposal_data;
     const pricingD=bidFull?.pricing_data;
 
-    if(pd && (pd.technical||pd.supplyQuote||pd.bidMemo)){
+    if(pd && (pd.technical||pd.supplyQuote||pd.bidMemo||pd.leaseOffer||pd.propMgmtPlan||pd.rentalQuote)){
       // ── DRAFT IS READY — show inline preview + Google Docs copy-open flow ──
-      const isSupplyDraft=!!pd.supplyQuote;
-      const memo=pd.bidMemo||pd.supplyQuote||'';
+      // Detect which vertical this draft belongs to
+      const isREdraft = pd.type==='realestate' || !!(pd.leaseOffer||pd.propMgmtPlan||pd.rentalQuote||pd.reCapStatement);
+      const isSupplyDraft = !isREdraft && !!pd.supplyQuote;
+      const memo=pd.bidMemo||pd.supplyQuote||pd.leaseOffer||'';
       const memoPreview=memo.length>400?memo.slice(0,400)+'…':memo;
-      const sections=isSupplyDraft
+
+      // Build section buttons — only include sections that actually have content
+      const sections=isREdraft
         ? [
-            {key:'supplyQuote',   label:'📄 Supply Quote',         icon:'📄', content:pd.supplyQuote||''},
-            {key:'capStatement',  label:'📋 Capability Statement',  icon:'📋', content:pd.capStatement||''},
+            pd.bidMemo       && {key:'bidMemo',       label:'📝 Bid Memo',              icon:'📝'},
+            pd.leaseOffer    && {key:'leaseOffer',     label:'🏢 Lease Offer',           icon:'🏢'},
+            pd.propMgmtPlan  && {key:'propMgmtPlan',  label:'🔧 Property Mgmt Plan',   icon:'🔧'},
+            pd.rentalQuote   && {key:'rentalQuote',    label:'🚛 Rental Quote',          icon:'🚛'},
+            pd.reCapStatement&& {key:'reCapStatement', label:'📋 RE Cap Statement',      icon:'📋'},
+          ].filter(Boolean)
+        : isSupplyDraft
+        ? [
+            {key:'supplyQuote',    label:'📄 Supply Quote',          icon:'📄'},
+            {key:'capStatement',   label:'📋 Capability Statement',  icon:'📋'},
           ]
         : [
-            {key:'bidMemo',       label:'📝 Bid/No-Bid Memo',       icon:'📝', content:pd.bidMemo||''},
-            {key:'technical',     label:'📐 Vol 1 — Technical',      icon:'📐', content:pd.technical||''},
-            {key:'management',    label:'👥 Vol 2 — Management',     icon:'👥', content:pd.management||''},
-            {key:'pastPerformance',label:'🏆 Vol 3 — Past Perf',    icon:'🏆', content:pd.pastPerformance||''},
-            {key:'price',         label:'💲 Vol 4 — Price',          icon:'💲', content:pd.price||''},
+            {key:'bidMemo',        label:'📝 Bid/No-Bid Memo',       icon:'📝'},
+            {key:'technical',      label:'📐 Vol 1 — Technical',     icon:'📐'},
+            {key:'management',     label:'👥 Vol 2 — Management',    icon:'👥'},
+            {key:'pastPerformance',label:'🏆 Vol 3 — Past Perf',     icon:'🏆'},
+            {key:'price',          label:'💲 Vol 4 — Price',         icon:'💲'},
           ];
 
       draftSection=`
@@ -1234,84 +1246,89 @@ async function copySection(bidId, sectionKey){
 
 // ─── FORMAT PROPOSAL DATA INTO GOOGLE DOCS TEXT ────────────────────────
 // Converts the JSON proposal_data blob into clean formatted text.
-// Structure mirrors what evaluators expect in a federal proposal.
+// Handles all three verticals: construction (4-vol), supply (quote), real estate (lease/mgmt).
 function buildProposalDocText(pd, oppTitle, naics){
-  const isSupply=!!pd.supplyQuote;
-  const meta=pd._meta||{};
-  const now=new Date().toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric'});
+  const isRE  = pd.type==='realestate' || !!(pd.leaseOffer||pd.propMgmtPlan||pd.rentalQuote);
+  const isSup = !isRE && !!pd.supplyQuote;
+  const meta  = pd._meta||{};
+  const now   = new Date().toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric'});
   const divider='═'.repeat(60);
-  const thin='─'.repeat(60);
+  const thin  ='─'.repeat(60);
 
+  // ── HEADER (same for all verticals) ──────────────────────────────────
   let doc=`${divider}
-${meta.legal_name||'Walker Contractors LLC'}
-DBA: ${meta.dba||'Axiom Federal Solutions'}
+WALKER CONTRACTORS LLC
+DBA: AXIOM FEDERAL SOLUTIONS
 CAGE: ${meta.cage||'7JKK0'} · UEI: ${meta.uei||'USMQMFAGL9M4'}
-Certifications: ${meta.certifications||'SDB'}
+Certifications: ${meta.certifications||'SDB — Small Disadvantaged Business'}
 Contact: PrimeOpps1@gmail.com · New Orleans, Louisiana 70114
 ${divider}
 
-FEDERAL PROPOSAL PACKAGE
+${isRE?'FEDERAL REAL ESTATE / LEASE PROPOSAL':isSup?'FEDERAL SUPPLY QUOTE':'FEDERAL PROPOSAL PACKAGE'}
 Opportunity: ${oppTitle||'[Opportunity Title]'}
 NAICS: ${naics||''}
 Date Prepared: ${now}
-
 ${thin}
 `;
 
-  if(isSupply){
-    doc+=`SECTION 1 — SUPPLY QUOTE
-${thin}
-${pd.supplyQuote||''}
+  // ── REAL ESTATE VERTICAL ──────────────────────────────────────────────
+  if(isRE){
+    const subtype=pd.naicsSubtype||'';
+    const subtypeLabel={
+      'lease':        'Lease Offer (GSA Form 1364 Format)',
+      'property_mgmt':'Property Management Proposal',
+      'rental':       'Equipment / Vehicle Rental Quote',
+      'other_re':     'Real Estate Services Proposal',
+    }[subtype]||'Real Estate Proposal';
 
-${thin}
-SECTION 2 — CAPABILITY STATEMENT
-${thin}
-${pd.capStatement||''}
-`;
+    doc+=`PROPOSAL TYPE: ${subtypeLabel}\n${thin}\n\n`;
+
+    if(pd.bidMemo){
+      doc+=`BID/NO-BID RECOMMENDATION MEMO\n${thin}\n${pd.bidMemo}\n\n${divider}\n`;
+    }
+    if(pd.leaseOffer){
+      doc+=`LEASE OFFER — SECTION 1\n${thin}\n${pd.leaseOffer}\n\n${divider}\n`;
+    }
+    if(pd.propMgmtPlan){
+      doc+=`PROPERTY MANAGEMENT PLAN\n${thin}\n${pd.propMgmtPlan}\n\n${divider}\n`;
+    }
+    if(pd.rentalQuote){
+      doc+=`EQUIPMENT / VEHICLE RENTAL QUOTE\n${thin}\n${pd.rentalQuote}\n\n${divider}\n`;
+    }
+    if(pd.reCapStatement){
+      doc+=`REAL ESTATE CAPABILITY STATEMENT\n${thin}\n${pd.reCapStatement}\n\n${divider}\n`;
+    }
+    doc+=`\nTEAMING NOTE: Trevor L. Monnie, Louisiana Licensed Landscape Horticulturist`;
+    doc+=`\n(License No. 26-5023, valid through January 2027) provides compliant grounds`;
+    doc+=`\nand landscape maintenance services on government-adjacent and regulated properties.\n`;
+
+  // ── SUPPLY VERTICAL ───────────────────────────────────────────────────
+  }else if(isSup){
+    doc+=`SECTION 1 — SUPPLY QUOTE\n${thin}\n${pd.supplyQuote||''}\n\n`;
+    doc+=`${thin}\nSECTION 2 — CAPABILITY STATEMENT\n${thin}\n${pd.capStatement||''}\n`;
+
+  // ── CONSTRUCTION VERTICAL (4-volume) ─────────────────────────────────
   }else{
     if(pd.bidMemo){
-      doc+=`BID/NO-BID RECOMMENDATION MEMO
-${thin}
-${pd.bidMemo}
-
-${divider}
-`;
+      doc+=`BID/NO-BID RECOMMENDATION MEMO\n${thin}\n${pd.bidMemo}\n\n${divider}\n`;
     }
     if(pd.technical){
-      doc+=`VOLUME 1 — TECHNICAL APPROACH
-${thin}
-${pd.technical}
-
-${divider}
-`;
+      doc+=`VOLUME 1 — TECHNICAL APPROACH\n${thin}\n${pd.technical}\n\n${divider}\n`;
     }
     if(pd.management){
-      doc+=`VOLUME 2 — MANAGEMENT PLAN
-${thin}
-${pd.management}
-
-${divider}
-`;
+      doc+=`VOLUME 2 — MANAGEMENT PLAN\n${thin}\n${pd.management}\n\n${divider}\n`;
     }
     if(pd.pastPerformance){
-      doc+=`VOLUME 3 — PAST PERFORMANCE
-${thin}
-${pd.pastPerformance}
-
-${divider}
-`;
+      doc+=`VOLUME 3 — PAST PERFORMANCE\n${thin}\n${pd.pastPerformance}\n\n${divider}\n`;
     }
     if(pd.price){
-      doc+=`VOLUME 4 — PRICE PROPOSAL
-${thin}
-${pd.price}
-
-${divider}
-`;
+      doc+=`VOLUME 4 — PRICE PROPOSAL\n${thin}\n`;
+      doc+=typeof pd.price==='object'?JSON.stringify(pd.price,null,2):pd.price;
+      doc+=`\n\n${divider}\n`;
     }
   }
 
-  doc+=`\n[END OF PROPOSAL — Generated by PRIME IQE DRAFT Agent · ${now}]\n`;
+  doc+=`\n[END OF DOCUMENT — Generated by PRIME IQE DRAFT Agent (Claude Sonnet) · ${now}]\n`;
   return doc;
 }
 

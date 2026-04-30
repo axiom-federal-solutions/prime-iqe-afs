@@ -53,21 +53,37 @@ async function runDraft() {
   }
 }
 
-// Supply NAICS codes — these get a short-form proposal, not 4-volume
+// Supply NAICS codes — these get a short-form quote, not 4-volume
 const SUPPLY_NAICS = ['424710', '424130', '424490', '424120', '424410'];
 
+// Real Estate & Rental NAICS — lease offers, property mgmt proposals, rental agreements
+const RE_NAICS = [
+  '531110', '531120', '531190', '531210',
+  '531311', '531312', '531390',
+  '532120', '532412',
+];
+
 // ----------------------------------------------------------
-// GENERATE PROPOSAL: Route to construction or supply format
+// GENERATE PROPOSAL: Route to construction, supply, or real estate format
 //   Construction: 4-volume federal proposal package
-//   Supply: 1-2 page short-form quote + capability statement
+//   Supply:       1-2 page short-form quote + capability statement
+//   Real Estate:  Lease offer + property mgmt plan + RE capability statement
 // ----------------------------------------------------------
 async function generateProposal(bidId) {
   // Load the bid and its linked opportunity from the database
   const bid = await getBidWithOpportunity(bidId);
   if (!bid) throw new Error('Bid not found: ' + bidId);
 
-  // Route to supply short-form if this is a supply NAICS
-  if (SUPPLY_NAICS.includes(bid.opportunities.naics)) {
+  const naics = bid.opportunities.naics || '';
+
+  // Route to real estate format — lease offers follow GSA Form 1364 structure
+  if (RE_NAICS.some(n => naics.startsWith(n))) {
+    console.log('DRAFT: Real Estate opportunity detected — using lease/property mgmt template');
+    return generateRealEstateProposal(bidId, bid);
+  }
+
+  // Route to supply short-form
+  if (SUPPLY_NAICS.includes(naics)) {
     console.log('DRAFT: Supply opportunity detected — using short-form template');
     return generateSupplyProposal(bidId, bid);
   }
@@ -203,6 +219,163 @@ async function generateSupplyProposal(bidId, bid) {
     naics: opp.naics,
     format: 'short-form supply quote + capability statement',
     pricing_available: !!pricing,
+  });
+}
+
+// ----------------------------------------------------------
+// GENERATE REAL ESTATE PROPOSAL: Lease offer + property mgmt plan + RE cap statement
+//
+// Federal real estate contracting has two main forms:
+//   1. Lease offers (NAICS 531120) — GSA Form 1364 format, offered by property owners
+//   2. Property management contracts (531311/531312) — operational management proposals
+//   3. Other RE services (531190/531210/531390) — advisory, brokerage, appraisal
+//   4. Equipment/vehicle rental (532120/532412) — FEMA/USACE surge support
+//
+// Key differentiator: Trevor Monnie (LA Licensed Landscape Horticulturist #26-5023)
+// enables compliant grounds/landscape maintenance on federal or regulated properties —
+// a credential most competing property managers cannot match in Louisiana.
+// ----------------------------------------------------------
+async function generateRealEstateProposal(bidId, bid) {
+  const opp = bid.opportunities;
+  const naics = opp.naics || '';
+  const value = opp.value || 0;
+
+  console.log('DRAFT: Building real estate proposal for "' + opp.title + '" (NAICS ' + naics + ')');
+
+  // Determine sub-type based on NAICS to tailor the proposal correctly
+  const isLease     = naics.startsWith('531110') || naics.startsWith('531120') || naics.startsWith('531190');
+  const isPropMgmt  = naics.startsWith('531311') || naics.startsWith('531312');
+  const isRental    = naics.startsWith('532120') || naics.startsWith('532412');
+  const isOtherRE   = naics.startsWith('531210') || naics.startsWith('531390');
+
+  // Get past performance from our records
+  const pastPerf = await getRelevantPastPerformance(naics);
+
+  // ── BID/NO-BID MEMO ─────────────────────────────────────────────────────
+  const bidMemo = await claudeHaiku(
+    'Write a concise 3-paragraph bid/no-bid recommendation memo for a federal real estate opportunity. ' +
+    'Company: ' + COMPANY.legal_name + ' (DBA: ' + COMPANY.dba + '). ' +
+    'Location: New Orleans, Louisiana — Gulf South region specialist. ' +
+    'Certifications: ' + COMPANY.certifications + '. ' +
+    'Key differentiator: Teaming partner Trevor L. Monnie, Louisiana Licensed Landscape Horticulturist ' +
+    '(License No. 26-5023), enabling compliant grounds maintenance on regulated/government properties. ' +
+    'Opportunity: ' + opp.title + ' | Agency: ' + (opp.agency || 'Federal Agency') +
+    ' | NAICS: ' + naics + ' | Value: $' + value.toLocaleString() + '. ' +
+    'Paragraphs: (1) Opportunity overview and why it fits our profile, ' +
+    '(2) Our competitive advantage — location, certifications, teaming partner credential, ' +
+    '(3) Go/No-Go recommendation and key risk factors. Be direct and specific.'
+  );
+
+  // ── LEASE OFFER (for 531110/531120/531190 — property owner offering space to agency) ──
+  let leaseOffer = null;
+  if (isLease) {
+    leaseOffer = await claudeSonnet(
+      'You are writing a federal lease offer in response to a GSA or agency solicitation for real property. ' +
+      'Company/Offeror: ' + COMPANY.legal_name + ' (DBA: ' + COMPANY.dba + '). ' +
+      'UEI: ' + COMPANY.uei + ' | CAGE: ' + COMPANY.cage_code + '. ' +
+      'Opportunity: ' + opp.title + ' | Agency: ' + (opp.agency || 'Agency') +
+      ' | NAICS: ' + naics + ' | Estimated Value: $' + value.toLocaleString() + '. ' +
+      'Write a professional federal lease offer document following GSA Form 1364 structure. Include: ' +
+      '(1) Offeror identification and SAM registration confirmation, ' +
+      '(2) Property description — location, square footage, building class, year built, ADA compliance, ' +
+      '(3) Offered rental rate ($/RSF/year) and total annual rent, ' +
+      '(4) Lease term offered (initial term + options), ' +
+      '(5) Space configuration — office layout, parking, loading, security features, ' +
+      '(6) Building systems — HVAC, electrical capacity, fire suppression, IT infrastructure, ' +
+      '(7) Tenant improvement allowance offered, ' +
+      '(8) Energy efficiency certifications (LEED, ENERGY STAR) if applicable, ' +
+      '(9) ADA and ABAAS compliance statement, ' +
+      '(10) Proximity to federal buildings, transit, and amenities. ' +
+      'Use [BRACKET PLACEHOLDERS] for specifics to be filled in before submission. ' +
+      'Tone: formal, FAR-compliant, professional. Target length: 3-4 pages.'
+    );
+  }
+
+  // ── PROPERTY MANAGEMENT PROPOSAL (for 531311/531312) ──────────────────
+  let propMgmtPlan = null;
+  if (isPropMgmt) {
+    propMgmtPlan = await claudeSonnet(
+      'You are writing a property management proposal for a federal government contract. ' +
+      'Company: ' + COMPANY.legal_name + ' (DBA: ' + COMPANY.dba + '). ' +
+      'UEI: ' + COMPANY.uei + ' | CAGE: ' + COMPANY.cage_code + '. ' +
+      'Certifications: ' + COMPANY.certifications + '. ' +
+      'Key differentiator: Teaming partner ' + COMPANY.teaming_partners + ' — ' +
+      'enables compliant landscape and grounds maintenance on government-adjacent and regulated properties. ' +
+      'Opportunity: ' + opp.title + ' | Agency: ' + (opp.agency || 'Agency') +
+      ' | NAICS: ' + naics + ' | Value: $' + value.toLocaleString() + '. ' +
+      'Write a federal property management proposal. Include: ' +
+      '(1) Management approach — daily operations, preventive maintenance schedule, work order system, ' +
+      '(2) Staffing plan — property manager qualifications, on-site staff, 24/7 emergency contact, ' +
+      '(3) Maintenance programs — HVAC, plumbing, electrical, roofing inspection schedule, ' +
+      '(4) Grounds & landscape maintenance — explain the Louisiana Licensed Landscape Horticulturist credential ' +
+      '    (Trevor L. Monnie, License No. 26-5023) and why it ensures compliant turf/plant care on federal properties, ' +
+      '(5) Tenant relations and federal agency coordination protocol, ' +
+      '(6) Reporting — monthly property condition reports, financial statements, work order logs, ' +
+      '(7) Security and access control procedures, ' +
+      '(8) Emergency response and business continuity plan. ' +
+      'Tone: professional, FAR-compliant. Target length: 4 pages.'
+    );
+  }
+
+  // ── RENTAL/EQUIPMENT CAPABILITY (for 532120/532412) ───────────────────
+  let rentalQuote = null;
+  if (isRental) {
+    rentalQuote = await claudeHaiku(
+      'Write a federal equipment/vehicle rental quote in response to a FEMA or USACE solicitation. ' +
+      'Company: ' + COMPANY.legal_name + ' (DBA: ' + COMPANY.dba + '). ' +
+      'NAICS: ' + naics + '. ' +
+      'Certifications: ' + COMPANY.certifications + '. Gulf South region specialist. ' +
+      'Opportunity: ' + opp.title + ' | Agency: ' + (opp.agency || 'Agency') + '. ' +
+      'Include: (1) equipment/vehicle list with daily/weekly/monthly rates, ' +
+      '(2) delivery capability to Gulf South states (LA, MS, TX, AL, FL), ' +
+      '(3) operator availability if required, ' +
+      '(4) insurance and bonding confirmation, ' +
+      '(5) surge capacity for disaster response. Target: 1-2 pages.'
+    );
+  }
+
+  // ── RE CAPABILITY STATEMENT (all RE types) ────────────────────────────
+  const reCapStatement = await claudeHaiku(
+    'Write a 1-page capability statement for federal real estate contracting. ' +
+    'Company: ' + COMPANY.legal_name + ' (DBA: ' + COMPANY.dba + '). ' +
+    'UEI: ' + COMPANY.uei + ' | CAGE: ' + COMPANY.cage_code + '. ' +
+    'Certifications: ' + COMPANY.certifications + '. ' +
+    'Location: New Orleans, Louisiana — serving Gulf South region (LA, MS, TX, AL, FL). ' +
+    'Real estate services: property leasing (531120), property management (531311/531312), ' +
+    'grounds/landscape maintenance via licensed teaming partner ' + COMPANY.teaming_partners + '. ' +
+    'Key credential: Louisiana Licensed Landscape Horticulturist on teaming team — ' +
+    'enables compliant grounds maintenance on federal and regulated properties. ' +
+    'Include: (1) company overview, (2) federal RE service capabilities, (3) certifications, ' +
+    '(4) Gulf South market knowledge, (5) past performance summary, (6) contact info. ' +
+    'Keep to 1 page. Be specific about federal real estate experience.'
+  );
+
+  // ── SAVE ALL GENERATED CONTENT ────────────────────────────────────────
+  await storeDraft(bidId, {
+    type: 'realestate',
+    bidMemo,
+    leaseOffer,       // populated for 531110/531120/531190
+    propMgmtPlan,     // populated for 531311/531312
+    rentalQuote,      // populated for 532120/532412
+    reCapStatement,   // always generated
+    naicsSubtype: isLease ? 'lease' : isPropMgmt ? 'property_mgmt' : isRental ? 'rental' : 'other_re',
+  });
+
+  await queueForBrandiReview(bidId, 'RE_PROPOSAL_READY');
+
+  await logAction('DRAFT', 'Real estate proposal generated — awaiting Mr. Kemp approval', {
+    bidId,
+    opportunity: opp.title,
+    agency: opp.agency,
+    naics,
+    subtype: isLease ? 'lease_offer' : isPropMgmt ? 'property_management' : isRental ? 'equipment_rental' : 'other_re',
+    sections_generated: [
+      'bidMemo',
+      isLease ? 'leaseOffer' : null,
+      isPropMgmt ? 'propMgmtPlan' : null,
+      isRental ? 'rentalQuote' : null,
+      'reCapStatement',
+    ].filter(Boolean),
   });
 }
 
