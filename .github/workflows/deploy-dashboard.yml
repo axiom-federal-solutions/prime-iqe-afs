@@ -37,6 +37,9 @@ jobs:
         run: |
           mkdir -p _site
           cp index.html _site/index.html
+          # Copy logo files so they render on the live Pages URL
+          cp "Prime logo 1.png" _site/ 2>/dev/null || true
+          cp "Prime logo 2.png" _site/ 2>/dev/null || true
 
       # ── 3. Upload to Pages ───────────────────────────────────────────
       - name: Upload Pages artifact
