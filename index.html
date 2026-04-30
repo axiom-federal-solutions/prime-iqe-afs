@@ -318,7 +318,7 @@ const sb = createClient(
 );
 
 // ─── GLOBAL STATE ──────────────────────────────────────────────────────
-let OPPS=[], BIDS=[], SUPS=[], RUNS=[], CONFIG={}, TESTS=[], CLAIMS=[], EVENTS=[], CONTRACTS=[], loading=false;
+let OPPS=[], BIDS=[], SUPS=[], RUNS=[], CONFIG={}, TESTS=[], CLAIMS=[], EVENTS=[], CONTRACTS=[], FORECAST=null, loading=false;
 const GH_ACTIONS='https://github.com/axiom-federal-solutions/prime-iqe-afs/actions';
 
 // ─── STATE METADATA: name, region, notes for all 50 states + DC ───────
@@ -520,16 +520,17 @@ async function loadData(manual=false){
   const icon=document.getElementById('ri');
   if(icon)icon.classList.add('spinning');
   try{
-    const [o,b,s,r,cfg,tst,cl,ev,ac]=await Promise.all([
-      sb.from('opportunities').select('*').order('prime_score',{ascending:false,nullsFirst:false}).order('acq_score',{ascending:false,nullsFirst:false}).order('created_at',{ascending:false}).limit(200), // GAP5 FIX: multi-col sort so supply/RE opps aren't buried
+    const [o,b,s,r,cfg,tst,cl,ev,ac,fc]=await Promise.all([
+      sb.from('opportunities').select('*').order('prime_score',{ascending:false,nullsFirst:false}).order('acq_score',{ascending:false,nullsFirst:false}).order('created_at',{ascending:false}).limit(200),
       sb.from('bids').select('*').order('created_at',{ascending:false}).limit(50),
-      sb.from('supplier_matches').select('*, suppliers(name,city,state,certifications,socioeconomic,federal_contract_count,avg_contract_value,naics_codes,capability_tier,contact_email)').order('match_score',{ascending:false}).limit(100), // GAP1 FIX: join suppliers table
-      sb.from('audit_log').select('*').order('created_at',{ascending:false}).limit(50),  // GAP1 FIX: was agent_logs
+      sb.from('supplier_matches').select('*, suppliers(name,city,state,certifications,socioeconomic,federal_contract_count,avg_contract_value,naics_codes,capability_tier,contact_email)').order('match_score',{ascending:false}).limit(100),
+      sb.from('audit_log').select('*').order('created_at',{ascending:false}).limit(50),
       sb.from('system_config').select('*'),
       sb.from('test_results').select('*').order('created_at',{ascending:false}).limit(30),
       sb.from('prompt_payment_claims').select('*').order('payment_due',{ascending:true}).limit(30),
       sb.from('osdbu_events').select('*').order('created_at',{ascending:false}).limit(20),
-      sb.from('active_contracts').select('*').limit(50)
+      sb.from('active_contracts').select('*').limit(50),
+      sb.from('forecast_snapshots').select('*').order('snapshot_date',{ascending:false}).limit(1), // L6-06 Monte Carlo
     ]);
     OPPS=o.data||[];
     BIDS=b.data||[];
@@ -541,6 +542,7 @@ async function loadData(manual=false){
     CLAIMS=cl.data||[];
     EVENTS=ev.data||[];
     CONTRACTS=ac.data||[];
+    FORECAST=(fc.data||[])[0]||null; // Latest Monte Carlo snapshot — null if L6-06 not yet active
 
     const ll=document.getElementById('last-load');
     if(ll){const n=new Date();ll.textContent='Updated '+n.toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'});}
@@ -1182,6 +1184,128 @@ function renderActionQueue(){
   `;
 }
 
+// ─── L6-06: MONTE CARLO FORECAST ROW ───────────────────────────────────
+// Shows P25/P50/P75 revenue bands once 10+ bid outcomes exist.
+// If not yet active, shows threshold progress bar.
+function renderMonteCarloRow(){
+  const mlActive   = CONFIG.L6_01_ML_ACTIVE === 'true';
+  const mcActive   = CONFIG.L6_06_MONTE_CARLO_ACTIVE === 'true';
+  const compActive = CONFIG.L6_07_COMPETITOR_ACTIVE === 'true';
+
+  // Count bid outcomes for threshold display when inactive
+  const outcomeCount = BIDS.filter(b => b.result != null).length;
+  const MC_THRESH = 10;
+
+  if (!mcActive || !FORECAST) {
+    // Show a slim "pending" bar
+    const pct = Math.min(100, Math.round((outcomeCount / MC_THRESH) * 100));
+    return `
+    <div style="background:var(--card);border:1px solid var(--bd);border-radius:8px;padding:12px 16px;margin-bottom:10px;display:flex;align-items:center;gap:14px">
+      <div style="font-size:18px">📈</div>
+      <div style="flex:1">
+        <div style="font-size:10px;font-weight:700;color:var(--t3);letter-spacing:.1em;text-transform:uppercase;margin-bottom:4px">Monte Carlo Revenue Forecast — L6-06</div>
+        <div style="font-size:11px;color:var(--t2);margin-bottom:6px">Auto-activates after ${MC_THRESH} bid outcomes recorded &nbsp;·&nbsp; <span style="color:var(--cyan)">${outcomeCount}/${MC_THRESH}</span> complete</div>
+        <div style="height:4px;background:var(--bd);border-radius:99px;overflow:hidden;width:280px">
+          <div style="height:100%;width:${pct}%;background:var(--cyan);border-radius:99px;transition:width .4s"></div>
+        </div>
+      </div>
+      <div style="font-size:9px;color:var(--t3);text-align:right">PENDING<br>${pct}%</div>
+    </div>`;
+  }
+
+  // Active — render P25/P50/P75 bands
+  const fmt = v => '$' + (v >= 1e6 ? (v/1e6).toFixed(2)+'M' : (v/1e3).toFixed(0)+'K');
+  const p25 = FORECAST.p25 || 0;
+  const p50 = FORECAST.p50 || 0;
+  const p75 = FORECAST.p75 || 0;
+  const mean= FORECAST.mean_revenue || 0;
+  const snap= FORECAST.snapshot_date ? FORECAST.snapshot_date.slice(0,10) : '—';
+  const sims= (FORECAST.simulations || 10000).toLocaleString();
+  const max = p75 || 1;
+
+  const bar = (val, color) => {
+    const pct = Math.round((val/max)*100);
+    return `<div style="height:6px;background:var(--bd);border-radius:99px;overflow:hidden;margin-top:4px;width:100%"><div style="height:100%;width:${pct}%;background:${color};border-radius:99px"></div></div>`;
+  };
+
+  return `
+  <div style="background:var(--card);border:1px solid var(--cyanBd);border-radius:8px;padding:14px 16px;margin-bottom:10px">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+      <div>
+        <div style="font-size:10px;font-weight:700;color:var(--cyan);letter-spacing:.1em;text-transform:uppercase">📈 Monte Carlo Revenue Forecast — L6-06</div>
+        <div style="font-size:9px;color:var(--t3);margin-top:2px">${sims} simulations · Snapshot ${snap}</div>
+      </div>
+      <div style="text-align:right">
+        <div style="font-size:11px;font-weight:700;color:var(--t1)">Mean: ${fmt(mean)}</div>
+        <div style="font-size:9px;color:var(--t3)">expected next 12 mo</div>
+      </div>
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px">
+      <div style="background:var(--bg);border-radius:6px;padding:10px">
+        <div style="font-size:9px;font-weight:700;color:var(--t3);text-transform:uppercase;letter-spacing:.08em">Conservative · P25</div>
+        <div style="font-size:18px;font-weight:800;color:var(--amber);margin-top:4px">${fmt(p25)}</div>
+        ${bar(p25,'var(--amber)')}
+      </div>
+      <div style="background:var(--bg);border-radius:6px;padding:10px">
+        <div style="font-size:9px;font-weight:700;color:var(--t3);text-transform:uppercase;letter-spacing:.08em">Most Likely · P50</div>
+        <div style="font-size:18px;font-weight:800;color:var(--cyan);margin-top:4px">${fmt(p50)}</div>
+        ${bar(p50,'var(--cyan)')}
+      </div>
+      <div style="background:var(--bg);border-radius:6px;padding:10px">
+        <div style="font-size:9px;font-weight:700;color:var(--t3);text-transform:uppercase;letter-spacing:.08em">Optimistic · P75</div>
+        <div style="font-size:18px;font-weight:800;color:var(--green);margin-top:4px">${fmt(p75)}</div>
+        ${bar(p75,'var(--green)')}
+      </div>
+    </div>
+  </div>`;
+}
+
+// ─── L6 STATUS PANEL ────────────────────────────────────────────────────
+// Compact card showing which L6 features are live vs still accumulating data.
+function renderL6StatusPanel(){
+  const mlActive   = CONFIG.L6_01_ML_ACTIVE === 'true';
+  const mcActive   = CONFIG.L6_06_MONTE_CARLO_ACTIVE === 'true';
+  const compActive = CONFIG.L6_07_COMPETITOR_ACTIVE === 'true';
+
+  // Progress counts for pending features
+  const outcomeCount  = BIDS.filter(b => b.result != null).length;
+  const compPriceCount= 0; // competitor_prices is backend-only — show 0 until active
+
+  const statusRow = (label, icon, active, count, thresh) => {
+    if(active){
+      return `<div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--bd)">
+        <span style="font-size:13px">${icon}</span>
+        <span style="flex:1;font-size:11px;color:var(--t2)">${label}</span>
+        <span style="font-size:8px;font-weight:700;padding:2px 6px;border-radius:3px;background:var(--greenDim);color:var(--green);text-transform:uppercase;letter-spacing:.08em">LIVE</span>
+      </div>`;
+    }
+    const pct = Math.min(100, Math.round((count/thresh)*100));
+    return `<div style="padding:6px 0;border-bottom:1px solid var(--bd)">
+      <div style="display:flex;align-items:center;gap:8px">
+        <span style="font-size:13px">${icon}</span>
+        <span style="flex:1;font-size:11px;color:var(--t3)">${label}</span>
+        <span style="font-size:9px;color:var(--t3)">${count}/${thresh}</span>
+      </div>
+      <div style="height:3px;background:var(--bd);border-radius:99px;overflow:hidden;margin-top:5px;margin-left:21px">
+        <div style="height:100%;width:${pct}%;background:var(--violet);border-radius:99px"></div>
+      </div>
+    </div>`;
+  };
+
+  const allLive = mlActive && mcActive && compActive;
+
+  return `
+  <div style="background:var(--card);border:1px solid var(--bd);border-radius:8px;padding:14px;margin-bottom:10px">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+      <div style="font-size:10px;font-weight:700;color:var(--t3);letter-spacing:.1em;text-transform:uppercase">⚙️ L6 Intelligence Features</div>
+      ${allLive ? '<span style="font-size:8px;font-weight:700;padding:2px 7px;border-radius:3px;background:var(--greenDim);color:var(--green);text-transform:uppercase;letter-spacing:.08em">ALL ACTIVE</span>' : '<span style="font-size:9px;color:var(--t3)">Accumulating data…</span>'}
+    </div>
+    ${statusRow('ML Win Scoring','🧠',mlActive,outcomeCount,20)}
+    ${statusRow('Monte Carlo Forecast','📈',mcActive,outcomeCount,10)}
+    ${statusRow('Competitor Intelligence','🕵️',compActive,compPriceCount,20)}
+  </div>`;
+}
+
 // ─── HOME ──────────────────────────────────────────────────────────────
 function renderHome(){
   const topOpps=OPPS.slice(0,6);
@@ -1242,6 +1366,8 @@ function renderHome(){
       <div class="kpi" style="border-left:3px solid var(--violet)"><div class="kpi-val" style="color:var(--violet)">${supCount}</div><div class="kpi-lbl">Supplier Matches</div><div class="kpi-sub">Indexed from SAM</div></div>
       <div class="kpi" style="border-left:3px solid var(--amber)"><div class="kpi-val" style="color:var(--amber)">${BIDS.length}</div><div class="kpi-lbl">Total Bids</div><div class="kpi-sub">${wonCount} won · ${winRate}% win rate</div></div>
     </div>
+    ${renderMonteCarloRow()}
+    ${renderL6StatusPanel()}
     <div style="display:grid;grid-template-columns:1fr 340px;gap:14px">
       <div>
         <div style="font-size:10px;font-weight:700;color:var(--t3);letter-spacing:.12em;margin-bottom:8px;text-transform:uppercase">Top Opportunities — All Verticals</div>

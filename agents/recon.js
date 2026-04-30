@@ -12,9 +12,15 @@
 // COST: ~$0.50/month (minimal Haiku usage for congressional intel summaries)
 // =============================================================
 
-const { supabase, logAction, isAgentEnabled } = require('../lib/supabase');
+const { supabase, logAction, isAgentEnabled, getConfig, setConfig } = require('../lib/supabase');
 const { claudeHaiku } = require('../lib/claude');
 const { fetchJSON, fetchText } = require('../lib/fetch-retry');
+
+// ─── L6-07: Competitive Intelligence Aggregator ───────────────────────────
+// Auto-activates when 20+ bid openings with competitor price data are recorded.
+// RECON builds competitor_profiles from competitor_prices table.
+// BID ENGINE then reads these profiles to position pricing against known players.
+const COMPETITOR_INTEL_THRESHOLD = 20;  // Minimum price records needed to activate
 
 // Our geographic focus — Gulf South region
 const TARGET_STATES = ['LA','MS','TX','AL','GA','FL','TN'];
@@ -61,11 +67,16 @@ async function runRecon() {
     console.log('RECON: Analyzing active contract pipeline...');
     results.pipeline = await analyzePipeline();
 
+    // L6-07: Build competitor profiles when enough price data exists
+    console.log('RECON: Checking L6-07 competitor profiling threshold...');
+    results.competitorProfiles = await buildCompetitorProfiles();
+
     await logAction('RECON', 'Weekly intelligence run complete', {
       fpds_competitors:     results.fpds?.competitors_found || 0,
       gao_protests:         results.gao?.protests_found || 0,
       weather_alerts:       results.weather?.alerts || 0,
       concentration_risk:   results.concentration?.risk_level || 'LOW',
+      competitor_profiles:  results.competitorProfiles?.profiles_built || 0,
       ran_at:               new Date().toISOString(),
     });
 
@@ -855,6 +866,127 @@ async function upsertSupplier(entity, naics) {
 
 // Export supplier functions so other agents can call them
 module.exports = { matchSuppliersToOpportunity, matchAllNewOpportunities };
+
+// ----------------------------------------------------------
+// L6-07: BUILD COMPETITOR PROFILES
+// Auto-activates when 20+ bid openings with competitor price data exist.
+// Aggregates competitor_prices table into competitor_profiles — one row
+// per competitor with avg markup, win rate, geographic focus, NAICS focus,
+// and a pricing_tier classification (low/mid/high vs. market).
+// BID ENGINE reads these to position our bids precisely.
+// ----------------------------------------------------------
+async function buildCompetitorProfiles() {
+  // Check if we have enough price data to build meaningful profiles
+  const { data: priceRecords } = await supabase
+    .from('competitor_prices')
+    .select('id');
+
+  const recordCount = priceRecords?.length || 0;
+  console.log('RECON L6-07: Competitor price records: ' + recordCount + '/' + COMPETITOR_INTEL_THRESHOLD + ' needed');
+
+  if (recordCount < COMPETITOR_INTEL_THRESHOLD) {
+    console.log('RECON L6-07: Not enough price data yet — ' + (COMPETITOR_INTEL_THRESHOLD - recordCount) + ' more records needed.');
+    return { profiles_built: 0, status: 'insufficient_data' };
+  }
+
+  // First activation — set flag so BID ENGINE knows it's live
+  const alreadyActive = await getConfig('L6_07_COMPETITOR_ACTIVE', 'false');
+  if (alreadyActive === 'false') {
+    await setConfig('L6_07_COMPETITOR_ACTIVE', 'true');
+    console.log('RECON L6-07: Competitor Intelligence ACTIVATED at ' + recordCount + ' price records.');
+    await logAction('RECON', 'L6-07 Competitor Intelligence auto-activated', { record_count: recordCount });
+  }
+
+  // Pull all competitor price data
+  const { data: prices } = await supabase
+    .from('competitor_prices')
+    .select('competitor_name, bid_amount, award_amount, naics, state, awarded, bid_date');
+
+  if (!prices || prices.length === 0) return { profiles_built: 0 };
+
+  // Group records by competitor name
+  const byCompetitor = {};
+  for (const record of prices) {
+    const name = record.competitor_name || 'Unknown';
+    if (!byCompetitor[name]) byCompetitor[name] = [];
+    byCompetitor[name].push(record);
+  }
+
+  let profilesBuilt = 0;
+
+  for (const [competitorName, records] of Object.entries(byCompetitor)) {
+    if (records.length < 3) continue;  // Need at least 3 data points per competitor
+
+    // Win rate — what percentage of bids does this competitor win?
+    const wins = records.filter(r => r.awarded === true).length;
+    const winRate = Math.round((wins / records.length) * 100);
+
+    // Average markup — how does their bid compare to the award amount?
+    const markupRecords = records.filter(r => r.bid_amount && r.award_amount);
+    const avgMarkup = markupRecords.length > 0
+      ? markupRecords.reduce((sum, r) => sum + ((r.bid_amount - r.award_amount) / r.award_amount * 100), 0) / markupRecords.length
+      : null;
+
+    // Geographic focus — which states do they appear in most?
+    const stateCounts = {};
+    records.forEach(r => { if (r.state) stateCounts[r.state] = (stateCounts[r.state] || 0) + 1; });
+    const geoFocus = Object.entries(stateCounts)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 3)
+      .map(([state]) => state);
+
+    // NAICS focus — what codes do they bid most?
+    const naicsCounts = {};
+    records.forEach(r => { if (r.naics) naicsCounts[r.naics] = (naicsCounts[r.naics] || 0) + 1; });
+    const naicsFocus = Object.entries(naicsCounts)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 5)
+      .map(([naics]) => naics);
+
+    // Average bid value
+    const bidValues = records.filter(r => r.bid_amount).map(r => r.bid_amount);
+    const avgBidValue = bidValues.length > 0
+      ? bidValues.reduce((s, v) => s + v, 0) / bidValues.length
+      : null;
+
+    // Pricing tier — are they a low-ball, mid-market, or premium bidder?
+    // Based on markup relative to award: negative markup = low-baller, positive = premium
+    let pricingTier = 'mid';
+    if (avgMarkup !== null) {
+      if (avgMarkup < -5) pricingTier = 'low';
+      else if (avgMarkup > 10) pricingTier = 'high';
+    }
+
+    // Most recent bid date
+    const bidDates = records.filter(r => r.bid_date).map(r => r.bid_date).sort().reverse();
+    const lastSeen = bidDates[0] || null;
+
+    // Upsert competitor profile
+    const { error } = await supabase.from('competitor_profiles').upsert({
+      competitor_name:   competitorName,
+      bid_count:         records.length,
+      win_rate_pct:      winRate,
+      avg_markup_pct:    avgMarkup !== null ? Math.round(avgMarkup * 10) / 10 : null,
+      geographic_focus:  geoFocus,
+      naics_focus:       naicsFocus,
+      avg_bid_value:     avgBidValue ? Math.round(avgBidValue) : null,
+      pricing_tier:      pricingTier,
+      last_seen_date:    lastSeen,
+      updated_at:        new Date().toISOString(),
+    }, { onConflict: 'competitor_name' });
+
+    if (!error) profilesBuilt++;
+  }
+
+  await logAction('RECON', 'L6-07 Competitor profiles rebuilt', {
+    total_records: prices.length,
+    competitors:   Object.keys(byCompetitor).length,
+    profiles_built: profilesBuilt,
+  });
+
+  console.log('RECON L6-07: ' + profilesBuilt + ' competitor profiles built from ' + prices.length + ' price records.');
+  return { profiles_built: profilesBuilt, record_count: recordCount };
+}
 
 // Run RECON when this file is executed
 runRecon();

@@ -7,7 +7,7 @@
 // =============================================================
 
 // Load helper tools
-const { supabase, logAction, isAgentEnabled } = require('../lib/supabase');
+const { supabase, logAction, isAgentEnabled, getConfig } = require('../lib/supabase');
 
 // Walker Contractors LLC / Axiom Federal Solutions HQ — New Orleans, LA
 const HQ_LOCATION = { state: 'LA', lat: 29.9511, lng: -90.0715 };
@@ -77,10 +77,18 @@ async function calculateBidPrice(opportunityId) {
 
   // Use different pricing models for supply vs construction
   const isSupply = SUPPLY_NAICS.includes(opp.naics);
-  if (isSupply) {
-    return calculateSupplyPrice(opp);
+  const baseResult = isSupply
+    ? await calculateSupplyPrice(opp)
+    : await calculateConstructionPrice(opp);
+
+  // L6-07: If competitor profiles are active, layer in competitive positioning
+  const competitorIntelActive = await getConfig('L6_07_COMPETITOR_ACTIVE', 'false');
+  if (competitorIntelActive === 'true') {
+    const competitorAdjustment = await applyCompetitorPositioning(opp, baseResult);
+    return { ...baseResult, ...competitorAdjustment };
   }
-  return calculateConstructionPrice(opp);
+
+  return baseResult;
 }
 
 // ----------------------------------------------------------
@@ -361,6 +369,118 @@ async function findDistributors(opportunityId) {
 
 // Export so DRAFT and other agents can call findDistributors
 module.exports = { findDistributors };
+
+// ----------------------------------------------------------
+// L6-07: COMPETITOR POSITIONING
+// Runs after base price is calculated. Pulls competitor_profiles for
+// any known competitors on this opp's NAICS + geography.
+// Outputs a recommended price position and adjustment amount.
+// Strategy: undercut low-tier competitors slightly, stay below high-tier.
+// ----------------------------------------------------------
+async function applyCompetitorPositioning(opp, baseResult) {
+  try {
+    const naicsPrefix = (opp.naics || '').substring(0, 4);
+    const state       = opp.place_of_performance || opp.state || '';
+    const basePrice   = baseResult.base || 0;
+
+    if (!basePrice) return {};
+
+    // Find competitor profiles active in this NAICS and geography
+    const { data: profiles } = await supabase
+      .from('competitor_profiles')
+      .select('competitor_name, pricing_tier, avg_bid_value, win_rate_pct, avg_markup_pct, geographic_focus, naics_focus')
+      .contains('naics_focus', [opp.naics])  // GIN index match
+      .limit(10);
+
+    // Also check geography — include profiles that operate in this state
+    const { data: geoProfiles } = await supabase
+      .from('competitor_profiles')
+      .select('competitor_name, pricing_tier, avg_bid_value, win_rate_pct, avg_markup_pct')
+      .contains('geographic_focus', [state])
+      .limit(10);
+
+    // Combine and deduplicate by name
+    const allProfiles = [...(profiles || []), ...(geoProfiles || [])];
+    const seen = new Set();
+    const uniqueProfiles = allProfiles.filter(p => {
+      if (seen.has(p.competitor_name)) return false;
+      seen.add(p.competitor_name);
+      return true;
+    });
+
+    if (uniqueProfiles.length === 0) {
+      return { competitor_intel: { active: true, note: 'No known competitors for this NAICS/geography yet.' } };
+    }
+
+    // Analyze the competitive field
+    const lowTier  = uniqueProfiles.filter(p => p.pricing_tier === 'low');
+    const midTier  = uniqueProfiles.filter(p => p.pricing_tier === 'mid');
+    const highTier = uniqueProfiles.filter(p => p.pricing_tier === 'high');
+
+    // Average bid values from profiles for reference
+    const avgCompetitorBid = uniqueProfiles
+      .filter(p => p.avg_bid_value)
+      .reduce((sum, p, _, arr) => sum + p.avg_bid_value / arr.length, 0);
+
+    // Pricing strategy recommendation:
+    // - If mostly low-tier competitors: match them, emphasize past performance differentiator
+    // - If mostly mid-tier: position 2-3% below mid to win on price without sacrificing margin
+    // - If mostly high-tier: stay at our base price — they'll be above us anyway
+    let recommendedAdjustment = 0;
+    let pricingStrategy = 'hold';
+
+    if (lowTier.length > uniqueProfiles.length * 0.6) {
+      // Dominated by low-bidders — match base, compete on qualifications
+      pricingStrategy = 'compete_on_quals';
+      recommendedAdjustment = 0;
+    } else if (midTier.length >= lowTier.length) {
+      // Mid-tier field — cut 2% to gain edge
+      pricingStrategy = 'slight_undercut';
+      recommendedAdjustment = -(basePrice * 0.02);
+    } else {
+      // High-tier heavy — our base price is already competitive
+      pricingStrategy = 'hold_position';
+      recommendedAdjustment = 0;
+    }
+
+    const adjustedPrice = Math.round(basePrice + recommendedAdjustment);
+
+    await logAction('BID ENGINE', 'L6-07 Competitor positioning applied', {
+      opportunity_id:        opp.id,
+      competitors_found:     uniqueProfiles.length,
+      low_tier_count:        lowTier.length,
+      mid_tier_count:        midTier.length,
+      high_tier_count:       highTier.length,
+      pricing_strategy:      pricingStrategy,
+      base_price:            basePrice,
+      adjusted_price:        adjustedPrice,
+      adjustment:            Math.round(recommendedAdjustment),
+    });
+
+    return {
+      adjusted_price: adjustedPrice,
+      competitor_intel: {
+        active:               true,
+        competitors_analyzed: uniqueProfiles.length,
+        low_tier:             lowTier.map(p => p.competitor_name),
+        mid_tier:             midTier.map(p => p.competitor_name),
+        high_tier:            highTier.map(p => p.competitor_name),
+        pricing_strategy:     pricingStrategy,
+        recommended_price:    adjustedPrice,
+        avg_competitor_bid:   avgCompetitorBid ? Math.round(avgCompetitorBid) : null,
+        note: pricingStrategy === 'compete_on_quals'
+          ? 'Low-tier field dominates — hold price, emphasize SDB cert and past performance.'
+          : pricingStrategy === 'slight_undercut'
+          ? 'Mid-tier field — priced 2% below competition for edge without sacrificing margin.'
+          : 'High-tier field — base price is already competitive. No adjustment needed.',
+      },
+    };
+
+  } catch (err) {
+    console.warn('BID ENGINE L6-07: Competitor positioning failed —', err.message);
+    return {};
+  }
+}
 
 // ----------------------------------------------------------
 // START: Run BID ENGINE when this file is executed

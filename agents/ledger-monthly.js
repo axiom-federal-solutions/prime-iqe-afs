@@ -7,8 +7,16 @@
 // COST: ~$0.50/month (Haiku for report narrative)
 // =============================================================
 
-const { supabase, logAction, isAgentEnabled } = require('../lib/supabase');
+const { supabase, logAction, isAgentEnabled, getConfig, setConfig } = require('../lib/supabase');
 const { claudeHaiku } = require('../lib/claude');
+
+// ─── L6-06: Monte Carlo Revenue Forecasting ───────────────────────────────
+// Auto-activates when 10+ bid outcomes are recorded in LEDGER.
+// Runs 10,000 simulations per pipeline opportunity using a beta distribution
+// parameterized by the PRIME score. Outputs P25/P50/P75 revenue bands.
+// These numbers go to the dashboard Command Center and the monthly report.
+const MONTE_CARLO_THRESHOLD   = 10;    // Minimum outcomes needed to activate
+const MONTE_CARLO_SIMULATIONS = 10000; // Number of random scenarios to run
 
 // Concentration risk threshold — flag if one agency > 40% of revenue
 const CONCENTRATION_THRESHOLD = 40;
@@ -33,7 +41,14 @@ async function runMonthlyReport() {
     const concentrationRisk = await checkConcentrationRisk();
     const systemHealth = await getSystemHealth();
 
+    // L6-06: Monte Carlo — run if threshold is met (auto-activating)
+    const monteCarlo = await runMonteCarloForecast();
+
     // Generate narrative summary using Claude Haiku
+    const monteCarloSummary = monteCarlo
+      ? `Monte Carlo P25=$${(monteCarlo.p25 / 1000).toFixed(0)}K P50=$${(monteCarlo.p50 / 1000).toFixed(0)}K P75=$${(monteCarlo.p75 / 1000).toFixed(0)}K pipeline across ${monteCarlo.pipeline_count} opportunities.`
+      : 'Monte Carlo not yet active (need 10+ bid outcomes).';
+
     const narrative = await claudeHaiku(
       'Write a concise 4-paragraph monthly performance summary for Walker Contractors LLC / Axiom Federal Solutions. ' +
       'This is their PRIME federal contracting AI system. ' +
@@ -44,9 +59,10 @@ async function runMonthlyReport() {
         cost_variances: costVariances,
         concentration_risk: concentrationRisk,
         system_health: systemHealth,
+        monte_carlo_forecast: monteCarloSummary,
       }) +
       '. Paragraphs: (1) Bid pipeline summary and win rate, (2) System accuracy and scoring calibration, ' +
-      '(3) Cost performance on active contracts, (4) Recommendations for next month. Be specific. Use numbers.'
+      '(3) Cost performance on active contracts, (4) Recommendations for next month including Monte Carlo revenue forecast if available. Be specific. Use numbers.'
     );
 
     // Save the report
@@ -55,6 +71,7 @@ async function runMonthlyReport() {
       win_rate: winRate,
       bids_evaluated: winRate.total_bids,
       concentration_risk: concentrationRisk,
+      monte_carlo: monteCarlo || 'not_active',
       narrative_preview: narrative.substring(0, 200),
     });
 
@@ -192,6 +209,147 @@ function getLastMonthLabel() {
   const d = new Date();
   d.setMonth(d.getMonth() - 1);
   return d.toLocaleString('en-US', { month: 'long', year: 'numeric' });
+}
+
+// ----------------------------------------------------------
+// L6-06: MONTE CARLO REVENUE FORECASTING
+// Auto-activates when LEDGER has 10+ bid outcomes with win/loss + value.
+// Runs 10,000 revenue simulations across the current pipeline.
+// Each opp gets a win probability from its PRIME score → beta distribution.
+// Summing across all opps produces a revenue distribution (not a single guess).
+// P25 = conservative bond application figure. P50 = expected. P75 = upside.
+// ----------------------------------------------------------
+async function runMonteCarloForecast() {
+  // Check if we have enough outcome history to model win probability
+  const { data: outcomes } = await supabase
+    .from('bids')
+    .select('id')
+    .not('result', 'is', null);
+
+  const outcomeCount = outcomes?.length || 0;
+  console.log('LEDGER MC: Bid outcomes available: ' + outcomeCount + '/' + MONTE_CARLO_THRESHOLD + ' needed');
+
+  if (outcomeCount < MONTE_CARLO_THRESHOLD) {
+    console.log('LEDGER MC: Monte Carlo not yet active — need ' + (MONTE_CARLO_THRESHOLD - outcomeCount) + ' more bid outcomes.');
+    return null;
+  }
+
+  // First activation — flip the flag so dashboard knows it's live
+  const alreadyActive = await getConfig('L6_06_MONTE_CARLO_ACTIVE', 'false');
+  if (alreadyActive === 'false') {
+    await setConfig('L6_06_MONTE_CARLO_ACTIVE', 'true');
+    console.log('LEDGER MC: L6-06 Monte Carlo ACTIVATED — ' + outcomeCount + ' outcomes crossed the threshold.');
+    await logAction('LEDGER', 'L6-06 Monte Carlo auto-activated', { outcome_count: outcomeCount });
+  }
+
+  // Pull pipeline: all pursuing/scored/reviewing opportunities with a value
+  const { data: pipeline } = await supabase
+    .from('opportunities')
+    .select('id, prime_score, value, vertical')
+    .in('status', ['scored', 'reviewing', 'pursuing'])
+    .not('value', 'is', null)
+    .gt('value', 0);
+
+  if (!pipeline || pipeline.length === 0) {
+    console.log('LEDGER MC: No active pipeline opportunities found — skipping.');
+    return null;
+  }
+
+  console.log('LEDGER MC: Running ' + MONTE_CARLO_SIMULATIONS.toLocaleString() + ' simulations across ' + pipeline.length + ' pipeline opportunities...');
+
+  // Convert each opportunity's PRIME score into beta distribution params.
+  // Beta(alpha, beta) is ideal because it's bounded [0,1] — perfect for win probability.
+  // A score of 75 means we win ~75% of the time, but with uncertainty.
+  // Alpha = score/10, Beta = (100-score)/10 — this shapes the distribution.
+  const oppParams = pipeline.map(opp => {
+    const score = Math.max(1, Math.min(99, opp.prime_score || 50));
+    const alpha = score / 10;
+    const beta  = (100 - score) / 10;
+    return { value: opp.value, alpha, beta };
+  });
+
+  // Run 10,000 scenarios — each scenario varies all win probabilities simultaneously
+  const simulationResults = [];
+
+  for (let sim = 0; sim < MONTE_CARLO_SIMULATIONS; sim++) {
+    let scenarioRevenue = 0;
+
+    for (const opp of oppParams) {
+      // Sample a win probability from the beta distribution using rejection sampling
+      const winProb = sampleBeta(opp.alpha, opp.beta);
+      // This opportunity wins in this scenario if random < winProb
+      if (Math.random() < winProb) {
+        scenarioRevenue += opp.value;
+      }
+    }
+
+    simulationResults.push(scenarioRevenue);
+  }
+
+  // Sort scenarios low→high to extract percentile values
+  simulationResults.sort((a, b) => a - b);
+
+  const p25 = simulationResults[Math.floor(MONTE_CARLO_SIMULATIONS * 0.25)];
+  const p50 = simulationResults[Math.floor(MONTE_CARLO_SIMULATIONS * 0.50)];
+  const p75 = simulationResults[Math.floor(MONTE_CARLO_SIMULATIONS * 0.75)];
+  const mean = simulationResults.reduce((s, v) => s + v, 0) / MONTE_CARLO_SIMULATIONS;
+  const variance = simulationResults.reduce((s, v) => s + Math.pow(v - mean, 2), 0) / MONTE_CARLO_SIMULATIONS;
+  const stdDev = Math.sqrt(variance);
+
+  // Get baseline (already-won active contracts) so the forecast is additive
+  const { data: active } = await supabase
+    .from('active_contracts')
+    .select('value')
+    .eq('status', 'active');
+  const contractBase = (active || []).reduce((s, c) => s + (c.value || 0), 0);
+
+  // Save to forecast_snapshots so the dashboard can read it
+  await supabase.from('forecast_snapshots').insert({
+    snapshot_date:        new Date().toISOString().split('T')[0],
+    pipeline_count:       pipeline.length,
+    simulations:          MONTE_CARLO_SIMULATIONS,
+    p25_revenue:          Math.round(p25),
+    p50_revenue:          Math.round(p50),
+    p75_revenue:          Math.round(p75),
+    mean_revenue:         Math.round(mean),
+    std_deviation:        Math.round(stdDev),
+    active_contract_base: Math.round(contractBase),
+  });
+
+  await setConfig('L6_06_LAST_RUN', new Date().toISOString());
+
+  console.log('LEDGER MC: Forecast complete — P25=$' + p25.toLocaleString() +
+    ' P50=$' + p50.toLocaleString() + ' P75=$' + p75.toLocaleString());
+
+  await logAction('LEDGER', 'L6-06 Monte Carlo forecast saved', {
+    pipeline_count: pipeline.length,
+    p25: Math.round(p25),
+    p50: Math.round(p50),
+    p75: Math.round(p75),
+    active_contract_base: Math.round(contractBase),
+  });
+
+  return { p25, p50, p75, mean: Math.round(mean), pipeline_count: pipeline.length };
+}
+
+// ----------------------------------------------------------
+// BETA DISTRIBUTION SAMPLER (Pure JS — no numpy needed)
+// Uses the Johnk method: generates a beta(alpha, beta) sample
+// by rejection sampling with uniform random numbers.
+// Called 10,000 * pipeline_size times per month — fast enough in Node.
+// ----------------------------------------------------------
+function sampleBeta(alpha, beta) {
+  // For integer or half-integer params, use the sum-of-gammas method
+  // For general case, use Johnk's rejection sampler
+  let u, v, x, y, z;
+  do {
+    u = Math.random();
+    v = Math.random();
+    x = Math.pow(u, 1 / alpha);
+    y = Math.pow(v, 1 / beta);
+    z = x + y;
+  } while (z > 1.0);  // Rejection — try again if outside [0,1]
+  return x / z;
 }
 
 // Run when file is executed

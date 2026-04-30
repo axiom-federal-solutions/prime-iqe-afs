@@ -8,9 +8,69 @@
 // SAFETY RULE: Checks kill switch before every batch
 // =============================================================
 
-const { supabase, logAction, isAgentEnabled } = require('../lib/supabase');
+const { supabase, logAction, isAgentEnabled, getConfig } = require('../lib/supabase');
 const { claudeJSON } = require('../lib/claude');
 const { checkCostCap, recordCost } = require('../lib/cost-guard');
+
+// ─── L6-01: ML Weight Override ────────────────────────────────────────────
+// When LEDGER has trained a logistic regression model (20+ bid outcomes),
+// loadMLWeights() fetches the latest version from ml_weights table.
+// The ML-derived win_prob weight replaces the fixed PRIME_WEIGHTS.win_prob.
+// LEDGER updates this weekly — JUDGE picks up the new version on each run.
+let mlWeightsLoaded    = false;
+let mlWeightVector     = null;  // [naics_match, set_aside_match, gulf_south, value_norm, high_score, has_incumbents, agency_history]
+let mlBias             = 0;
+let mlVersion          = 0;
+
+async function loadMLWeights() {
+  try {
+    const isActive = await getConfig('L6_01_ML_ACTIVE', 'false');
+    if (isActive !== 'true') return;  // Not yet activated — use fixed weights
+
+    const version = parseInt(await getConfig('L6_01_ML_VERSION', '0'), 10);
+    if (version === 0) return;
+
+    const { data: weights } = await supabase
+      .from('ml_weights')
+      .select('weights, bias, accuracy_pct, feature_names')
+      .eq('version', version)
+      .single();
+
+    if (!weights) return;
+
+    mlWeightVector  = weights.weights;
+    mlBias          = weights.bias;
+    mlVersion       = version;
+    mlWeightsLoaded = true;
+
+    console.log('JUDGE ML: Loaded L6-01 weights v' + version + ' (accuracy: ' + weights.accuracy_pct + '%)');
+  } catch (err) {
+    console.warn('JUDGE ML: Could not load ML weights —', err.message, '— using fixed weights');
+  }
+}
+
+// Apply ML model to estimate win probability for a specific opportunity
+// Returns 0-100 score replacing the fixed win_prob component
+function mlWinProbScore(opp) {
+  if (!mlWeightsLoaded || !mlWeightVector) return null;
+
+  const GULF_SOUTH = ['LA','MS','TX','AL','GA','FL','TN'];
+  const OUR_NAICS  = ['236220','238210','237990','236116','238320','238910',
+                       '238990','238220','424710','424130','424490','424120'];
+
+  const naicsMatch   = OUR_NAICS.some(n => (opp.naics || '').startsWith(n.substring(0, 4))) ? 1 : 0;
+  const setAsideMatch= ['SDB','SBA','SB'].some(s => (opp.set_aside || '').includes(s)) ? 1 : 0;
+  const gulfSouth    = GULF_SOUTH.includes(opp.place_of_performance || '') ? 1 : 0;
+  const valueNorm    = Math.min(1, (opp.value || 0) / 5000000);
+  const highScore    = (opp.pre_prime_score || 0) >= 70 ? 1 : 0;
+  const hasIncumbent = 0;   // JUDGE doesn't have live incumbent lookup — RECON sets this
+  const agencyHist   = 0;   // Simplified — LEDGER captures this during training
+
+  const featureVec = [naicsMatch, setAsideMatch, gulfSouth, valueNorm, highScore, hasIncumbent, agencyHist];
+  const z = featureVec.reduce((sum, f, i) => sum + f * mlWeightVector[i], mlBias);
+  const prob = 1 / (1 + Math.exp(-Math.max(-500, Math.min(500, z)))); // sigmoid, clipped
+  return Math.round(prob * 100); // Convert to 0-100 scale for PRIME score component
+}
 
 const SUPPLY_NAICS_PREFIXES = ['541511','541512','541519','541330','561110','561210',
   '424410','332999','339999','611420','611430','541611','541618','488490'];
@@ -118,6 +178,9 @@ async function runJudge() {
   // Check per-agent enable flag (T.E.S.T. can disable JUDGE via system_config)
   const enabled = await isAgentEnabled('JUDGE');
   if (!enabled) process.exit(0);
+
+  // L6-01: Load ML weights if LEDGER has trained a model (20+ bid outcomes)
+  await loadMLWeights();
 
   try {
     // Find all opportunities that need scoring

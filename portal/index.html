@@ -1,0 +1,384 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>PRIME CO Portal — Axiom Federal Solutions</title>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f8f8f6; color: #1a1a18; min-height: 100vh; }
+
+    /* ── Auth screen ── */
+    #auth-screen { display: flex; align-items: center; justify-content: center; min-height: 100vh; padding: 2rem; }
+    .auth-card { background: #fff; border: 0.5px solid rgba(0,0,0,0.12); border-radius: 12px; padding: 2.5rem; width: 100%; max-width: 420px; }
+    .auth-logo { font-size: 13px; font-weight: 500; letter-spacing: .06em; color: #888; text-transform: uppercase; margin-bottom: 1.5rem; }
+    .auth-title { font-size: 22px; font-weight: 500; margin-bottom: 0.5rem; }
+    .auth-sub { font-size: 14px; color: #666; margin-bottom: 2rem; line-height: 1.6; }
+    .form-group { margin-bottom: 1rem; }
+    label { display: block; font-size: 12px; font-weight: 500; color: #555; margin-bottom: 6px; }
+    input[type="text"], input[type="email"], input[type="password"] {
+      width: 100%; padding: 10px 12px; border: 0.5px solid rgba(0,0,0,0.2); border-radius: 8px;
+      font-size: 14px; background: #fff; color: #1a1a18; outline: none; transition: border-color .15s;
+    }
+    input:focus { border-color: rgba(0,0,0,0.5); }
+    .btn-primary { width: 100%; padding: 11px; background: #1a1a18; color: #fff; border: none; border-radius: 8px; font-size: 14px; font-weight: 500; cursor: pointer; margin-top: 0.5rem; }
+    .btn-primary:hover { background: #333; }
+    .auth-error { background: #FEF2F2; border: 0.5px solid #FECACA; border-radius: 8px; padding: 10px 12px; font-size: 13px; color: #991B1B; margin-top: 1rem; display: none; }
+
+    /* ── Portal layout ── */
+    #portal-screen { display: none; }
+    .topbar { background: #fff; border-bottom: 0.5px solid rgba(0,0,0,0.1); padding: 0 2rem; height: 56px; display: flex; align-items: center; justify-content: space-between; }
+    .topbar-brand { font-size: 14px; font-weight: 500; }
+    .topbar-contract { font-size: 12px; color: #888; }
+    .topbar-right { display: flex; align-items: center; gap: 12px; font-size: 13px; color: #666; }
+    .badge-ro { background: #EAF3DE; color: #3B6D11; font-size: 11px; font-weight: 500; padding: 3px 8px; border-radius: 20px; }
+    .logout-btn { background: none; border: 0.5px solid rgba(0,0,0,0.2); border-radius: 6px; padding: 5px 12px; font-size: 12px; cursor: pointer; color: #555; }
+
+    .main { max-width: 1100px; margin: 0 auto; padding: 2rem; }
+    .page-title { font-size: 22px; font-weight: 500; margin-bottom: 0.25rem; }
+    .page-sub { font-size: 14px; color: #888; margin-bottom: 2rem; }
+
+    /* ── Metric cards ── */
+    .metrics { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; margin-bottom: 2rem; }
+    .metric { background: #f1efe8; border-radius: 8px; padding: 1rem; }
+    .metric .label { font-size: 12px; color: #888; margin-bottom: 6px; }
+    .metric .value { font-size: 24px; font-weight: 500; }
+    .metric .sub { font-size: 11px; color: #aaa; margin-top: 2px; }
+
+    /* ── Section cards ── */
+    .card { background: #fff; border: 0.5px solid rgba(0,0,0,0.1); border-radius: 12px; padding: 1.5rem; margin-bottom: 1.5rem; }
+    .card-title { font-size: 15px; font-weight: 500; margin-bottom: 1rem; display: flex; align-items: center; gap: 8px; }
+    .card-title .dot { width: 8px; height: 8px; border-radius: 50%; }
+    .dot-green { background: #639922; }
+    .dot-amber { background: #BA7517; }
+    .dot-blue  { background: #378ADD; }
+
+    /* ── Timeline ── */
+    .timeline { position: relative; padding-left: 24px; }
+    .timeline::before { content: ''; position: absolute; left: 8px; top: 0; bottom: 0; width: 1px; background: rgba(0,0,0,0.1); }
+    .tl-item { position: relative; margin-bottom: 1.25rem; }
+    .tl-dot { position: absolute; left: -20px; top: 3px; width: 10px; height: 10px; border-radius: 50%; border: 2px solid #fff; }
+    .tl-dot.done    { background: #639922; }
+    .tl-dot.current { background: #BA7517; }
+    .tl-dot.pending { background: #D3D1C7; }
+    .tl-label { font-size: 13px; font-weight: 500; }
+    .tl-date  { font-size: 11px; color: #aaa; margin-top: 2px; }
+
+    /* ── Table ── */
+    table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    th { text-align: left; font-size: 11px; font-weight: 500; color: #888; padding: 6px 10px; border-bottom: 0.5px solid rgba(0,0,0,0.1); }
+    td { padding: 10px; border-bottom: 0.5px solid rgba(0,0,0,0.05); color: #333; }
+    tr:last-child td { border-bottom: none; }
+    .status-pill { font-size: 11px; font-weight: 500; padding: 3px 8px; border-radius: 20px; }
+    .pill-green { background: #EAF3DE; color: #3B6D11; }
+    .pill-amber { background: #FAEEDA; color: #854F0B; }
+    .pill-blue  { background: #E6F1FB; color: #185FA5; }
+    .pill-gray  { background: #F1EFE8; color: #5F5E5A; }
+
+    /* ── Empty state ── */
+    .empty { text-align: center; padding: 3rem 1rem; color: #aaa; font-size: 14px; }
+
+    /* ── Responsive ── */
+    @media (max-width: 600px) { .main { padding: 1rem; } .metrics { grid-template-columns: 1fr 1fr; } }
+  </style>
+</head>
+<body>
+
+<!-- ── AUTH SCREEN ── -->
+<div id="auth-screen">
+  <div class="auth-card">
+    <div class="auth-logo">Axiom Federal Solutions</div>
+    <div class="auth-title">Contract Status Portal</div>
+    <div class="auth-sub">Read-only access for Contracting Officers. Enter your credentials to view project status, payments, and compliance documents.</div>
+    <div class="form-group">
+      <label>Access token</label>
+      <input type="password" id="token-input" placeholder="Provided in your email from PRIME">
+    </div>
+    <div class="form-group">
+      <label>Your email</label>
+      <input type="email" id="email-input" placeholder="co@agency.gov">
+    </div>
+    <button class="btn-primary" onclick="authenticate()">View contract status</button>
+    <div class="auth-error" id="auth-error">Invalid credentials. Check your access token and email address.</div>
+  </div>
+</div>
+
+<!-- ── PORTAL SCREEN ── -->
+<div id="portal-screen">
+  <div class="topbar">
+    <div>
+      <div class="topbar-brand">PRIME CO Portal</div>
+      <div class="topbar-contract" id="contract-label">Loading...</div>
+    </div>
+    <div class="topbar-right">
+      <span class="badge-ro">Read Only</span>
+      <span id="co-name-label"></span>
+      <button class="logout-btn" onclick="logout()">Sign out</button>
+    </div>
+  </div>
+
+  <div class="main">
+    <div class="page-title" id="portal-title">Contract Dashboard</div>
+    <div class="page-sub">Live data — refreshed every run of the PRIME system.</div>
+
+    <!-- Metrics row -->
+    <div class="metrics" id="metrics-row">
+      <div class="metric"><div class="label">Contract value</div><div class="value" id="m-value">—</div></div>
+      <div class="metric"><div class="label">Payments made</div><div class="value" id="m-payments">—</div></div>
+      <div class="metric"><div class="label">Cost variance</div><div class="value" id="m-variance">—</div></div>
+      <div class="metric"><div class="label">Days remaining</div><div class="value" id="m-days">—</div></div>
+    </div>
+
+    <!-- Milestone timeline -->
+    <div class="card">
+      <div class="card-title"><span class="dot dot-blue"></span> Milestone timeline</div>
+      <div class="timeline" id="milestone-timeline">
+        <div class="empty">Loading milestones...</div>
+      </div>
+    </div>
+
+    <!-- Payment status -->
+    <div class="card">
+      <div class="card-title"><span class="dot dot-green"></span> Payment history</div>
+      <div id="payment-table-wrap">
+        <table>
+          <thead><tr><th>Date</th><th>Description</th><th>Amount</th><th>Status</th></tr></thead>
+          <tbody id="payment-tbody"><tr><td colspan="4" class="empty">Loading payments...</td></tr></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- WH-347 Certified Payroll -->
+    <div class="card">
+      <div class="card-title"><span class="dot dot-amber"></span> Certified payroll submissions (WH-347)</div>
+      <div id="payroll-table-wrap">
+        <table>
+          <thead><tr><th>Week ending</th><th>Status</th><th>Submitted</th><th>Workers</th></tr></thead>
+          <tbody id="payroll-tbody"><tr><td colspan="4" class="empty">Loading payroll records...</td></tr></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Compliance certificates -->
+    <div class="card">
+      <div class="card-title"><span class="dot dot-green"></span> Compliance documents</div>
+      <div id="compliance-table-wrap">
+        <table>
+          <thead><tr><th>Document</th><th>Status</th><th>Last updated</th></tr></thead>
+          <tbody id="compliance-tbody"><tr><td colspan="3" class="empty">Loading compliance...</td></tr></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div style="text-align:center; font-size:11px; color:#ccc; margin-top:2rem; padding-bottom:2rem;">
+      Walker Contractors LLC / Axiom Federal Solutions &middot; PRIME CO Portal &middot; Read-only access
+    </div>
+  </div>
+</div>
+
+<script>
+// ── Supabase init ─────────────────────────────────────────────────────────
+const SUPABASE_URL = 'https://czoyvxyfewqaoewzxlin.supabase.co';
+const SUPABASE_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImN6b3l2eHlmZXdxYW9ld3p4bGluIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzc0ODE5NzcsImV4cCI6MjA5MzA1Nzk3N30.u-fGDBQhI7HRmRFJKEW1762Uej0TwXhGarNNxxLnVWA';
+const sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON);
+
+// ── Auth: validate token + email against co_portal_access ─────────────────
+let contractId = null;
+let coName     = null;
+
+async function authenticate() {
+  const token = document.getElementById('token-input').value.trim();
+  const email = document.getElementById('email-input').value.trim().toLowerCase();
+  const errEl = document.getElementById('auth-error');
+  errEl.style.display = 'none';
+
+  if (!token || !email) { errEl.style.display = 'block'; errEl.textContent = 'Please enter both your access token and email.'; return; }
+
+  // Validate against co_portal_access (service role not needed — token+email pair is the auth)
+  const { data, error } = await sb
+    .from('co_portal_access')
+    .select('id, contract_id, co_name, expires_at, is_active')
+    .eq('access_token', token)
+    .eq('co_email', email)
+    .eq('is_active', true)
+    .single();
+
+  if (error || !data) { errEl.style.display = 'block'; return; }
+
+  // Check expiry
+  if (data.expires_at && new Date(data.expires_at) < new Date()) {
+    errEl.style.display = 'block'; errEl.textContent = 'Your access has expired. Contact Axiom Federal Solutions to renew.'; return;
+  }
+
+  // Log last access (non-blocking)
+  sb.from('co_portal_access').update({ last_accessed_at: new Date().toISOString() }).eq('id', data.id);
+
+  contractId = data.contract_id;
+  coName     = data.co_name || email;
+
+  sessionStorage.setItem('co_token', token);
+  sessionStorage.setItem('co_email', email);
+  sessionStorage.setItem('co_contract_id', contractId);
+  sessionStorage.setItem('co_name', coName);
+
+  showPortal();
+}
+
+function logout() {
+  sessionStorage.clear();
+  contractId = null;
+  document.getElementById('auth-screen').style.display = 'flex';
+  document.getElementById('portal-screen').style.display = 'none';
+}
+
+// ── Resume session ─────────────────────────────────────────────────────────
+window.addEventListener('DOMContentLoaded', () => {
+  const savedToken    = sessionStorage.getItem('co_token');
+  const savedEmail    = sessionStorage.getItem('co_email');
+  const savedContract = sessionStorage.getItem('co_contract_id');
+  const savedName     = sessionStorage.getItem('co_name');
+
+  if (savedToken && savedContract) {
+    contractId = savedContract;
+    coName     = savedName || savedEmail;
+    showPortal();
+  }
+});
+
+// ── Portal render ──────────────────────────────────────────────────────────
+async function showPortal() {
+  document.getElementById('auth-screen').style.display = 'none';
+  document.getElementById('portal-screen').style.display = 'block';
+  document.getElementById('co-name-label').textContent = coName;
+
+  await Promise.all([
+    loadContractHeader(),
+    loadMilestones(),
+    loadPayments(),
+    loadPayroll(),
+    loadCompliance(),
+  ]);
+}
+
+async function loadContractHeader() {
+  const { data: c } = await sb.from('active_contracts').select('*').eq('id', contractId).single();
+  if (!c) return;
+
+  document.getElementById('contract-label').textContent = c.contract_number || 'Contract ' + contractId.slice(0, 8);
+  document.getElementById('portal-title').textContent = c.title || 'Contract Dashboard';
+  document.getElementById('m-value').textContent = c.value ? '$' + Number(c.value).toLocaleString() : '—';
+
+  // Days remaining
+  if (c.end_date) {
+    const days = Math.max(0, Math.ceil((new Date(c.end_date) - new Date()) / 86400000));
+    document.getElementById('m-days').textContent = days;
+  }
+
+  // Cost variance from job_costs
+  const { data: costs } = await sb.from('job_costs').select('variance_pct').eq('contract_id', contractId);
+  if (costs && costs.length > 0) {
+    const avg = costs.reduce((s, r) => s + (r.variance_pct || 0), 0) / costs.length;
+    const el = document.getElementById('m-variance');
+    el.textContent = (avg >= 0 ? '+' : '') + avg.toFixed(1) + '%';
+    el.style.color = avg > 10 ? '#A32D2D' : avg > 0 ? '#BA7517' : '#3B6D11';
+  }
+}
+
+async function loadMilestones() {
+  const container = document.getElementById('milestone-timeline');
+  const { data } = await sb
+    .from('compliance')
+    .select('description, due_date, status')
+    .eq('contract_id', contractId)
+    .order('due_date');
+
+  if (!data || data.length === 0) { container.innerHTML = '<div class="empty">No milestones recorded yet.</div>'; return; }
+
+  container.innerHTML = data.map(m => {
+    const dotClass = m.status === 'complete' ? 'done' : m.status === 'in_progress' ? 'current' : 'pending';
+    return `<div class="tl-item">
+      <div class="tl-dot ${dotClass}"></div>
+      <div class="tl-label">${esc(m.description)}</div>
+      <div class="tl-date">${m.due_date ? 'Due ' + fmt(m.due_date) : ''} &middot; ${esc(m.status || 'pending')}</div>
+    </div>`;
+  }).join('');
+}
+
+async function loadPayments() {
+  const tbody = document.getElementById('payment-tbody');
+  const { data } = await sb
+    .from('sub_payments')
+    .select('payment_date, description, amount, status')
+    .eq('contract_id', contractId)
+    .order('payment_date', { ascending: false })
+    .limit(20);
+
+  if (!data || data.length === 0) { tbody.innerHTML = '<tr><td colspan="4" class="empty">No payment records yet.</td></tr>'; return; }
+
+  document.getElementById('m-payments').textContent = data.filter(p => p.status === 'paid').length;
+
+  tbody.innerHTML = data.map(p => {
+    const pillClass = p.status === 'paid' ? 'pill-green' : p.status === 'pending' ? 'pill-amber' : 'pill-gray';
+    return `<tr>
+      <td>${fmt(p.payment_date)}</td>
+      <td>${esc(p.description || '—')}</td>
+      <td>$${Number(p.amount || 0).toLocaleString()}</td>
+      <td><span class="status-pill ${pillClass}">${esc(p.status || 'unknown')}</span></td>
+    </tr>`;
+  }).join('');
+}
+
+async function loadPayroll() {
+  const tbody = document.getElementById('payroll-tbody');
+  const { data } = await sb
+    .from('certified_payroll')
+    .select('week_ending, status, submitted_at, worker_count')
+    .eq('contract_id', contractId)
+    .order('week_ending', { ascending: false })
+    .limit(20);
+
+  if (!data || data.length === 0) { tbody.innerHTML = '<tr><td colspan="4" class="empty">No WH-347 submissions yet.</td></tr>'; return; }
+
+  tbody.innerHTML = data.map(r => {
+    const pillClass = r.status === 'submitted' ? 'pill-green' : r.status === 'late' ? 'pill-amber' : 'pill-blue';
+    return `<tr>
+      <td>${fmt(r.week_ending)}</td>
+      <td><span class="status-pill ${pillClass}">${esc(r.status || 'pending')}</span></td>
+      <td>${r.submitted_at ? fmt(r.submitted_at) : '—'}</td>
+      <td>${r.worker_count || '—'}</td>
+    </tr>`;
+  }).join('');
+}
+
+async function loadCompliance() {
+  const tbody = document.getElementById('compliance-tbody');
+  const { data } = await sb
+    .from('compliance_matrices')
+    .select('requirement, status, last_updated')
+    .eq('contract_id', contractId)
+    .order('status');
+
+  if (!data || data.length === 0) { tbody.innerHTML = '<tr><td colspan="3" class="empty">No compliance documents on file.</td></tr>'; return; }
+
+  tbody.innerHTML = data.map(r => {
+    const pillClass = r.status === 'compliant' ? 'pill-green' : r.status === 'action_required' ? 'pill-amber' : 'pill-gray';
+    return `<tr>
+      <td>${esc(r.requirement)}</td>
+      <td><span class="status-pill ${pillClass}">${esc(r.status || 'unknown')}</span></td>
+      <td>${r.last_updated ? fmt(r.last_updated) : '—'}</td>
+    </tr>`;
+  }).join('');
+}
+
+// ── Helpers ────────────────────────────────────────────────────────────────
+function fmt(d) {
+  if (!d) return '—';
+  return new Date(d).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+}
+function esc(s) {
+  return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+</script>
+</body>
+</html>
