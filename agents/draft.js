@@ -15,13 +15,16 @@ const { claudeSonnet, claudeHaiku } = require('../lib/claude');
 const COMPANY = {
   legal_name: 'Walker Contractors LLC',
   dba: 'Axiom Federal Solutions',
-  cage_code: process.env.CAGE_CODE || 'TBD',
-  uei: process.env.SAM_UEI || 'TBD',
+  cage_code: process.env.CAGE_CODE || '7JKK0',           // Confirmed CAGE code
+  uei: process.env.SAM_UEI || 'USMQMFAGL9M4',           // Confirmed UEI
   naics_primary: '236220',
-  certifications: 'SDB',
+  certifications: 'SDB (Small Disadvantaged Business)',
   contact: 'Mr. Kemp, Managing Member',
   email: 'PrimeOpps1@gmail.com',
-  specialty: 'federal construction, commercial building, and civil infrastructure in the Gulf South region',
+  phone: process.env.COMPANY_PHONE || '',
+  address: 'New Orleans, Louisiana 70114',
+  specialty: 'federal construction, commercial building, civil infrastructure, and property management in the Gulf South region',
+  teaming_partners: 'Trevor L. Monnie Landscape Services — Louisiana Licensed Landscape Horticulturist (License No. 26-5023)',
 };
 
 // ----------------------------------------------------------
@@ -374,12 +377,25 @@ async function getBidEnginePricing(bidId) {
 }
 
 async function storeDraft(bidId, volumes) {
+  // Attach metadata so dashboard can display and name the Google Doc properly
+  const payload = {
+    ...volumes,
+    _meta: {
+      generated_at: new Date().toISOString(),
+      generated_by: 'DRAFT agent (Claude Sonnet)',
+      company: COMPANY.legal_name,
+      dba: COMPANY.dba,
+      cage: COMPANY.cage_code,
+      uei: COMPANY.uei,
+      certifications: COMPANY.certifications,
+    },
+  };
   await supabase
     .from('bids')
     .update({
       status: 'draft_ready',
-      proposal_url: 'stored_in_db',
-      proposal_data: volumes,
+      proposal_url: 'stored_in_db',  // Future: Google Doc URL after creation
+      proposal_data: payload,
     })
     .eq('id', bidId);
 }
