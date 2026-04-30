@@ -1,7 +1,7 @@
 -- ============================================================
 -- PRIME IQE — Opportunity Status Column
 -- Run in: Supabase → SQL Editor → New Query → Paste → Run
--- Project: lsgaifejjoxqudjhkeev (prime-db)
+-- Project: czoyvxyfewqaoewzxlin (prime-db)
 -- ============================================================
 
 -- Step 1: Add the status column

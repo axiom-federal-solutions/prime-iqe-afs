@@ -99,7 +99,7 @@ const overviewTable = new Table({
     row2("No DIBBS integration", "DIBBS (DLA) RSS feed for direct supply sourcing", WHITE, WHITE),
     row2("No supplier intelligence", "RECON supplier scan: matches subs to opportunities", WHITE, WHITE),
     row2("No pre-scoring", "pre_prime_score: rough score at SCOUT intake time", WHITE, WHITE),
-    row2("No MCP connection", "MCP-connected Supabase (luilinnjlsmtgkqopzmg)", WHITE, WHITE),
+    row2("No MCP connection", "MCP-connected Supabase (czoyvxyfewqaoewzxlin)", WHITE, WHITE),
     row2("~$8-9/month", "~$5-7/month (optimized)", WHITE, WHITE),
   ]
 });
@@ -391,7 +391,7 @@ const doc = new Document({
       body("Step 4 — Merge config/settings.json from original prime-system into the new build"),
       body("Step 5 — Strip prime-iqe-afs down to index.html + deploy-dashboard.yml only"),
       body("Step 6 — Set prime-system repository to PRIVATE on GitHub"),
-      body("Step 7 — Update prime-system GitHub Secrets with MCP Supabase project (luilinnjlsmtgkqopzmg)"),
+      body("Step 7 — Update prime-system GitHub Secrets with MCP Supabase project (czoyvxyfewqaoewzxlin)"),
       body("Step 8 — Run T.E.S.T. from prime-system to confirm all systems operational", { bold: true }),
       spacer(),
       spacer(),

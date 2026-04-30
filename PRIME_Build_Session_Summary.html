@@ -155,7 +155,7 @@
       <thead><tr><th>Layer</th><th>Technology / Details</th></tr></thead>
       <tbody>
         <tr><td class="label">Compute</td><td>GitHub Actions — free CI/CD runners for all agent workflows</td></tr>
-        <tr><td class="label">Database</td><td>Supabase (prime-db) — Project ID: <span class="code" style="display:inline">lsgaifejjoxqudjhkeev</span>, hosted PostgreSQL</td></tr>
+        <tr><td class="label">Database</td><td>Supabase (prime-db) — Project ID: <span class="code" style="display:inline">czoyvxyfewqaoewzxlin</span>, hosted PostgreSQL</td></tr>
         <tr><td class="label">Proxy Layer</td><td>Supabase Edge Function: <code>sam-proxy</code> — routes SAM.gov requests to avoid IP blocks</td></tr>
         <tr><td class="label">AI Engine</td><td>Anthropic Claude API — powers JUDGE scoring and DRAFT writing</td></tr>
         <tr><td class="label">Data Source</td><td>SAM.gov Opportunities API v2 — federal contract listings</td></tr>
@@ -179,11 +179,11 @@
     <p>The build revealed two separate Supabase accounts were in play, causing workflow failures:</p>
     <ul>
       <li><strong>MCP / task-dashboard account:</strong> Project <code>yazxnngcceygviveiqsg</code> — where sam-proxy was initially deployed (wrong target)</li>
-      <li><strong>prime-db account:</strong> Project <code>lsgaifejjoxqudjhkeev</code> (axiom-federal-solutions org) — the <strong>CORRECT</strong> project for PRIME</li>
+      <li><strong>prime-db account:</strong> Project <code>czoyvxyfewqaoewzxlin</code> (axiom-federal-solutions org) — the <strong>CORRECT</strong> project for PRIME</li>
     </ul>
     <div class="alert alert-warning">
       <strong>Key Rule</strong>
-      sam-proxy must be deployed to prime-db (<code>lsgaifejjoxqudjhkeev</code>), and all GitHub secrets must reference that project's URL and service_role key.
+      sam-proxy must be deployed to prime-db (<code>czoyvxyfewqaoewzxlin</code>), and all GitHub secrets must reference that project's URL and service_role key.
     </div>
 
     <h3>4.3 GitHub Actions Secret Mismatch (Run #16 Failure)</h3>
@@ -238,13 +238,13 @@
       <li><code>sam-proxy</code> Edge Function written (deployed to MCP project — needs re-deploy to prime-db)</li>
       <li>SCOUT.js rewritten to route through sam-proxy instead of direct SAM.gov calls</li>
       <li>try/catch syntax error in scout.js identified and fixed (Run #14 → #15)</li>
-      <li>SUPABASE_URL GitHub secret updated to <code>https://lsgaifejjoxqudjhkeev.supabase.co</code></li>
+      <li>SUPABASE_URL GitHub secret updated to <code>https://czoyvxyfewqaoewzxlin.supabase.co</code></li>
     </ul>
 
     <h3>🔴 Pending — Blockers for Run #17</h3>
     <ul>
       <li><strong>Update SUPABASE_SERVICE_KEY</strong> GitHub secret with prime-db service_role JWT</li>
-      <li><strong>Deploy sam-proxy Edge Function</strong> to prime-db (<code>lsgaifejjoxqudjhkeev</code>)</li>
+      <li><strong>Deploy sam-proxy Edge Function</strong> to prime-db (<code>czoyvxyfewqaoewzxlin</code>)</li>
       <li><strong>Create database tables</strong> in prime-db: <code>opportunities</code>, <code>scores</code>, <code>bids</code>, <code>audit_log</code></li>
     </ul>
 
@@ -264,7 +264,7 @@
       <tbody>
         <tr>
           <td class="label">SUPABASE_URL</td>
-          <td><code>https://lsgaifejjoxqudjhkeev.supabase.co</code></td>
+          <td><code>https://czoyvxyfewqaoewzxlin.supabase.co</code></td>
           <td class="green"><span class="badge badge-done">✔ Updated</span></td>
         </tr>
         <tr>
@@ -302,7 +302,7 @@
       <tbody>
         <tr>
           <td class="green"><strong>prime-db ✔ CORRECT</strong></td>
-          <td class="code">lsgaifejjoxqudjhkeev</td>
+          <td class="code">czoyvxyfewqaoewzxlin</td>
           <td>PRIME platform database + Edge Functions (axiom-federal-solutions org)</td>
         </tr>
         <tr>
@@ -325,7 +325,7 @@
         </tr>
         <tr>
           <td class="yellow priority-num">2</td>
-          <td><strong>Deploy sam-proxy</strong> Edge Function to prime-db (<code>lsgaifejjoxqudjhkeev</code>)<br><small>Via Supabase Dashboard → Edge Functions → New Function, paste the TypeScript code</small></td>
+          <td><strong>Deploy sam-proxy</strong> Edge Function to prime-db (<code>czoyvxyfewqaoewzxlin</code>)<br><small>Via Supabase Dashboard → Edge Functions → New Function, paste the TypeScript code</small></td>
           <td>Supabase Dashboard</td>
         </tr>
         <tr>

@@ -9,7 +9,7 @@ Generated: April 27, 2026
 | Step | Status | Details |
 |------|--------|---------|
 | Supabase project created | ✅ DONE | `prime-iqe-afs` — us-east-1 |
-| Database URL | ✅ DONE | `https://luilinnjlsmtgkqopzmg.supabase.co` |
+| Database URL | ✅ DONE | `https://czoyvxyfewqaoewzxlin.supabase.co` |
 | All 29 tables deployed | ✅ DONE | Core + Extended + System tables + Views |
 | GitHub repo created | ✅ DONE | `axiom-federal-solutions/prime-iqe-afs` |
 | Secret: SUPABASE_URL | ✅ DONE | Already saved to GitHub Secrets |
@@ -45,7 +45,7 @@ Click **"New repository secret"** for each one below:
 
 ### Secret 1: SUPABASE_SERVICE_ROLE_KEY
 **Where to get it:**
-1. Go to https://supabase.com/dashboard/project/luilinnjlsmtgkqopzmg/settings/api
+1. Go to https://supabase.com/dashboard/project/czoyvxyfewqaoewzxlin/settings/api
 2. Scroll to **"Project API Keys"**
 3. Copy the **`service_role`** key (the long one starting with `eyJ...`)
 4. ⚠️ This is different from the anon key — make sure you copy `service_role`

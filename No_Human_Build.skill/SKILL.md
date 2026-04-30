@@ -33,7 +33,7 @@ Deploys the complete PRIME system end-to-end with no human intervention. Given a
 
 | Secret | Source | Notes |
 |--------|--------|-------|
-| `SUPABASE_URL` | Supabase project settings | https://lsgaifejjoxqudjhkeev.supabase.co |
+| `SUPABASE_URL` | Supabase project settings | https://czoyvxyfewqaoewzxlin.supabase.co |
 | `SUPABASE_ANON_KEY` | Supabase project settings → API | anon public key |
 | `SAM_API_KEY` | api.sam.gov → Account → API Keys | Free, 450 calls/day |
 | `SENDGRID_API_KEY` | sendgrid.com → Settings → API Keys | Free tier → 100 emails/day |
@@ -100,7 +100,7 @@ package.json
 
 ## STEP 2 — DATABASE SETUP
 
-Run in Supabase SQL Editor (project lsgaifejjoxqudjhkeev):
+Run in Supabase SQL Editor (project czoyvxyfewqaoewzxlin):
 
 ```sql
 -- Run schema-gap-fix.sql first

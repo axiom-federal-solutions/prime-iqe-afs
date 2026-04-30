@@ -1,6 +1,6 @@
 -- ============================================================
 -- PRIME IQE — Schema Gap Fix Migration
--- Run in Supabase SQL Editor for project lsgaifejjoxqudjhkeev
+-- Run in Supabase SQL Editor for project czoyvxyfewqaoewzxlin
 -- https://supabase.com → Your Project → SQL Editor → New Query
 -- ============================================================
 

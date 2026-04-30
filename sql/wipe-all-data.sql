@@ -2,7 +2,7 @@
 -- PRIME IQE — Full Data Wipe
 -- Clears all pulled pipeline data. Keeps schema intact.
 -- Run in: Supabase → SQL Editor → New Query → Paste → Run
--- Project: lsgaifejjoxqudjhkeev (prime-db)
+-- Project: czoyvxyfewqaoewzxlin (prime-db)
 -- ============================================================
 
 -- Step 1: Clear all opportunity pipeline data
@@ -44,7 +44,7 @@ WHERE key = 'SAM_CALLS_TODAY';
 -- Step 6: Re-seed api_schemas if it was cleared
 INSERT INTO api_schemas (api_name, endpoint, status) VALUES
   ('SAM.gov',    'https://api.sam.gov/opportunities/v2/search', 'unknown'),
-  ('Supabase',   'https://lsgaifejjoxqudjhkeev.supabase.co',   'unknown'),
+  ('Supabase',   'https://czoyvxyfewqaoewzxlin.supabase.co',   'unknown'),
   ('SendGrid',   'https://api.sendgrid.com/v3',                 'unknown'),
   ('Anthropic',  'https://api.anthropic.com/v1',               'unknown'),
   ('USASpending','https://api.usaspending.gov/api/v2',         'unknown')
