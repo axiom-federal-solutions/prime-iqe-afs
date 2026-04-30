@@ -276,9 +276,7 @@ document.addEventListener('keydown', e=>{
   else if(e.key==='Escape') pinClear();
 });
 
-// PIN disabled — load data immediately on page open, refresh every 5 min
-loadData();
-setInterval(()=>loadData(), 300000);
+// PIN disabled — loadData() is called at the bottom of the page after all functions are defined
 </script>
 <!-- ─── END PIN SCREEN ───────────────────────────────────────────────────── -->
 
@@ -2476,8 +2474,9 @@ setInterval(tk,1000);
 // ─── INIT ───────────────────────────────────────────────────────────────
 // renderHelp runs immediately (no data needed — static content)
 renderHelp();
-// loadData() and the 5-min auto-refresh are triggered by the PIN gate above.
-// They will NOT fire until the correct 4-digit code is entered.
+// PIN disabled — load live data immediately, auto-refresh every 5 minutes
+loadData();
+setInterval(()=>loadData(), 300000);
 </script>
 </body>
 </html>
