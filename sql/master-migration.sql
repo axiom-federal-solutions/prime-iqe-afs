@@ -740,8 +740,283 @@ ALTER TABLE prime_help            ENABLE ROW LEVEL SECURITY;
 
 
 -- ================================================================
+-- PART 8: L6 GROWTH TABLES (added 2026-04-30 — schema-parity update)
+-- These existed in deployed schema but were missing from master-migration.
+-- Adding them here so master-migration.sql is the single source of truth.
+-- ================================================================
+
+-- past_performance: contracts Walker has performed; feeds capability statements + JUDGE
+CREATE TABLE IF NOT EXISTS past_performance (
+  id                     UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  contract_number        TEXT NOT NULL,
+  task_order_number      TEXT,
+  solicitation_number    TEXT,
+  agency                 TEXT NOT NULL,
+  program_office         TEXT,
+  description            TEXT NOT NULL,
+  naics                  TEXT,
+  contract_type          TEXT DEFAULT 'FFP',
+  set_aside              TEXT,
+  prime_or_sub           TEXT NOT NULL,
+  award_value            NUMERIC(14,2),
+  final_value            NUMERIC(14,2),
+  performance_start      DATE,
+  performance_end        DATE,
+  option_years           INTEGER DEFAULT 0,
+  cpars_rating           TEXT,
+  cpars_url              TEXT,
+  ppirs_rating           TEXT,
+  poc_name               TEXT,
+  poc_title              TEXT,
+  poc_email              TEXT,
+  poc_phone              TEXT,
+  narrative              TEXT,
+  narrative_generated_at TIMESTAMPTZ,
+  created_at             TIMESTAMPTZ DEFAULT now(),
+  updated_at             TIMESTAMPTZ DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_past_perf_agency      ON past_performance (agency);
+CREATE INDEX IF NOT EXISTS idx_past_perf_naics       ON past_performance (naics);
+CREATE INDEX IF NOT EXISTS idx_past_perf_perf_end    ON past_performance (performance_end DESC);
+
+
+-- proposal_scores: post-award analysis; feeds JUDGE retraining
+CREATE TABLE IF NOT EXISTS proposal_scores (
+  id                  UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  bid_id              UUID,
+  solicitation_number TEXT,
+  result              TEXT,
+  score_technical     INTEGER DEFAULT 0,
+  score_price         INTEGER DEFAULT 0,
+  score_past_perf     INTEGER DEFAULT 0,
+  score_management    INTEGER DEFAULT 0,
+  score_compliance    INTEGER DEFAULT 0,
+  total_score         INTEGER,
+  strengths           TEXT,
+  weaknesses          TEXT,
+  improvement_notes   TEXT,
+  agency              TEXT,
+  naics               TEXT,
+  contract_value      NUMERIC(14,2),
+  scored_at           TIMESTAMPTZ DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_proposal_scores_bid    ON proposal_scores (bid_id);
+CREATE INDEX IF NOT EXISTS idx_proposal_scores_naics  ON proposal_scores (naics, scored_at DESC);
+
+
+-- sub_payment_log: detailed sub payment tracking (replaces older sub_payments)
+CREATE TABLE IF NOT EXISTS sub_payment_log (
+  id                  UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  contract_id         UUID,
+  contract_number     TEXT,
+  subcontractor_name  TEXT NOT NULL,
+  subcontractor_ein   TEXT,
+  invoice_number      TEXT,
+  invoice_date        DATE NOT NULL,
+  invoice_amount      NUMERIC(14,2) NOT NULL,
+  description         TEXT,
+  prime_received_date DATE,
+  required_pay_date   DATE,
+  actual_pay_date     DATE,
+  status              TEXT NOT NULL DEFAULT 'pending',
+  days_late           INTEGER,
+  alert_sent          BOOLEAN DEFAULT false,
+  escalation_sent     BOOLEAN DEFAULT false,
+  notes               TEXT,
+  created_at          TIMESTAMPTZ DEFAULT now(),
+  updated_at          TIMESTAMPTZ DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_sub_pay_log_status      ON sub_payment_log (status, required_pay_date);
+CREATE INDEX IF NOT EXISTS idx_sub_pay_log_contract    ON sub_payment_log (contract_number);
+
+
+-- teaming_agreements: subs/JV partners we can team with on bids
+CREATE TABLE IF NOT EXISTS teaming_agreements (
+  id               UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  partner_name     TEXT NOT NULL,
+  role             TEXT NOT NULL,
+  naics_codes      TEXT[] NOT NULL DEFAULT '{}',
+  capabilities     TEXT,
+  set_aside_certs  TEXT[] DEFAULT '{}',
+  bonding_capacity NUMERIC(14,2),
+  bonding_limit    NUMERIC(14,2),
+  agreement_type   TEXT DEFAULT 'MOU',
+  expiration_date  DATE,
+  active           BOOLEAN DEFAULT true,
+  contact_name     TEXT,
+  contact_email    TEXT,
+  contact_phone    TEXT,
+  past_projects    INTEGER DEFAULT 0,
+  notes            TEXT,
+  created_at       TIMESTAMPTZ DEFAULT now(),
+  updated_at       TIMESTAMPTZ DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_teaming_active   ON teaming_agreements (active) WHERE active = true;
+CREATE INDEX IF NOT EXISTS idx_teaming_naics    ON teaming_agreements USING GIN (naics_codes);
+
+
+-- forecast_snapshots: Monte Carlo revenue forecasts (L6-06)
+-- Column names MUST match what ledger-monthly.js inserts.
+CREATE TABLE IF NOT EXISTS forecast_snapshots (
+  id                   UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  snapshot_date        DATE NOT NULL DEFAULT CURRENT_DATE,
+  pipeline_count       INTEGER,
+  simulations          INTEGER DEFAULT 10000,
+  p25_revenue          NUMERIC(14,2),
+  p50_revenue          NUMERIC(14,2),
+  p75_revenue          NUMERIC(14,2),
+  mean_revenue         NUMERIC(14,2),
+  std_deviation        NUMERIC(14,2),
+  active_contract_base NUMERIC(14,2),
+  created_at           TIMESTAMPTZ DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_forecast_date ON forecast_snapshots (snapshot_date DESC);
+
+
+-- ml_weights: JUDGE's calibrated scoring weights (L6-01)
+CREATE TABLE IF NOT EXISTS ml_weights (
+  id               UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  version          INTEGER NOT NULL,
+  feature_names    TEXT[] NOT NULL,
+  weights          NUMERIC[] NOT NULL,
+  bias             NUMERIC NOT NULL DEFAULT 0,
+  training_samples INTEGER NOT NULL,
+  wins             INTEGER DEFAULT 0,
+  losses           INTEGER DEFAULT 0,
+  accuracy_pct     NUMERIC,
+  trained_at       TIMESTAMPTZ DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_ml_weights_version ON ml_weights (version DESC);
+
+
+-- ml_training_log: audit trail for each ML retrain run
+CREATE TABLE IF NOT EXISTS ml_training_log (
+  id                  UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  version             INTEGER NOT NULL,
+  samples             INTEGER,
+  accuracy_pct        NUMERIC,
+  wins                INTEGER,
+  losses              INTEGER,
+  feature_importances JSONB,
+  note                TEXT,
+  trained_at          TIMESTAMPTZ DEFAULT now()
+);
+
+
+-- competitor_profiles: aggregated competitor intel (L6-07)
+CREATE TABLE IF NOT EXISTS competitor_profiles (
+  id               UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  competitor_name  TEXT NOT NULL UNIQUE,
+  avg_markup_pct   NUMERIC,
+  win_rate_pct     NUMERIC,
+  bid_count        INTEGER DEFAULT 0,
+  geographic_focus TEXT[],
+  naics_focus      TEXT[],
+  pricing_tier     TEXT CHECK (pricing_tier IN ('low','mid','high')),
+  avg_bid_value    NUMERIC,
+  last_seen_date   DATE,
+  created_at       TIMESTAMPTZ DEFAULT now(),
+  updated_at       TIMESTAMPTZ DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_competitor_profiles_pricing ON competitor_profiles (pricing_tier);
+CREATE INDEX IF NOT EXISTS idx_competitor_profiles_naics   ON competitor_profiles USING GIN (naics_focus);
+
+
+-- co_portal_access: Contracting Officer portal credentials (L6-04)
+CREATE TABLE IF NOT EXISTS co_portal_access (
+  id               UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  contract_id      UUID REFERENCES active_contracts(id) ON DELETE CASCADE,
+  co_email         TEXT NOT NULL,
+  co_name          TEXT,
+  access_token     TEXT UNIQUE DEFAULT encode(gen_random_bytes(32), 'hex'),
+  is_active        BOOLEAN DEFAULT true,
+  expires_at       TIMESTAMPTZ DEFAULT now() + interval '1 year',
+  last_accessed_at TIMESTAMPTZ,
+  granted_by       TEXT DEFAULT 'BRANDI',
+  created_at       TIMESTAMPTZ DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_co_portal_contract ON co_portal_access (contract_id);
+CREATE INDEX IF NOT EXISTS idx_co_portal_token    ON co_portal_access (access_token);
+
+
+-- heartbeats: per-agent liveness signal. Read by dashboard; written by every workflow.
+CREATE TABLE IF NOT EXISTS heartbeats (
+  agent          TEXT PRIMARY KEY,
+  last_run_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
+  last_status    TEXT NOT NULL DEFAULT 'ok',
+  rows_written   INTEGER DEFAULT 0,
+  duration_ms    INTEGER,
+  error_message  TEXT,
+  workflow_run_url TEXT
+);
+
+
+-- RLS for the new tables (parity with the rest)
+ALTER TABLE past_performance     ENABLE ROW LEVEL SECURITY;
+ALTER TABLE proposal_scores      ENABLE ROW LEVEL SECURITY;
+ALTER TABLE sub_payment_log      ENABLE ROW LEVEL SECURITY;
+ALTER TABLE teaming_agreements   ENABLE ROW LEVEL SECURITY;
+ALTER TABLE forecast_snapshots   ENABLE ROW LEVEL SECURITY;
+ALTER TABLE heartbeats           ENABLE ROW LEVEL SECURITY;
+ALTER TABLE ml_weights           ENABLE ROW LEVEL SECURITY;
+ALTER TABLE ml_training_log      ENABLE ROW LEVEL SECURITY;
+ALTER TABLE competitor_profiles  ENABLE ROW LEVEL SECURITY;
+ALTER TABLE co_portal_access     ENABLE ROW LEVEL SECURITY;
+
+DO $$ DECLARE t TEXT;
+BEGIN
+  FOR t IN SELECT unnest(ARRAY[
+    'past_performance','proposal_scores','sub_payment_log','teaming_agreements',
+    'forecast_snapshots','heartbeats','ml_weights','ml_training_log',
+    'competitor_profiles','co_portal_access'
+  ]) LOOP
+    EXECUTE format('DROP POLICY IF EXISTS "anon_read" ON %I', t);
+  END LOOP;
+END $$;
+
+-- Dashboard reads these → anon SELECT allowed
+CREATE POLICY "anon_read" ON past_performance     FOR SELECT TO anon USING (true);
+CREATE POLICY "anon_read" ON teaming_agreements   FOR SELECT TO anon USING (true);
+CREATE POLICY "anon_read" ON sub_payment_log      FOR SELECT TO anon USING (true);
+CREATE POLICY "anon_read" ON forecast_snapshots   FOR SELECT TO anon USING (true);
+CREATE POLICY "anon_read" ON heartbeats           FOR SELECT TO anon USING (true);
+-- proposal_scores, ml_weights, ml_training_log, competitor_profiles, co_portal_access
+-- stay backend-only (no anon policy → deny all by default)
+
+
+-- ================================================================
+-- PART 9: SEED L6 FEATURE-FLAG CONFIG (referenced by agents but never seeded)
+-- Without these rows, agents see NULL → default off → silent skip.
+-- ================================================================
+INSERT INTO system_config (key, value, description) VALUES
+  ('L6_01_ML_ACTIVE',           'false', 'L6-01: JUDGE ML scoring active'),
+  ('L6_01_ML_VERSION',          '0',     'L6-01: ML weights version pointer'),
+  ('L6_03_TEAMING_ACTIVE',      'false', 'L6-03: SCOUT teaming-partner amplification'),
+  ('L6_06_MONTE_CARLO_ACTIVE',  'false', 'L6-06: LEDGER Monte Carlo forecasting'),
+  ('L6_06_LAST_RUN',            '',      'L6-06: timestamp of last Monte Carlo run'),
+  ('L6_07_COMPETITOR_ACTIVE',   'false', 'L6-07: BIDENGINE competitor-aware pricing'),
+  ('ML_LAST_TRAINED',           '',      'L6-01: when JUDGE was last retrained'),
+  ('ML_OUTCOME_COUNT',          '0',     'L6-01: bid outcomes accumulated since last train'),
+  ('MONTE_CARLO_OUTCOME_COUNT', '0',     'L6-06: bid outcomes since last Monte Carlo'),
+  ('SUB_PAYMENT_WARN_DAYS',     '3',     'BRANDI: days before due-date to send sub payment warning'),
+  ('SAM_QUOTA_SOFT_CAP',        '400',   'SCOUT: alert when SAM_CALLS_TODAY exceeds this')
+ON CONFLICT (key) DO NOTHING;
+
+
+-- ================================================================
 -- VERIFICATION — Run this after everything above
--- Expected result: 30 tables listed
+-- Expected result: 40 tables listed
+--   30 original + 5 L6 growth (past_performance, proposal_scores, sub_payment_log,
+--   teaming_agreements, forecast_snapshots) + 1 ops (heartbeats) +
+--   4 ML/competitor/CO-portal tables = 40
 -- ================================================================
 SELECT
   table_name,
