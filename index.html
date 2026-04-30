@@ -129,13 +129,13 @@ body{font-family:'Outfit',system-ui,sans-serif;background:var(--bg);color:var(--
 </head>
 <body>
 
-<!-- ─── PIN LOCK SCREEN ──────────────────────────────────────────────────── -->
+<!-- ─── PIN LOCK SCREEN (temporarily disabled — remove display:none to re-enable) ─── -->
 <div id="pin-screen" style="
   position:fixed;inset:0;z-index:9999;
   background:radial-gradient(ellipse 120% 100% at 60% -10%,rgba(0,229,255,.07),transparent 55%),
              radial-gradient(ellipse 80% 80% at 10% 110%,rgba(233,196,106,.07),transparent 55%),
              #06080F;
-  display:flex;flex-direction:column;align-items:center;justify-content:center;gap:0;
+  display:none;flex-direction:column;align-items:center;justify-content:center;gap:0;
   font-family:'Outfit',system-ui,sans-serif;
 ">
   <!-- Logo mark -->
@@ -275,6 +275,10 @@ document.addEventListener('keydown', e=>{
   else if(e.key==='Backspace') pinBack();
   else if(e.key==='Escape') pinClear();
 });
+
+// PIN disabled — load data immediately on page open, refresh every 5 min
+loadData();
+setInterval(()=>loadData(), 300000);
 </script>
 <!-- ─── END PIN SCREEN ───────────────────────────────────────────────────── -->
 
