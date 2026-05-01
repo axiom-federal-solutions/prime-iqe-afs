@@ -1007,7 +1007,8 @@ INSERT INTO system_config (key, value, description) VALUES
   ('ML_OUTCOME_COUNT',          '0',     'L6-01: bid outcomes accumulated since last train'),
   ('MONTE_CARLO_OUTCOME_COUNT', '0',     'L6-06: bid outcomes since last Monte Carlo'),
   ('SUB_PAYMENT_WARN_DAYS',     '3',     'BRANDI: days before due-date to send sub payment warning'),
-  ('SAM_QUOTA_SOFT_CAP',        '400',   'SCOUT: alert when SAM_CALLS_TODAY exceeds this')
+  ('SAM_QUOTA_SOFT_CAP',        '400',   'SCOUT: alert when SAM_CALLS_TODAY exceeds this'),
+  ('ANTHROPIC_CREDITS_DEPLETED','false', 'lib/claude.js: auto-set true on first 400 billing error; set false manually after topping up at console.anthropic.com/settings/billing')
 ON CONFLICT (key) DO NOTHING;
 
 
