@@ -958,6 +958,50 @@ CREATE TABLE IF NOT EXISTS heartbeats (
   workflow_run_url TEXT
 );
 
+-- claude_cache: SHA-256(prompt) → cached response. Saves credits on repeated work.
+-- See lib/claude-cache.js. Default TTL 7 days; callers can override per-call.
+CREATE TABLE IF NOT EXISTS claude_cache (
+  prompt_hash    TEXT PRIMARY KEY,
+  prompt_preview TEXT,
+  caller         TEXT,
+  model          TEXT,
+  response       TEXT NOT NULL,
+  input_tokens   INTEGER DEFAULT 0,
+  output_tokens  INTEGER DEFAULT 0,
+  cost_usd       NUMERIC(10,6) DEFAULT 0,
+  hit_count      INTEGER DEFAULT 0,
+  ttl_days       INTEGER DEFAULT 7,
+  created_at     TIMESTAMPTZ DEFAULT now(),
+  last_used_at   TIMESTAMPTZ DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_claude_cache_created ON claude_cache (created_at);
+CREATE INDEX IF NOT EXISTS idx_claude_cache_caller  ON claude_cache (caller, created_at DESC);
+
+-- RPC: increment hit_count atomically without read-modify-write race
+CREATE OR REPLACE FUNCTION claude_cache_increment_hit(p_hash TEXT)
+RETURNS VOID AS $$
+BEGIN
+  UPDATE claude_cache
+  SET hit_count    = hit_count + 1,
+      last_used_at = now()
+  WHERE prompt_hash = p_hash;
+END;
+$$ LANGUAGE plpgsql;
+
+-- RPC: purge entries past their TTL (called from cron / T.E.S.T.)
+CREATE OR REPLACE FUNCTION claude_cache_purge_expired()
+RETURNS INTEGER AS $$
+DECLARE
+  deleted_count INTEGER;
+BEGIN
+  DELETE FROM claude_cache
+  WHERE created_at + (ttl_days || ' days')::interval < now();
+  GET DIAGNOSTICS deleted_count = ROW_COUNT;
+  RETURN deleted_count;
+END;
+$$ LANGUAGE plpgsql;
+
 
 -- RLS for the new tables (parity with the rest)
 ALTER TABLE past_performance     ENABLE ROW LEVEL SECURITY;
@@ -966,6 +1010,7 @@ ALTER TABLE sub_payment_log      ENABLE ROW LEVEL SECURITY;
 ALTER TABLE teaming_agreements   ENABLE ROW LEVEL SECURITY;
 ALTER TABLE forecast_snapshots   ENABLE ROW LEVEL SECURITY;
 ALTER TABLE heartbeats           ENABLE ROW LEVEL SECURITY;
+ALTER TABLE claude_cache         ENABLE ROW LEVEL SECURITY;  -- backend-only; no anon policy = deny all
 ALTER TABLE ml_weights           ENABLE ROW LEVEL SECURITY;
 ALTER TABLE ml_training_log      ENABLE ROW LEVEL SECURITY;
 ALTER TABLE competitor_profiles  ENABLE ROW LEVEL SECURITY;
@@ -1014,10 +1059,10 @@ ON CONFLICT (key) DO NOTHING;
 
 -- ================================================================
 -- VERIFICATION — Run this after everything above
--- Expected result: 40 tables listed
+-- Expected result: 41 tables listed
 --   30 original + 5 L6 growth (past_performance, proposal_scores, sub_payment_log,
 --   teaming_agreements, forecast_snapshots) + 1 ops (heartbeats) +
---   4 ML/competitor/CO-portal tables = 40
+--   4 ML/competitor/CO-portal tables + 1 claude_cache = 41
 -- ================================================================
 SELECT
   table_name,
