@@ -11,7 +11,7 @@
 DELETE FROM bids;
 
 -- Step 2: Remove the bad IT consulting opportunities
--- (seeded with NAICS 541511, 541512, 541519, 611430)
+-- (legacy IT/SAP seed rows — NAICS 541511/541512/541519/611430/541611 removed 2026-04-30)
 DELETE FROM opportunities;
 
 -- Verify the tables are now empty

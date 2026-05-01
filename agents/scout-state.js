@@ -12,7 +12,8 @@ const { supabase, logAction } = require('../lib/supabase');
 // ----------------------------------------------------------
 // VERTICAL DERIVATION: Classify opportunity by NAICS code
 // ----------------------------------------------------------
-const SUPPLY_NAICS_PREFIXES = ['541511','541512','541519','541330','561110','561210','424410','332999','339999','611420','611430','541611','541618','488490'];
+// 2026-04-30: removed 541511/541512/541519/611430/541611 — IT/SAP/training out of scope
+const SUPPLY_NAICS_PREFIXES = ['541330','561110','561210','424410','332999','339999','611420','541618','488490'];
 const RE_NAICS_PREFIXES = ['531110','531120','531210','531311','531312','531390'];
 function deriveVertical(naics) {
   const n = (naics || '').trim();

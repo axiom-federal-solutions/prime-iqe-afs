@@ -1,0 +1,4 @@
+# Force LF line endings on shell scripts so bash hooks don't break on Windows
+# (msys bash interpreter chokes on CRLF in shebang lines)
+.githooks/*  text eol=lf
+*.sh         text eol=lf

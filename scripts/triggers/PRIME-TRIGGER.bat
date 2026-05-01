@@ -47,6 +47,10 @@ echo   [24] TEST — Run T.E.S.T. validation suite
 echo   [25] SEED-DB — Seed database with sample data
 echo   [26] DEPLOY — Deploy dashboard to GitHub Pages
 echo.
+echo   COMPOSITE / DIAGNOSTIC
+echo   [27] NO-HUMAN-DEPLOY — Skill Step 4 sequence + diagnostic
+echo   [28] SMOKE-TEST-ALL — Run every agent once + pass/fail report
+echo.
 echo   [0]  EXIT
 echo.
 set /p CHOICE=Pick a number:
@@ -77,6 +81,8 @@ if "%CHOICE%"=="23" call :TRIGGER sam-health-check.yml
 if "%CHOICE%"=="24" call :TRIGGER test-validation.yml
 if "%CHOICE%"=="25" call :TRIGGER seed-db.yml
 if "%CHOICE%"=="26" call :TRIGGER deploy-dashboard.yml
+if "%CHOICE%"=="27" call :TRIGGER no-human-deploy.yml
+if "%CHOICE%"=="28" call :TRIGGER smoke-test-all.yml
 if "%CHOICE%"=="0"  goto END
 
 goto MENU

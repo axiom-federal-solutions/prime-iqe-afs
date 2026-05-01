@@ -1,0 +1,254 @@
+# =============================================================
+# NO_HUMAN_DEPLOY — One-click trigger sequence per skills/no-human-build
+# JOB:  Run the skill's Step 4 trigger sequence in exact order, then
+#       post the diagnostic SQL results to the run summary.
+# WHEN: Use after pushing a fix to validate end-to-end without
+#       clicking through 5 separate workflow_dispatch buttons.
+# COST: ~$1–$2 in Anthropic API.
+# DURATION: ~10–15 minutes.
+# =============================================================
+
+name: No-human deploy + diagnose
+
+on:
+  workflow_dispatch:
+    inputs:
+      reason:
+        description: "Why are you running this? (logged for posterity)"
+        required: false
+        default: "Skill-driven diagnostic"
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+
+jobs:
+  deploy:
+    name: Run skill Step 4 sequence + final diagnostic
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with: { node-version: "24" }
+
+      - name: Install deps
+        run: npm install
+
+      # ── Step 4.0 — Auth probe (fail fast if Supabase wrong) ─────
+      - name: 0. Auth probe — fail fast on bad secrets
+        id: auth
+        run: |
+          STATUS=$(curl -s -o /tmp/r.txt -w "%{http_code}" \
+            -X POST "$SUPABASE_URL/rest/v1/agent_logs" \
+            -H "apikey: $SUPABASE_SERVICE_KEY" \
+            -H "Authorization: Bearer $SUPABASE_SERVICE_KEY" \
+            -H "Content-Type: application/json" \
+            -H "Prefer: return=minimal" \
+            -d '{"agent":"NO_HUMAN_DEPLOY","action":"auth probe","metadata":{"run":"'"$GITHUB_RUN_ID"'"}}')
+          echo "HTTP: $STATUS"
+          if [ "$STATUS" != "201" ] && [ "$STATUS" != "204" ]; then
+            echo "FATAL: service-role auth failed against canonical project"; cat /tmp/r.txt; exit 1
+          fi
+        env:
+          SUPABASE_URL:         ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+
+      # ── Step 4.1 — T.E.S.T. health gate ─────────────────────────
+      - name: 1. T.E.S.T. — preflight health gate
+        id: t1
+        if: always()
+        continue-on-error: true
+        run: node agents/test.js
+        env:
+          SUPABASE_URL:         ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+          SAM_API_KEY:          ${{ secrets.SAM_API_KEY }}
+
+      # ── Step 4.2 — SCOUT (also triggers JUDGE + BRANDI alert) ───
+      - name: 2. SCOUT — SAM.gov + DLA DIBBS scan
+        id: t2
+        if: always()
+        continue-on-error: true
+        run: node agents/scout.js
+        env:
+          SUPABASE_URL:         ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+          SAM_API_KEY:          ${{ secrets.SAM_API_KEY }}
+          CAGE_CODE:            ${{ secrets.CAGE_CODE }}
+
+      # ── Step 4.3 — JUDGE (runs even if scout already triggered) ─
+      - name: 3. JUDGE — score new opportunities
+        id: t3
+        if: always()
+        continue-on-error: true
+        run: node agents/judge.js
+        env:
+          SUPABASE_URL:         ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+          ANTHROPIC_API_KEY:    ${{ secrets.ANTHROPIC_API_KEY }}
+
+      # ── Step 4.4 — RECON suppliers ──────────────────────────────
+      - name: 4. RECON suppliers — federal contractor enrichment
+        id: t4
+        if: always()
+        continue-on-error: true
+        run: node agents/recon-suppliers.js --match-only
+        env:
+          SUPABASE_URL:         ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+          ANTHROPIC_API_KEY:    ${{ secrets.ANTHROPIC_API_KEY }}
+
+      # ── Step 4.5 — BRANDI alert (no daily blast — it's a check) ─
+      - name: 5. BRANDI — STRONG BID alert check
+        id: t5
+        if: always()
+        continue-on-error: true
+        run: node agents/brandi.js alert
+        env:
+          SUPABASE_URL:         ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+          SENDGRID_API_KEY:     ${{ secrets.SENDGRID_API_KEY }}
+          FROM_EMAIL:           ${{ secrets.FROM_EMAIL }}
+          FROM_NAME:            ${{ secrets.FROM_NAME }}
+          ANTHROPIC_API_KEY:    ${{ secrets.ANTHROPIC_API_KEY }}
+
+      # ── Step 4.6 — T.E.S.T. final ───────────────────────────────
+      - name: 6. T.E.S.T. — post-run verification
+        id: t6
+        if: always()
+        continue-on-error: true
+        run: node agents/test.js
+        env:
+          SUPABASE_URL:         ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+          SAM_API_KEY:          ${{ secrets.SAM_API_KEY }}
+
+      # ── Diagnostic — execute sql/diagnose-scout.sql via REST ────
+      # We use Supabase's PostgREST endpoints + count=exact for aggregates.
+      # Results are appended to the GitHub Run Summary as Markdown blocks.
+      - name: 7. DIAGNOSE — read agent_logs + opportunities
+        if: always()
+        run: |
+          set +e
+          echo "## PRIME — Post-deploy diagnostic" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+
+          # ── Q1: Per-vertical row counts (HEAD + count=exact) ────────
+          echo "### Q1 — Opportunity counts by vertical" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Vertical | Rows |" >> "$GITHUB_STEP_SUMMARY"
+          echo "|---|---|" >> "$GITHUB_STEP_SUMMARY"
+          for v in construction supply realestate; do
+            CR=$(curl -s -I -X HEAD "$SUPABASE_URL/rest/v1/opportunities?vertical=eq.$v" \
+              -H "apikey: $SUPABASE_SERVICE_KEY" \
+              -H "Authorization: Bearer $SUPABASE_SERVICE_KEY" \
+              -H "Prefer: count=exact" \
+              -H "Range: 0-0" 2>/dev/null \
+              | tr -d '\r' | grep -i "^content-range:" | awk '{print $2}')
+            CNT=$(echo "$CR" | sed 's|.*/||')
+            echo "| $v | ${CNT:-?} |" >> "$GITHUB_STEP_SUMMARY"
+          done
+          # null/blank verticals
+          CR=$(curl -s -I -X HEAD "$SUPABASE_URL/rest/v1/opportunities?vertical=is.null" \
+            -H "apikey: $SUPABASE_SERVICE_KEY" \
+            -H "Authorization: Bearer $SUPABASE_SERVICE_KEY" \
+            -H "Prefer: count=exact" \
+            -H "Range: 0-0" 2>/dev/null \
+            | tr -d '\r' | grep -i "^content-range:" | awk '{print $2}')
+          CNT=$(echo "$CR" | sed 's|.*/||')
+          echo "| (null) | ${CNT:-?} |" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+
+          # ── Generic JSON-block helper for the agent_logs queries ────
+          q() {
+            local label="$1" path="$2"
+            echo "### $label" >> "$GITHUB_STEP_SUMMARY"
+            echo '```json' >> "$GITHUB_STEP_SUMMARY"
+            curl -s "$SUPABASE_URL$path" \
+              -H "apikey: $SUPABASE_SERVICE_KEY" \
+              -H "Authorization: Bearer $SUPABASE_SERVICE_KEY" \
+              -H "Accept: application/json" | head -c 6000 >> "$GITHUB_STEP_SUMMARY"
+            echo "" >> "$GITHUB_STEP_SUMMARY"
+            echo '```' >> "$GITHUB_STEP_SUMMARY"
+            echo "" >> "$GITHUB_STEP_SUMMARY"
+          }
+
+          # Q2: Per-NAICS SAM.gov scan results (NEW per-NAICS log)
+          q "Q2 — Per-NAICS SAM.gov scan results (last 9 — 3 per vertical × 3 runs)" \
+            "/rest/v1/agent_logs?action=eq.SAM.gov%20NAICS%20scan%20results&order=created_at.desc&limit=9&select=created_at,metadata"
+
+          # Q3: Vertical scan complete summary
+          q "Q3 — Vertical scan complete (unique opps / inserted / failures per vertical)" \
+            "/rest/v1/agent_logs?action=eq.Vertical%20scan%20complete&order=created_at.desc&limit=9&select=created_at,metadata"
+
+          # Q4: Probe results
+          q "Q4 — SAM.gov probe results (auth + base call sanity)" \
+            "/rest/v1/agent_logs?action=in.%28%22SAM.gov%20probe%22%2C%22SAM.gov%20probe%20failed%22%29&order=created_at.desc&limit=6&select=created_at,metadata"
+
+          # Q5: Upsert failures
+          q "Q5 — Upsert failures (Postgres error codes)" \
+            "/rest/v1/agent_logs?action=in.%28%22Upsert%20failed%22%2C%22DIBBS%20upsert%20failed%22%29&order=created_at.desc&limit=20&select=created_at,metadata"
+
+          # Q6: SCOUT timeline
+          q "Q6 — Recent SCOUT scan completions" \
+            "/rest/v1/agent_logs?agent=eq.SCOUT&action=in.%28%22Scan%20complete%22%2C%22Scan%20failed%22%29&order=created_at.desc&limit=10&select=created_at,action,metadata"
+
+          # Q7: Confirm new diagnostic code IS deployed (presence of new log actions)
+          echo "### Q7 — Are the new diagnostic logs being written? (sanity)" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "If any of these are 0, the new SCOUT diagnostic code hasn't deployed — old binary is running." >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "| New log action | Rows in last hour |" >> "$GITHUB_STEP_SUMMARY"
+          echo "|---|---|" >> "$GITHUB_STEP_SUMMARY"
+          ONE_HOUR_AGO=$(date -u -d '1 hour ago' +%Y-%m-%dT%H:%M:%S)
+          for action in "SAM.gov%20NAICS%20scan%20results" "Vertical%20scan%20complete" "SAM.gov%20probe"; do
+            CR=$(curl -s -I -X HEAD "$SUPABASE_URL/rest/v1/agent_logs?action=eq.$action&created_at=gte.$ONE_HOUR_AGO" \
+              -H "apikey: $SUPABASE_SERVICE_KEY" \
+              -H "Authorization: Bearer $SUPABASE_SERVICE_KEY" \
+              -H "Prefer: count=exact" \
+              -H "Range: 0-0" 2>/dev/null \
+              | tr -d '\r' | grep -i "^content-range:" | awk '{print $2}')
+            CNT=$(echo "$CR" | sed 's|.*/||')
+            ACT_HUMAN=$(echo "$action" | sed 's/%20/ /g')
+            echo "| \`$ACT_HUMAN\` | ${CNT:-?} |" >> "$GITHUB_STEP_SUMMARY"
+          done
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+
+          # Step outcomes
+          {
+            echo "### Pipeline step outcomes"
+            echo ""
+            echo "| Step | Result |"
+            echo "|---|---|"
+            echo "| 0. Auth probe                       | ${{ steps.auth.outcome }} |"
+            echo "| 1. T.E.S.T. (preflight)             | ${{ steps.t1.outcome }} |"
+            echo "| 2. SCOUT                            | ${{ steps.t2.outcome }} |"
+            echo "| 3. JUDGE                            | ${{ steps.t3.outcome }} |"
+            echo "| 4. RECON suppliers                  | ${{ steps.t4.outcome }} |"
+            echo "| 5. BRANDI alert                     | ${{ steps.t5.outcome }} |"
+            echo "| 6. T.E.S.T. (post-run)              | ${{ steps.t6.outcome }} |"
+          } >> "$GITHUB_STEP_SUMMARY"
+        env:
+          SUPABASE_URL:         ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+
+      # ── Audit row so the dashboard sees this run happened ──────
+      - name: Log run to agent_logs
+        if: always()
+        run: |
+          BODY=$(printf '{"agent":"NO_HUMAN_DEPLOY","action":"deploy + diagnose complete","metadata":{"run_id":"%s","reason":"%s","auth":"%s","scout":"%s","judge":"%s"}}' \
+            "$GITHUB_RUN_ID" "${{ inputs.reason }}" \
+            "${{ steps.auth.outcome }}" "${{ steps.t2.outcome }}" "${{ steps.t3.outcome }}")
+          curl -s -o /dev/null -X POST "$SUPABASE_URL/rest/v1/agent_logs" \
+            -H "apikey: $SUPABASE_SERVICE_KEY" \
+            -H "Authorization: Bearer $SUPABASE_SERVICE_KEY" \
+            -H "Content-Type: application/json" \
+            -H "Prefer: return=minimal" \
+            -d "$BODY" || true
+        env:
+          SUPABASE_URL:         ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}

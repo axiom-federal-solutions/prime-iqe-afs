@@ -472,7 +472,8 @@ function fmt(v){if(!v&&v!==0)return '—';return v>=1e6?'$'+(v/1e6).toFixed(1)+'
 function daysLeft(deadline){if(!deadline)return null;const d=Math.ceil((new Date(deadline)-new Date())/86400000);return Math.max(0,d);}
 // Derive vertical from NAICS if DB column not yet set
 // Supply NAICS: IT, training, janitorial, food, logistics, manufacturing, etc.
-const SUPPLY_NAICS_PREFIXES=['541511','541512','541519','541330','561110','561210','424410','332999','339999','611420','611430','541611','541618','488490','424710','424130','424490','424120','424690','423440','424310'];
+// 2026-04-30: removed 541511/541512/541519/611430/541611 — IT/SAP/training out of scope
+const SUPPLY_NAICS_PREFIXES=['541330','561110','561210','424410','332999','339999','611420','541618','488490','424710','424130','424490','424120','424690','423440','424310'];
 // ─── SUPPLY CATEGORY FILTER — maps each tab button to specific NAICS prefixes ──
 // Used by selectSupplyCat() and filterBySupplyCat() to drill into product categories
 const SUPPLY_CATS={

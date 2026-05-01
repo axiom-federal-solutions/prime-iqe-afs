@@ -16,8 +16,9 @@ const { fetchJSON, fetchText, sleep } = require('../lib/fetch-retry');
 // NAICS prefix lists used by deriveVertical() to tag each opportunity's vertical
 // Covers all 8 supply categories + IT/training/logistics catch-alls
 const SUPPLY_NAICS_PREFIXES = [
-  '541511','541512','541519','541330','561110','561210',
-  '424410','332999','339999','611420','611430','541611','541618','488490',
+  // 2026-04-30: removed 541511/541512/541519/611430/541611 — IT/SAP/training out of scope
+  '541330','561110','561210',
+  '424410','332999','339999','611420','541618','488490',
   // Supply category codes (matches SUPPLY_CATS in the dashboard)
   '424710','424720',         // Fuel
   '561720','424130',         // Janitorial
@@ -139,7 +140,7 @@ const SAM_ALERT_THRESHOLD = 800;  // Warn at 80%
 const SAM_QUOTA_SOFT_CAP  = 600;  // At 60%: skip Tier 3 + low-value NAICS to preserve quota
 
 // Low-priority NAICS codes skipped when quota >600 — high cost, low win probability
-// High-value codes (236220, 541511) always run regardless of quota
+// High-value codes (236220, 424710) always run regardless of quota
 const LOW_PRIORITY_NAICS = new Set([
   '238350', // Finish Carpentry
   '237110', // Water & Sewer Line
@@ -274,24 +275,35 @@ async function scanSAMGov(type, naicsCodes, globalCallsUsed = 0) {
     const probeTotal  = probe?.totalRecords ?? probe?.total ?? 0;
     console.log('SCOUT PROBE: top-level keys =', JSON.stringify(probeKeys));
     console.log('SCOUT PROBE: totalRecords =', probeTotal, '| opportunitiesData sample count =', probeCount);
+    // 2026-04-30: surface probe results to agent_logs so we can diagnose without CI logs
+    await logAction('SCOUT', 'SAM.gov probe', {
+      vertical:        type,
+      probe_naics:     '236220',
+      total_records:   probeTotal,
+      sample_count:    probeCount,
+      response_keys:   probeKeys,
+    });
     if (probeCount === 0 && probeTotal === 0) {
       console.warn('SCOUT PROBE: API returned 0 results for 236220 — check API key validity and date range');
     }
     await sleep(500);
   } catch (probeErr) {
     console.warn('SCOUT PROBE: Failed —', probeErr.message);
+    await logAction('SCOUT', 'SAM.gov probe failed', { vertical: type, error: probeErr.message });
     totalApiCalls++;
   }
 
   // Phase 1: Collect all raw opportunities from SAM.gov, deduplicated by solicitation number
   // Collecting first then deduping prevents JUDGE from scoring the same opp twice
   const rawBySOL = new Map(); // solicitation_number → { opp, naics }
+  const naicsCounts = {};     // 2026-04-30: per-NAICS result counts for diagnostic logging
 
   for (const naics of naicsCodes) {
     // Quota soft cap: skip low-priority NAICS when >600 calls used today
     const callsSoFar = globalCallsUsed + totalApiCalls;
     if (callsSoFar >= SAM_QUOTA_SOFT_CAP && LOW_PRIORITY_NAICS.has(naics)) {
       console.log('SCOUT: Quota soft cap (' + callsSoFar + '/' + SAM_DAILY_LIMIT + ') — skipping low-priority NAICS ' + naics);
+      naicsCounts[naics] = 'skipped_quota';
       continue;
     }
 
@@ -316,7 +328,9 @@ async function scanSAMGov(type, naicsCodes, globalCallsUsed = 0) {
 
       // Support both field names in case SAM.gov API changes key names
       const opps = data?.opportunitiesData || data?.data || [];
-      console.log('SCOUT: NAICS ' + naics + ' — ' + opps.length + ' raw results (quota: ' + (globalCallsUsed + totalApiCalls) + '/' + SAM_DAILY_LIMIT + ')');
+      const total = data?.totalRecords ?? data?.total ?? opps.length;
+      naicsCounts[naics] = { returned: opps.length, total };
+      console.log('SCOUT: NAICS ' + naics + ' — ' + opps.length + ' raw results (totalRecords=' + total + ', quota: ' + (globalCallsUsed + totalApiCalls) + '/' + SAM_DAILY_LIMIT + ')');
 
       for (const opp of opps) {
         // Deduplicate: same solicitation number across multiple NAICS — keep first occurrence
@@ -330,18 +344,55 @@ async function scanSAMGov(type, naicsCodes, globalCallsUsed = 0) {
 
     } catch (err) {
       console.warn('SCOUT: SAM.gov error for NAICS ' + naics + ' —', err.message);
+      naicsCounts[naics] = { error: err.message };
       totalApiCalls++;
     }
   }
 
+  // 2026-04-30: log per-NAICS counts so SAM.gov coverage is visible from the dashboard
+  // This is the row that proves whether construction/supply NAICS return zero from SAM.gov
+  await logAction('SCOUT', 'SAM.gov NAICS scan results', {
+    vertical:       type,
+    naics_counts:   naicsCounts,
+    total_unique:   rawBySOL.size,
+    api_calls:      totalApiCalls,
+  });
+
   // Phase 2: Upsert deduplicated results
   let totalInserted = 0;
+  let failStreak    = 0;   // consecutive upsert failures — throw if 3 in a row
+  let totalFailures = 0;
   console.log('SCOUT: ' + type + ' — ' + rawBySOL.size + ' unique opps after dedup (from ' + totalApiCalls + ' API calls)');
 
   for (const { opp, naics } of rawBySOL.values()) {
     const inserted = await upsertOpportunity(opp, type, naics);
-    if (inserted) totalInserted++;
+    if (inserted) {
+      totalInserted++;
+      failStreak = 0;  // reset streak on any success
+    } else {
+      failStreak++;
+      totalFailures++;
+      if (failStreak >= 3) {
+        // Three in a row = systemic write breakage. Stop pretending we're fine.
+        await logAction('SCOUT', 'Aborted — consecutive upsert failures', {
+          vertical:      type,
+          fail_streak:   failStreak,
+          total_failures: totalFailures,
+          inserted_so_far: totalInserted,
+        });
+        throw new Error('SCOUT: 3 consecutive upsert failures in vertical=' + type + ' — aborting to fail loud');
+      }
+    }
   }
+
+  // Summary log so we can see per-vertical insert success rate without digging in CI
+  await logAction('SCOUT', 'Vertical scan complete', {
+    vertical:        type,
+    unique_opps:     rawBySOL.size,
+    inserted:        totalInserted,
+    failures:        totalFailures,
+    api_calls_used:  totalApiCalls,
+  });
 
   return { count: totalInserted, apiCalls: totalApiCalls };
 }
@@ -353,7 +404,17 @@ async function scanSAMGov(type, naicsCodes, globalCallsUsed = 0) {
 async function upsertOpportunity(opp, type, naics) {
   const solNum   = opp.solicitationNumber || opp.noticeId || ('SAM-' + Date.now());
   const deadline = opp.responseDeadLine || opp.archiveDate || null;
-  const value    = parseValue(opp.award?.amount || opp.placeOfPerformance?.state || null);
+  // BUG FIX (2026-04-30): old code mistakenly fell through to opp.placeOfPerformance?.state,
+  // passing a state code/object to parseValue and forcing every open solicitation to insert
+  // with value=NULL. Use real SAM.gov v2 value fields in priority order: actual award amount
+  // first, then base+options ceiling, then pre-award estimate, then IDIQ ceiling.
+  const value    = parseValue(
+    opp.award?.amount ||
+    opp.baseAndAllOptionsValue ||
+    opp.estimatedTotalValue ||
+    opp.awardCeiling ||
+    null
+  );
   const agency   = opp.fullParentPathName || opp.organizationHierarchy?.[0]?.name || 'Unknown Agency';
   const state    = extractState(opp);
 
@@ -390,7 +451,17 @@ async function upsertOpportunity(opp, type, naics) {
   }, { onConflict: 'solicitation_number' });
 
   if (error) {
+    // HARDENED 2026-04-30: was console.warn (stderr only, invisible after CI run completes).
+    // Now writes to agent_logs so dashboard surfaces the failure.
     console.warn('SCOUT: Failed to upsert ' + solNum + ' —', error.message);
+    await logAction('SCOUT', 'Upsert failed', {
+      solicitation_number: solNum,
+      vertical:            type,
+      naics:               naics,
+      error:               error.message,
+      error_code:          error.code || null,
+      error_hint:          error.hint || null,
+    });
     return false;
   }
 
@@ -471,7 +542,16 @@ async function scanDLADIBBS() {
         posted_date:         pubDate ? new Date(pubDate).toISOString().split('T')[0] : new Date().toISOString().split('T')[0],
       }, { onConflict: 'solicitation_number' });
 
-      if (!error) inserted++;
+      if (error) {
+        // HARDENED 2026-04-30: surface DIBBS upsert failures to agent_logs
+        await logAction('SCOUT', 'DIBBS upsert failed', {
+          solicitation_number: solNum,
+          naics:               naics,
+          error:               error.message,
+        });
+      } else {
+        inserted++;
+      }
     }
 
     console.log('SCOUT: DLA DIBBS — ' + inserted + ' supply opportunities saved');
@@ -480,7 +560,9 @@ async function scanDLADIBBS() {
     }
 
   } catch (err) {
+    // HARDENED 2026-04-30: was console.warn (invisible after run); now to agent_logs
     console.warn('SCOUT: DLA DIBBS scan error —', err.message);
+    await logAction('SCOUT', 'DLA DIBBS scan error', { error: err.message });
   }
 
   return inserted;

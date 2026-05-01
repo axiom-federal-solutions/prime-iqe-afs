@@ -9,9 +9,10 @@ ALTER TABLE opportunities ADD COLUMN IF NOT EXISTS vertical text DEFAULT 'constr
 
 -- Backfill vertical from NAICS code
 UPDATE opportunities SET vertical = 'supply'
-WHERE naics IN ('541511','541512','541519','541330','561110','561210',
-                '424410','332999','339999','611420','611430','541611',
-                '541618','488490','611420','611430');
+-- 2026-04-30: removed 541511/541512/541519/611430/541611 — IT/SAP/training out of scope
+WHERE naics IN ('541330','561110','561210',
+                '424410','332999','339999','611420',
+                '541618','488490');
 
 UPDATE opportunities SET vertical = 'realestate'
 WHERE naics IN ('531110','531120','531210','531311','531312','531390');

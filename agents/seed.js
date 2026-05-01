@@ -14,164 +14,165 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_KEY
 );
 
+// ─── Vertical classification — must stay in lockstep with agents/scout.js ───
+// Without these, seed rows fall to DB DEFAULT 'construction' even when their
+// NAICS clearly belongs to supply or realestate, and they show up under the
+// wrong dashboard tab.
+const SUPPLY_NAICS_PREFIXES = [
+  // 2026-04-30: removed 541511/541512/541519/611430/541611 — IT/SAP/training out of scope
+  '541330','561110','561210',
+  '424410','332999','339999','611420','541618','488490',
+  '424710','424720','561720','424130','339113','423440',
+  '424120','453210','424490','311999','424690','423450','424310','315990',
+];
+const RE_NAICS_PREFIXES = [
+  '531110','531120','531190','531210','531311','531312','531390','532120','532412',
+];
+function deriveVertical(naics) {
+  const n = (naics || '').trim();
+  if (RE_NAICS_PREFIXES.some(p => n.startsWith(p))) return 'realestate';
+  if (SUPPLY_NAICS_PREFIXES.some(p => n.startsWith(p))) return 'supply';
+  return 'construction';
+}
+// scout.js writes type='real_estate' (underscore) but vertical='realestate' (no underscore).
+// Keep that convention here so dashboard filters match.
+function deriveType(vertical) {
+  return vertical === 'realestate' ? 'real_estate' : vertical;
+}
+
+// 2026-04-30: replaced legacy IT/SAP samples with realistic construction + supply +
+// real estate test data using NAICS codes that SCOUT actually scans.
 const opportunities = [
+  // ── CONSTRUCTION (3 samples) ──────────────────────────────────────────
   {
-    solicitation_number: 'W912ER-26-R-0042',
-    title: 'IT Systems Integration and SAP Configuration Support — Fort Bragg',
+    solicitation_number: 'W912EE-26-R-0014',
+    title: 'Renovation of Building 5050 — Belle Chasse NSA',
     agency: 'Department of Defense',
-    sub_office: 'U.S. Army Corps of Engineers',
-    naics: '541512',
-    set_aside: 'Small Business',
-    location: 'Fayetteville, NC',
-    state: 'NC',
-    value: 2400000,
-    posted_date: '2026-04-10',
-    deadline: '2026-05-15',
-    description_url: 'https://sam.gov/opp/W912ER-26-R-0042',
+    sub_office: 'U.S. Army Corps of Engineers — New Orleans District',
+    naics: '236220',
+    set_aside: 'SDB',
+    location: 'Belle Chasse, LA',
+    state: 'LA',
+    value: 3200000,
+    posted_date: '2026-04-22',
+    deadline: '2026-05-22',
+    description_url: 'https://sam.gov/opp/W912EE-26-R-0014',
     source: 'SAM.gov',
     status: 'new',
   },
   {
-    solicitation_number: 'N00189-26-R-Z001',
-    title: 'SAP ERP Implementation and Training Services — NAVSUP',
-    agency: 'Department of the Navy',
-    sub_office: 'Naval Supply Systems Command',
-    naics: '541519',
-    set_aside: 'SDVOSB',
-    location: 'Mechanicsburg, PA',
-    state: 'PA',
-    value: 5800000,
-    posted_date: '2026-04-08',
-    deadline: '2026-05-20',
-    description_url: 'https://sam.gov/opp/N00189-26-R-Z001',
-    source: 'SAM.gov',
-    status: 'new',
-  },
-  {
-    solicitation_number: 'GS-00F-0026W-Q0099',
-    title: 'Enterprise Software Training and Instructional Design Services',
-    agency: 'General Services Administration',
-    sub_office: 'Federal Acquisition Service',
-    naics: '611430',
-    set_aside: '8(a)',
-    location: 'Washington, DC',
-    state: 'DC',
-    value: 1200000,
-    posted_date: '2026-04-15',
-    deadline: '2026-05-10',
-    description_url: 'https://sam.gov/opp/GS-00F-0026W-Q0099',
-    source: 'SAM.gov',
-    status: 'new',
-  },
-  {
-    solicitation_number: 'FA8726-26-R-0055',
-    title: 'IT Consulting and Systems Administration — Air Force Materiel Command',
+    solicitation_number: 'FA3030-26-R-0089',
+    title: 'Electrical Distribution Upgrade — Keesler AFB Hangar 4',
     agency: 'Department of the Air Force',
-    sub_office: 'Air Force Materiel Command',
-    naics: '541511',
+    sub_office: 'Air Education and Training Command',
+    naics: '238210',
     set_aside: 'Small Business',
-    location: 'Wright-Patterson AFB, OH',
-    state: 'OH',
-    value: 3750000,
-    posted_date: '2026-04-12',
-    deadline: '2026-05-28',
-    description_url: 'https://sam.gov/opp/FA8726-26-R-0055',
-    source: 'SAM.gov',
-    status: 'new',
-  },
-  {
-    solicitation_number: 'HSCG23-26-R-PBN012',
-    title: 'ERP System Upgrade and Configuration — Coast Guard Financial Systems',
-    agency: 'Department of Homeland Security',
-    sub_office: 'U.S. Coast Guard',
-    naics: '541519',
-    set_aside: null,
-    location: 'Washington, DC',
-    state: 'DC',
-    value: 8200000,
-    posted_date: '2026-04-05',
-    deadline: '2026-05-05',
-    description_url: 'https://sam.gov/opp/HSCG23-26-R-PBN012',
-    source: 'SAM.gov',
-    status: 'new',
-  },
-  {
-    solicitation_number: 'TIRNO-26-R-00088',
-    title: 'SAP Training Program Development and Delivery — IRS Enterprise Systems',
-    agency: 'Department of the Treasury',
-    sub_office: 'Internal Revenue Service',
-    naics: '611430',
-    set_aside: 'HUBZone',
-    location: 'Ogden, UT',
-    state: 'UT',
-    value: 950000,
+    location: 'Biloxi, MS',
+    state: 'MS',
+    value: 1450000,
     posted_date: '2026-04-18',
     deadline: '2026-05-30',
-    description_url: 'https://sam.gov/opp/TIRNO-26-R-00088',
+    description_url: 'https://sam.gov/opp/FA3030-26-R-0089',
     source: 'SAM.gov',
     status: 'new',
   },
   {
-    solicitation_number: 'VA119-26-R-0203',
-    title: 'IT Systems Support and Software Administration — VA Medical Centers',
+    solicitation_number: 'VA256-26-R-0072',
+    title: 'Interior Painting and Wall Repair — Houston VAMC',
     agency: 'Department of Veterans Affairs',
-    sub_office: 'Veterans Health Administration',
-    naics: '541512',
+    sub_office: 'VISN 16 — South Central VA Health Care Network',
+    naics: '238320',
     set_aside: 'SDVOSB',
-    location: 'Multiple Locations, Nationwide',
+    location: 'Houston, TX',
     state: 'TX',
-    value: 4500000,
-    posted_date: '2026-04-20',
-    deadline: '2026-06-01',
-    description_url: 'https://sam.gov/opp/VA119-26-R-0203',
+    value: 380000,
+    posted_date: '2026-04-25',
+    deadline: '2026-05-26',
+    description_url: 'https://sam.gov/opp/VA256-26-R-0072',
+    source: 'SAM.gov',
+    status: 'new',
+  },
+
+  // ── SUPPLY (3 samples) ────────────────────────────────────────────────
+  {
+    solicitation_number: 'SPE600-26-R-0210',
+    title: 'Bulk Diesel Fuel Delivery — Barksdale AFB',
+    agency: 'Defense Logistics Agency',
+    sub_office: 'DLA Energy',
+    naics: '424710',
+    set_aside: 'SDB',
+    location: 'Bossier City, LA',
+    state: 'LA',
+    value: 2750000,
+    posted_date: '2026-04-15',
+    deadline: '2026-05-12',
+    description_url: 'https://sam.gov/opp/SPE600-26-R-0210',
     source: 'SAM.gov',
     status: 'new',
   },
   {
-    solicitation_number: 'DISA-26-Q-IT-0047',
-    title: 'Cloud Migration and Enterprise IT Modernization Support',
-    agency: 'Defense Information Systems Agency',
-    sub_office: 'DISA Field Command',
-    naics: '541511',
-    set_aside: null,
-    location: 'Fort Meade, MD',
-    state: 'MD',
-    value: 12500000,
-    posted_date: '2026-04-01',
-    deadline: '2026-05-01',
-    description_url: 'https://sam.gov/opp/DISA-26-Q-IT-0047',
-    source: 'SAM.gov',
-    status: 'new',
-  },
-  {
-    solicitation_number: 'ED-OCIO-26-R-0011',
-    title: 'Learning Management System Administration and Instructional Design',
-    agency: 'Department of Education',
-    sub_office: 'Office of the CIO',
-    naics: '611430',
-    set_aside: '8(a)',
-    location: 'Washington, DC',
-    state: 'DC',
-    value: 680000,
-    posted_date: '2026-04-22',
-    deadline: '2026-06-10',
-    description_url: 'https://sam.gov/opp/ED-OCIO-26-R-0011',
-    source: 'SAM.gov',
-    status: 'new',
-  },
-  {
-    solicitation_number: 'HHS-2026-IT-TRN-0088',
-    title: 'Enterprise Resource Planning Training and Change Management — HHS',
-    agency: 'Department of Health and Human Services',
-    sub_office: 'Office of the Secretary',
-    naics: '541611',
+    solicitation_number: 'SPE300-26-R-0118',
+    title: 'Janitorial Paper Products IDIQ — Gulf Coast Region',
+    agency: 'Defense Logistics Agency',
+    sub_office: 'DLA Troop Support',
+    naics: '424130',
     set_aside: 'Small Business',
-    location: 'Rockville, MD',
-    state: 'MD',
-    value: 2100000,
-    posted_date: '2026-04-17',
-    deadline: '2026-05-25',
-    description_url: 'https://sam.gov/opp/HHS-2026-IT-TRN-0088',
+    location: 'Multiple — LA/MS/AL/FL',
+    state: 'LA',
+    value: 890000,
+    posted_date: '2026-04-12',
+    deadline: '2026-05-08',
+    description_url: 'https://sam.gov/opp/SPE300-26-R-0118',
+    source: 'SAM.gov',
+    status: 'new',
+  },
+  {
+    solicitation_number: 'SPE700-26-R-0047',
+    title: 'Personal Protective Equipment — Surgical Masks & Gloves',
+    agency: 'Defense Logistics Agency',
+    sub_office: 'DLA Troop Support — Medical',
+    naics: '339113',
+    set_aside: 'HUBZone',
+    location: 'Mechanicsburg, PA',
+    state: 'PA',
+    value: 540000,
+    posted_date: '2026-04-20',
+    deadline: '2026-05-18',
+    description_url: 'https://sam.gov/opp/SPE700-26-R-0047',
+    source: 'SAM.gov',
+    status: 'new',
+  },
+
+  // ── REAL ESTATE & RENTAL (2 samples — proves dashboard cross-vertical) ─
+  {
+    solicitation_number: 'GS-07P-26-LSO-0042',
+    title: 'GSA Office Lease — 12,000 RSF, New Orleans CBD',
+    agency: 'General Services Administration',
+    sub_office: 'GSA PBS Region 7',
+    naics: '531120',
+    set_aside: 'Small Business',
+    location: 'New Orleans, LA',
+    state: 'LA',
+    value: 4200000,
+    posted_date: '2026-04-19',
+    deadline: '2026-06-02',
+    description_url: 'https://sam.gov/opp/GS-07P-26-LSO-0042',
+    source: 'SAM.gov',
+    status: 'new',
+  },
+  {
+    solicitation_number: 'VA257-26-Q-PM-0011',
+    title: 'Property Management Services — VA Outpatient Clinic Mobile',
+    agency: 'Department of Veterans Affairs',
+    sub_office: 'VISN 16',
+    naics: '531312',
+    set_aside: 'SDVOSB',
+    location: 'Mobile, AL',
+    state: 'AL',
+    value: 720000,
+    posted_date: '2026-04-23',
+    deadline: '2026-05-28',
+    description_url: 'https://sam.gov/opp/VA257-26-Q-PM-0011',
     source: 'SAM.gov',
     status: 'new',
   },
@@ -180,9 +181,28 @@ const opportunities = [
 async function seedOpportunities() {
   console.log('SEED: Inserting ' + opportunities.length + ' test opportunities into prime-db...');
 
+  // Stamp vertical + type from NAICS so seed rows land in the correct dashboard tab.
+  // Without this, every IT/training opp (NAICS 541xxx, 611xxx) defaults to 'construction'
+  // because that's the DB column default — even though scout.js classifies them as 'supply'.
+  const stamped = opportunities.map(opp => {
+    const vertical = deriveVertical(opp.naics);
+    return {
+      ...opp,
+      vertical,
+      type: deriveType(vertical),
+    };
+  });
+
+  // Quick visibility into what the seed will write
+  const counts = stamped.reduce((acc, o) => {
+    acc[o.vertical] = (acc[o.vertical] || 0) + 1;
+    return acc;
+  }, {});
+  console.log('SEED: Vertical distribution —', counts);
+
   const { data, error } = await supabase
     .from('opportunities')
-    .upsert(opportunities, { onConflict: 'solicitation_number' })
+    .upsert(stamped, { onConflict: 'solicitation_number' })
     .select('id, solicitation_number, title');
 
   if (error) {

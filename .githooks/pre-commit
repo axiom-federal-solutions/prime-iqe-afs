@@ -1,0 +1,46 @@
+#!/usr/bin/env bash
+# =============================================================
+# PRIME pre-commit hook — block stale Supabase project IDs
+# Canonical project: czoyvxyfewqaoewzxlin
+# Activated by: git config core.hooksPath .githooks
+#               (runs automatically on `npm install` via prepare script)
+# Bypass for emergencies (don't): git commit --no-verify
+# =============================================================
+set -e
+
+# Stale project IDs that previously trapped the build
+STALE='luilinnjlsmtgkqopzmg|lsgaifejjoxqudjhkeev'
+
+# Look only at lines being ADDED in this commit (lines starting with +,
+# excluding the +++ file header). This way you CAN remove stale IDs.
+# Exclude .githooks/ itself + memory/ folder + this session's archived
+# audit files — the IDs appear in those files BY DESIGN to document the
+# block list. Excluding them prevents the hook from blocking its own
+# definition.
+HITS=$(git diff --cached --diff-filter=AM 2>/dev/null \
+  -- ':!.githooks/*' \
+     ':!**/memory/*' \
+     ':!**/PRIME_Build_Session_Summary.html' \
+  | grep -E "^\+[^+].*(${STALE})" || true)
+
+if [ -n "$HITS" ]; then
+  echo ""
+  echo "╔══════════════════════════════════════════════════════════════════╗"
+  echo "║  COMMIT BLOCKED — stale Supabase project ID detected             ║"
+  echo "╚══════════════════════════════════════════════════════════════════╝"
+  echo ""
+  echo "  Canonical project: czoyvxyfewqaoewzxlin"
+  echo "  Do not commit references to luilinnjlsmtgkqopzmg or lsgaifejjoxqudjhkeev."
+  echo ""
+  echo "  Offending lines (showing first 10):"
+  echo "$HITS" | head -10 | sed 's/^/    /'
+  echo ""
+  echo "  To find every offender:"
+  echo "    git diff --cached | grep -E '${STALE}'"
+  echo ""
+  echo "  Emergency bypass (NOT recommended): git commit --no-verify"
+  echo ""
+  exit 1
+fi
+
+exit 0
