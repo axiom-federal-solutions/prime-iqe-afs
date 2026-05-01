@@ -258,9 +258,14 @@ async function scanSAMGov(type, naicsCodes, globalCallsUsed = 0) {
   // Probe call: verify API key + response shape before full scan
   // Uses a single known-active NAICS (236220) to confirm data flows end-to-end
   try {
+    // 2026-04-30 BUG FIX: SAM.gov v2 uses 'ncode' for NAICS filter.
+    // Old 'naicsCode' was silently ignored, returning the unfiltered ~7166-opp
+    // pool for every query — diagnosed via Q2 totalRecords=7166 identical for
+    // all 9 real estate NAICS codes. Real estate appeared to work only because
+    // it ran last and overwrote prior verticals' stamps via upsert.
     const probeParams = new URLSearchParams({
       api_key:    SAM_API_KEY,
-      naicsCode:  '236220',
+      ncode:      '236220',
       postedFrom: weekAgo,
       postedTo:   today,
       limit:      '3',
@@ -311,9 +316,10 @@ async function scanSAMGov(type, naicsCodes, globalCallsUsed = 0) {
       // NOTE: typeOfSetAside is intentionally excluded — 'SDB,' trailing comma returns 0 results.
       // NOTE: 'active: true' is NOT a valid SAM.gov v2 parameter — omitted to avoid silent filtering.
       // Active opportunities are the default when no status filter is specified.
+      // 2026-04-30 BUG FIX: 'ncode' not 'naicsCode' for SAM.gov v2 NAICS filter
       const params = new URLSearchParams({
         api_key:    SAM_API_KEY,
-        naicsCode:  naics,
+        ncode:      naics,
         postedFrom: weekAgo,   // MM/dd/yyyy — required by SAM.gov v2
         postedTo:   today,     // MM/dd/yyyy — required by SAM.gov v2
         limit:      '50',
