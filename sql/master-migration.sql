@@ -1033,8 +1033,47 @@ CREATE POLICY "anon_read" ON teaming_agreements   FOR SELECT TO anon USING (true
 CREATE POLICY "anon_read" ON sub_payment_log      FOR SELECT TO anon USING (true);
 CREATE POLICY "anon_read" ON forecast_snapshots   FOR SELECT TO anon USING (true);
 CREATE POLICY "anon_read" ON heartbeats           FOR SELECT TO anon USING (true);
--- proposal_scores, ml_weights, ml_training_log, competitor_profiles, co_portal_access
--- stay backend-only (no anon policy → deny all by default)
+-- proposal_scores, ml_weights, ml_training_log, claude_cache stay backend-only
+-- (no anon policy → deny all by default)
+
+
+-- ================================================================
+-- PART 9b: ANON SELECT POLICIES FOR DASHBOARD-NEEDED PART-2 TABLES
+-- 2026-04-30: Audit revealed 22 dashboard-relevant tables had RLS on
+-- with NO policy → anon key got empty arrays back, no error visible.
+-- Adding the missing anon_read policies idempotently.
+-- ================================================================
+DO $$
+DECLARE t TEXT;
+BEGIN
+  FOR t IN SELECT unnest(ARRAY[
+    'agent_logs',          -- Agents & Config activity timeline
+    'prime_help',          -- Help & FAQ tab
+    'compliance',          -- Certs / Bonds / Safety panel
+    'cpars_ratings',       -- Performance panel
+    'gao_protests',        -- Market Intel
+    'sam_health_checks',   -- System health pill
+    'sub_payments',        -- Money Recovery
+    'debrief_tracker',     -- Loss debrief panel
+    'certified_payroll',   -- EXEC payroll panel
+    'bid_bonds',           -- VAULT bond panel
+    'co_contacts',         -- CO directory
+    'competitor_profiles', -- Intel panel
+    'competitor_prices',   -- Intel panel
+    'distributor_prices',  -- Supply pricing
+    'compliance_matrices', -- Bid prep
+    'agent_cost_log',      -- Cost transparency / SAM meter
+    'api_schemas',         -- System status
+    'capability_statements', -- Brief Archive
+    'contract_modifications', -- Active Projects
+    'job_costs',           -- Active Projects cost panel
+    'retainage_tracker',   -- Money Recovery
+    'sub_plans'            -- Subcontracting plans
+  ]) LOOP
+    EXECUTE format('DROP POLICY IF EXISTS "anon_read" ON %I', t);
+    EXECUTE format('CREATE POLICY "anon_read" ON %I FOR SELECT TO anon USING (true)', t);
+  END LOOP;
+END $$;
 
 
 -- ================================================================
