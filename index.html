@@ -1865,7 +1865,8 @@ function showStateDetail(code,vt,tileEl){
   const totalVal=oppsForVt.reduce((a,o)=>a+(o.value||0),0);
   const bestScore=oppsForVt.length?Math.max(...oppsForVt.map(o=>scoreOf(o))):0;
   const detailId=vt[0]+'-detail';
-  document.getElementById(detailId).innerHTML=`<div class="state-detail">
+  const detailEl=document.getElementById(detailId);
+  detailEl.innerHTML=`<div class="state-detail">
     <div style="display:flex;gap:16px;align-items:flex-start">
       <div><div style="font-size:28px;font-weight:900;color:var(--gold);letter-spacing:.1em">${code}</div><div style="font-size:11px;color:var(--t3)">${stateInfo.n}</div></div>
       <div style="flex:1">
@@ -1890,6 +1891,13 @@ function showStateDetail(code,vt,tileEl){
       </div>`;
     }).join(''):`<div style="font-size:10px;color:var(--t3);text-align:center;padding:12px">No live opportunities in ${code} yet.</div>`}
   </div>`;
+  // 2026-04-30: auto-scroll the user down to the Live Opportunities they just clicked.
+  // requestAnimationFrame waits for layout so the state-detail block has its real height
+  // before scrollIntoView measures from. block:'start' lands the section header at the
+  // top of the viewport; behavior:'smooth' is the standard easing.
+  requestAnimationFrame(() => {
+    detailEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  });
 }
 
 function renderVertical(vt){
