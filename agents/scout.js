@@ -676,13 +676,44 @@ function parseValue(raw) {
   return isNaN(num) ? null : num;
 }
 
+// 2026-04-30 BUG FIX: SAM.gov returns state in inconsistent formats —
+// sometimes { code: 'LA', name: 'Louisiana' }, sometimes 'Louisiana' (full name),
+// sometimes 'LA' already. Normalize to 2-letter uppercase code so the dashboard's
+// STATE_META map can bucket the row. Anything we can't recognize returns null
+// (better to drop than to mis-bucket).
+const _STATE_NAME_TO_CODE = {
+  'alabama':'AL','alaska':'AK','arizona':'AZ','arkansas':'AR','california':'CA',
+  'colorado':'CO','connecticut':'CT','delaware':'DE','district of columbia':'DC',
+  'florida':'FL','georgia':'GA','hawaii':'HI','idaho':'ID','illinois':'IL',
+  'indiana':'IN','iowa':'IA','kansas':'KS','kentucky':'KY','louisiana':'LA',
+  'maine':'ME','maryland':'MD','massachusetts':'MA','michigan':'MI','minnesota':'MN',
+  'mississippi':'MS','missouri':'MO','montana':'MT','nebraska':'NE','nevada':'NV',
+  'new hampshire':'NH','new jersey':'NJ','new mexico':'NM','new york':'NY',
+  'north carolina':'NC','north dakota':'ND','ohio':'OH','oklahoma':'OK','oregon':'OR',
+  'pennsylvania':'PA','rhode island':'RI','south carolina':'SC','south dakota':'SD',
+  'tennessee':'TN','texas':'TX','utah':'UT','vermont':'VT','virginia':'VA',
+  'washington':'WA','west virginia':'WV','wisconsin':'WI','wyoming':'WY','dc':'DC',
+};
+function normalizeState(raw) {
+  if (!raw) return null;
+  if (typeof raw === 'object') {
+    if (raw.code && /^[A-Za-z]{2}$/.test(raw.code)) return raw.code.toUpperCase();
+    if (raw.name) raw = raw.name;
+    else return null;
+  }
+  const s = String(raw).trim();
+  if (/^[A-Za-z]{2}$/.test(s)) return s.toUpperCase();
+  const cleaned = s.replace(/[,\s]+(USA|United States|U\.S\.)$/i, '').trim().toLowerCase();
+  return _STATE_NAME_TO_CODE[cleaned] || null;
+}
+
 function extractState(opp) {
-  return (
+  const raw =
     opp.placeOfPerformance?.state?.code ||
     opp.placeOfPerformance?.state ||
     opp.officeAddress?.state ||
-    null
-  );
+    null;
+  return normalizeState(raw);
 }
 
 // ----------------------------------------------------------

@@ -312,7 +312,7 @@ document.addEventListener('keydown', e=>{
   <div class="sb-group">System</div>
   <button class="sb-btn" onclick="go('system',this)">⚙️ Agents & Config</button>
   <button class="sb-btn" onclick="go('help',this)">❓ Help & FAQ</button>
-  <div class="sb-foot">Walker Contractors LLC<br>Axiom Federal Solutions · CAGE 7JKKO<br>~$9.50/mo · 32 NAICS · 19 workflows<br>30 tables · T.E.S.T. v2 Active<br><span id="last-load" style="color:var(--t3)">Loading…</span><br><span style="display:inline-flex;align-items:center;gap:4px;margin-top:4px">SAM Quota: <span id="sb-quota" style="font-weight:700">—</span></span></div>
+  <div class="sb-foot">Walker Contractors LLC<br>Axiom Federal Solutions · CAGE 7JKKO<br>~$9.50/mo · 37 NAICS · 24 workflows<br>43 tables · T.E.S.T. v2 Active<br><span id="last-load" style="color:var(--t3)">Loading…</span><br><span style="display:inline-flex;align-items:center;gap:4px;margin-top:4px">SAM Quota: <span id="sb-quota" style="font-weight:700">—</span></span></div>
 </nav>
 
 <div class="main" id="mc">
@@ -552,7 +552,10 @@ async function loadData(manual=false){
       safe(sb.from('opportunities').select('*').order('prime_score',{ascending:false,nullsFirst:false}).order('acq_score',{ascending:false,nullsFirst:false}).order('created_at',{ascending:false}).limit(1000)),
       safe(sb.from('bids').select('*').order('created_at',{ascending:false}).limit(50)),
       safe(sb.from('supplier_matches').select('*, suppliers(name,city,state,certifications,socioeconomic,federal_contract_count,avg_contract_value,naics_codes,capability_tier,contact_email)').order('match_score',{ascending:false}).limit(100)),
-      safe(sb.from('audit_log').select('*').order('created_at',{ascending:false}).limit(50)),
+      // 2026-04-30 BUG FIX: agents write to agent_logs (via lib/supabase.js logAction), not audit_log.
+      // Reading audit_log here meant every agent showed "Not yet run" on the System tab even after
+      // they ran successfully. agent_logs is the canonical activity stream.
+      safe(sb.from('agent_logs').select('*').order('created_at',{ascending:false}).limit(100)),
       safe(sb.from('system_config').select('*')),
       safe(sb.from('test_results').select('*').order('created_at',{ascending:false}).limit(30)),
       safe(sb.from('prompt_payment_claims').select('*').order('payment_due',{ascending:true}).limit(30)),
@@ -1758,6 +1761,36 @@ function renderPerformance(){
 // ─── DYNAMIC STATE MAP (Priority 1 fix) ────────────────────────────────
 // Builds state list from live OPPS data — covers all 50 states, not just
 // the old hardcoded 15-state CS array. STATE_META provides name/region/notes.
+// 2026-04-30 BUG FIX: SAM.gov returns state in mixed formats (LA, Louisiana, "LA, USA",
+// {code:'LA'}). Dashboard's STATE_META uses 2-letter codes, so anything else fails to bucket
+// into the map and the state goes invisible. This normalizer accepts any common format and
+// returns a 2-letter code or null. Used by buildStateMap to rescue inconsistent SAM.gov data
+// without re-running SCOUT.
+const STATE_NAME_TO_CODE = {
+  'alabama':'AL','alaska':'AK','arizona':'AZ','arkansas':'AR','california':'CA',
+  'colorado':'CO','connecticut':'CT','delaware':'DE','district of columbia':'DC',
+  'florida':'FL','georgia':'GA','hawaii':'HI','idaho':'ID','illinois':'IL',
+  'indiana':'IN','iowa':'IA','kansas':'KS','kentucky':'KY','louisiana':'LA',
+  'maine':'ME','maryland':'MD','massachusetts':'MA','michigan':'MI','minnesota':'MN',
+  'mississippi':'MS','missouri':'MO','montana':'MT','nebraska':'NE','nevada':'NV',
+  'new hampshire':'NH','new jersey':'NJ','new mexico':'NM','new york':'NY',
+  'north carolina':'NC','north dakota':'ND','ohio':'OH','oklahoma':'OK','oregon':'OR',
+  'pennsylvania':'PA','rhode island':'RI','south carolina':'SC','south dakota':'SD',
+  'tennessee':'TN','texas':'TX','utah':'UT','vermont':'VT','virginia':'VA',
+  'washington':'WA','west virginia':'WV','wisconsin':'WI','wyoming':'WY','dc':'DC',
+};
+function normalizeStateCode(raw){
+  if(!raw) return null;
+  // Already a 2-letter code? trust it after uppercasing
+  const trimmed = String(raw).trim();
+  if(/^[A-Za-z]{2}$/.test(trimmed)) return trimmed.toUpperCase();
+  // Object form: { code: 'LA', name: 'Louisiana' }
+  if(typeof raw === 'object' && raw.code && /^[A-Za-z]{2}$/.test(raw.code)) return raw.code.toUpperCase();
+  // Strip trailing ", USA" or similar
+  const cleaned = trimmed.replace(/[,\s]+(USA|United States|U\.S\.)$/i,'').trim().toLowerCase();
+  return STATE_NAME_TO_CODE[cleaned] || null;
+}
+
 function buildStateMap(oppsForVertical, vt){
   // Start with states from STATE_META to define regions/order
   const map={};
@@ -1766,7 +1799,9 @@ function buildStateMap(oppsForVertical, vt){
   });
   // Count live opps per state
   oppsForVertical.forEach(o=>{
-    const st=o.state;
+    // 2026-04-30 BUG FIX: normalize state value before bucketing — was missing rows
+    // whose state arrived as full name ("Louisiana") or wrapped object instead of code.
+    const st = normalizeStateCode(o.state || o.place_of_performance);
     if(!st)return;
     if(!map[st]){
       // State not in STATE_META (rare) — add it dynamically
@@ -1866,7 +1901,7 @@ function renderVertical(vt){
   const passedCount=oppsForVt.filter(o=>o.status==='passed').length;
   const expiredCount=oppsForVt.filter(o=>o.status==='expired').length;
   const totalVal=activeOpps.reduce((a,o)=>a+(o.value||0),0);
-  const label={'construction':'🏗️ Construction — 21 NAICS Codes · 50 States','supply':'📦 Supply — 7 NAICS Codes · 50 States','realestate':'🏢 Real Estate & Rental — 4 NAICS Codes'}[vt];
+  const label={'construction':'🏗️ Construction — 21 NAICS Codes · 50 States','supply':'📦 Supply — 7 NAICS Codes · 50 States','realestate':'🏢 Real Estate & Rental — 9 NAICS Codes'}[vt];
   const sub={'construction':'PRIME Score · Green = can bid · Click state for live opportunities + supplier matches','supply':'ACQ Score · No license required · Click state for opportunities','realestate':'LEASE Score · Asset-dependent — you must own the property or equipment'}[vt];
   const color=vtColor(vt);
   // State map uses active opps only
@@ -2403,7 +2438,7 @@ function renderSystem(){
   `:'<div style="font-size:10px;color:var(--t3);padding:10px 0">T.E.S.T. has not run yet. Run T.E.S.T. from GitHub Actions to validate system health.</div>';
 
   document.getElementById('t-system').innerHTML=`
-    <div style="font-size:16px;font-weight:700;margin-bottom:14px">⚙️ System · 10 Agents · 3 Verticals · 32 NAICS</div>
+    <div style="font-size:16px;font-weight:700;margin-bottom:14px">⚙️ System · 10 Agents · 3 Verticals · 37 NAICS</div>
     <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:8px;margin-bottom:16px">
       ${[{n:'BRANDI',r:'CEO / Briefer',c:'var(--gold)'},{n:'SCOUT',r:'32 NAICS Finder',c:'var(--green)'},{n:'JUDGE',r:'3-Score Engine',c:'var(--cyan)'},{n:'VAULT',r:'Compliance+Assets',c:'var(--green)'},{n:'RECON',r:'Intel+Suppliers',c:'var(--violet)'},{n:'DRAFT',r:'Proposals',c:'var(--green)'},{n:'BID ENG',r:'Pricing Engine',c:'var(--cyan)'},{n:'LEDGER',r:'Learn+Calibrate',c:'var(--cyan)'},{n:'EXEC',r:'Track+Payroll+$$',c:'var(--green)'},{n:'T.E.S.T.',r:'QA Validator',c:'var(--green)'}].map(a=>{
         const last=RUNS.find(r=>(r.agent||r.agent_name)===a.n||(a.n==='T.E.S.T.'&&((r.agent||r.agent_name)==='TEST')));
@@ -2433,7 +2468,7 @@ function renderSystem(){
     </div>
     <div class="card-section" style="border-left:3px solid var(--gold);margin-bottom:14px">
       <div style="font-size:11px;font-weight:700;color:var(--gold);margin-bottom:6px">COST BREAKDOWN ~$9.50/mo</div>
-      <div style="font-size:9px;color:var(--t3)">19 workflows · 30 tables · 32 NAICS · 3 verticals · T.E.S.T. v2 active</div>
+      <div style="font-size:9px;color:var(--t3)">24 workflows · 43 tables · 37 NAICS · 3 verticals · T.E.S.T. v2 active</div>
     </div>
     <a href="${GH_ACTIONS}" target="_blank" style="display:block;text-align:center;padding:12px;border-radius:8px;background:var(--cyanDim);border:1px solid var(--cyanBd);color:var(--cyan);font-size:12px;font-weight:600;text-decoration:none">▶ Open GitHub Actions to Run Workflows</a>
   `;
@@ -2452,7 +2487,7 @@ const HELP=[
   {id:'H-009',term:'Supplier Match',cat:'Features',cc:'var(--violet)',a:'PRIME finds best subs and teaming partners. Match score 0-100 based on NAICS overlap, certifications, location, past contract count, and avg value.',ag:'RECON'},
   {id:'H-010',term:'Retainage',cat:'Money',cc:'var(--green)',a:'Government holds back 5-10% until project completion. EXEC tracks and reminds you to request release.',ag:'EXEC'},
   {id:'H-011',term:'Prompt Payment Interest',cat:'Money',cc:'var(--green)',a:'If government pays late (14+ days past invoice), they owe interest (Prompt Payment Act). EXEC calculates and drafts claim letters.',ag:'EXEC'},
-  {id:'H-012',term:'NAICS Code',cat:'Concepts',cc:'var(--violet)',a:'6-digit number identifying your work type. PRIME scans 32 NAICS codes: 21 construction, 7 supply, 4 real estate.',ag:'SCOUT'},
+  {id:'H-012',term:'NAICS Code',cat:'Concepts',cc:'var(--violet)',a:'6-digit number identifying your work type. PRIME scans 37 NAICS codes: 21 construction, 7 supply, 9 real estate.',ag:'SCOUT'},
   {id:'H-013',term:'Davis-Bacon',cat:'Compliance',cc:'var(--amber)',a:'Federal law requiring prevailing wages on construction contracts >$2,000. BID ENGINE pulls DOL wage rates by state. WH-347 certified payroll required.',ag:'VAULT'},
   {id:'H-014',term:'BID ENGINE',cat:'Features',cc:'var(--cyan)',a:'Calculates Low/Recommended/High price. Construction model: Labor (Davis-Bacon) + Materials + Mobilization + Bond + Overhead (15%) + Profit (10%). Updates yearly for option year escalation.',ag:'BID ENGINE'},
   {id:'H-015',term:'Start Bid',cat:'Features',cc:'var(--gold)',a:'Click any opportunity → Start Bid button. Creates a bid record in the database, shows the compliance checklist (bond requirement, Davis-Bacon flag, WH-347, past performance), and links to GitHub Actions to run DRAFT.',ag:'SYSTEM'},
