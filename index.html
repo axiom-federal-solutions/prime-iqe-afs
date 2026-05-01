@@ -512,7 +512,7 @@ function selectSupplyCat(key){
   });
   // Rebuild the state map and opp list using the new category filter
   const activeOpps=filterBySupplyCat(
-    OPPS.filter(o=>getVertical(o)==='supply'&&(!o.status||o.status==='new'||o.status==='reviewing'||o.status==='pursuing'))
+    OPPS.filter(o=>getVertical(o)==='supply'&&(!o.status||o.status==='new'||o.status==='scored'||o.status==='reviewing'||o.status==='pursuing'))
   );
   const stateData=buildStateMap(activeOpps,'supply');
   renderGrid(document.getElementById('s-map'),stateData,'supply');
@@ -549,7 +549,7 @@ async function loadData(manual=false){
     // Per-query .catch() so one bad table never kills the whole render
     const safe = q => q.then(r=>r).catch(()=>({data:[]}));
     const [o,b,s,r,cfg,tst,cl,ev,ac,fc,sp,tm,pp]=await Promise.all([
-      safe(sb.from('opportunities').select('*').order('prime_score',{ascending:false,nullsFirst:false}).order('acq_score',{ascending:false,nullsFirst:false}).order('created_at',{ascending:false}).limit(200)),
+      safe(sb.from('opportunities').select('*').order('prime_score',{ascending:false,nullsFirst:false}).order('acq_score',{ascending:false,nullsFirst:false}).order('created_at',{ascending:false}).limit(1000)),
       safe(sb.from('bids').select('*').order('created_at',{ascending:false}).limit(50)),
       safe(sb.from('supplier_matches').select('*, suppliers(name,city,state,certifications,socioeconomic,federal_contract_count,avg_contract_value,naics_codes,capability_tier,contact_email)').order('match_score',{ascending:false}).limit(100)),
       safe(sb.from('audit_log').select('*').order('created_at',{ascending:false}).limit(50)),
@@ -1862,7 +1862,7 @@ function renderVertical(vt){
   if(vt==='supply') activeSupplyCat='all';
   const oppsForVt=OPPS.filter(o=>getVertical(o)===vt);
   // Active pipeline: new + reviewing + pursuing. Passed/expired go to archive.
-  const activeOpps=oppsForVt.filter(o=>!o.status||o.status==='new'||o.status==='reviewing'||o.status==='pursuing');
+  const activeOpps=oppsForVt.filter(o=>!o.status||o.status==='new'||o.status==='scored'||o.status==='reviewing'||o.status==='pursuing');
   const passedCount=oppsForVt.filter(o=>o.status==='passed').length;
   const expiredCount=oppsForVt.filter(o=>o.status==='expired').length;
   const totalVal=activeOpps.reduce((a,o)=>a+(o.value||0),0);
@@ -1921,7 +1921,7 @@ function renderVertical(vt){
 
 // GAP FIX 4 — Vertical tier filter (All / Strong ≥85 / BID ≥70 / Unscored)
 function vtFilter(vt, tier){
-  let activeOpps=OPPS.filter(o=>getVertical(o)===vt&&(!o.status||o.status==='new'||o.status==='reviewing'||o.status==='pursuing'));
+  let activeOpps=OPPS.filter(o=>getVertical(o)===vt&&(!o.status||o.status==='new'||o.status==='scored'||o.status==='reviewing'||o.status==='pursuing'));
   // For supply, also apply the active category filter
   if(vt==='supply') activeOpps=filterBySupplyCat(activeOpps);
   let filtered;

@@ -448,6 +448,7 @@ async function upsertOpportunity(opp, type, naics) {
     deadline:            deadline ? new Date(deadline).toISOString().split('T')[0] : null,
     set_aside:           opp.typeOfSetAside || null,
     place_of_performance: state || null,
+    state:               state || null,        // 2026-04-30 BUG FIX: dashboard's 50-state map filters on `state` column, not `place_of_performance`. Without this, SAM.gov opps never appeared on the map.
     description:         opp.description || null,
     source:              'SAM.gov',
     vertical:            deriveVertical(naics),
