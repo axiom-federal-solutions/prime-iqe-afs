@@ -64,7 +64,12 @@ async function checkPromptPayment() {
     .select('*')
     .is('payment_received', null);
 
-  if (!claims || claims.length === 0) return;
+  if (!claims || claims.length === 0) {
+    // 2026-05-01: surface the no-op so the dashboard can distinguish
+    // "EXEC ran but had nothing to do" from "EXEC never ran".
+    await logAction('EXEC', 'Prompt payment check — no open invoices', { checked_at: new Date().toISOString() });
+    return;
+  }
 
   const today = new Date();
 
@@ -113,7 +118,10 @@ async function checkRetainage() {
     .select('*')
     .eq('release_received', false);
 
-  if (!trackers) return;
+  if (!trackers || trackers.length === 0) {
+    await logAction('EXEC', 'Retainage check — no held retainage to track', { checked_at: new Date().toISOString() });
+    return;
+  }
 
   for (const tracker of trackers) {
     // Request retainage release if we haven't already
@@ -164,7 +172,10 @@ async function checkSubPayments() {
     .select('*')
     .eq('compliant', false);
 
-  if (!subs || subs.length === 0) return;
+  if (!subs || subs.length === 0) {
+    await logAction('EXEC', 'Sub payment check — all subs compliant', { checked_at: new Date().toISOString() });
+    return;
+  }
 
   for (const sub of subs) {
     console.log('EXEC: NON-COMPLIANT — ' + sub.sub_name + ' paid ' + sub.days_to_pay + ' days after gov payment');
@@ -190,7 +201,10 @@ async function generateCertifiedPayroll() {
     .select('*')
     .eq('status', 'active');
 
-  if (!contracts) return;
+  if (!contracts || contracts.length === 0) {
+    await logAction('EXEC', 'WH-347 generation skipped — no active contracts', { checked_at: new Date().toISOString() });
+    return;
+  }
 
   for (const contract of contracts) {
     // Create a payroll record for the current week
@@ -247,7 +261,10 @@ async function projectCashFlow() {
     .select('*')
     .eq('status', 'active');
 
-  if (!contracts) return;
+  if (!contracts || contracts.length === 0) {
+    await logAction('EXEC', 'Cash flow projection skipped — no active contracts', { checked_at: new Date().toISOString() });
+    return;
+  }
 
   const totalActiveValue   = contracts.reduce((s, c) => s + (c.value || 0), 0);
   const totalInvoiced      = contracts.reduce((s, c) => s + (c.total_invoiced || 0), 0);

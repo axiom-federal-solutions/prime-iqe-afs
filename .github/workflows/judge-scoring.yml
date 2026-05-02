@@ -2,9 +2,14 @@ name: JUDGE - Opportunity Scoring
 
 # JUDGE triggers automatically after each SCOUT scan completes.
 # Also can be run manually from the GitHub Actions UI.
+# 2026-05-01 BUG FIX: workflow_run name was "SCOUT - SAM.gov Scan" (regular
+# hyphen + "Scan") but the actual workflow is named "SCOUT — SAM.gov Scanner"
+# (em dash + "Scanner"). GitHub Actions requires exact-string match, so this
+# auto-trigger was silently dead — JUDGE only ran because scout-sam.yml
+# inlines a JUDGE step. Now it fires on both paths.
 on:
   workflow_run:
-    workflows: ["SCOUT - SAM.gov Scan"]
+    workflows: ["SCOUT — SAM.gov Scanner"]
     types: [completed]
   workflow_dispatch:
 

@@ -1,13 +1,23 @@
 name: BID ENGINE - Price Calculator
 
-# On-demand only — triggered when Mr. Kemp approves a bid
-# Run from GitHub Actions UI: pass the opportunity_id as input
+# 2026-05-01: rewired so BID ENGINE actually runs without a human clicking.
+# JUDGE inserts bids with status='pending_pricing'; this workflow drains that
+# queue automatically. Three trigger paths:
+#   1. workflow_run after SCOUT - SAM.gov Scanner finishes (catches every JUDGE run)
+#   2. Hourly cron as a safety net in case workflow_run misses an event
+#   3. Manual workflow_dispatch with optional opportunity_id (single-shot mode)
 on:
+  workflow_run:
+    workflows: ["SCOUT — SAM.gov Scanner"]
+    types: [completed]
+  schedule:
+    # Top of every hour — drains anything JUDGE leaves behind
+    - cron: '0 * * * *'
   workflow_dispatch:
     inputs:
       opportunity_id:
-        description: 'Opportunity UUID from the opportunities table'
-        required: true
+        description: 'Opportunity UUID — leave blank to drain the pending_pricing queue'
+        required: false
         type: string
 
 env:
@@ -34,4 +44,6 @@ jobs:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        # Empty input → batch mode (drains pending_pricing queue).
+        # Non-empty input → single-opportunity mode.
         run: node agents/bidengine.js "${{ github.event.inputs.opportunity_id }}"

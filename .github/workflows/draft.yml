@@ -1,13 +1,22 @@
 name: DRAFT - Proposal Generator
 
-# On-demand only — triggered after BID ENGINE prices a bid
-# Mr. Kemp triggers this from GitHub Actions UI with the bid_id
+# 2026-05-01: previously workflow_dispatch-only with required bid_id, so Mr.
+# Kemp's "approved" bids never got drafted. DRAFT batch mode now polls for
+# bids.status='approved' and writes proposals automatically. Human-in-the-
+# loop is preserved because DRAFT only fires on the explicit 'approved' flag.
+#   1. Twice-daily cron — catches anything Mr. Kemp approved in BRANDI
+#   2. Manual workflow_dispatch with optional bid_id (single-shot mode)
 on:
+  schedule:
+    # 9 AM CT (after Mr. Kemp's 6 AM brief gives him time to approve)
+    - cron: '0 14 * * *'
+    # 4 PM CT — late-day catch-up for afternoon approvals
+    - cron: '0 21 * * *'
   workflow_dispatch:
     inputs:
       bid_id:
-        description: 'Bid UUID from the bids table (run BID ENGINE first)'
-        required: true
+        description: 'Bid UUID — leave blank to drain the approved-bid queue'
+        required: false
         type: string
 
 env:
@@ -36,4 +45,6 @@ jobs:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           CAGE_CODE: ${{ secrets.CAGE_CODE }}
           SAM_UEI: ${{ secrets.SAM_UEI }}
+        # Empty input → batch mode (drafts every bids.status='approved').
+        # Non-empty input → single-bid mode.
         run: node agents/draft.js "${{ github.event.inputs.bid_id }}"

@@ -295,7 +295,14 @@ async function matchAllNewOpportunities() {
     .limit(20);
 
   if (!opps || opps.length === 0) {
+    // 2026-05-01: was a silent console.log — invisible after the workflow
+    // run ended. Now logged so the dashboard can show "RECON ran but had
+    // nothing to chew on" instead of "RECON never ran".
     console.log('RECON-SUPPLIERS: No opportunities to match.');
+    await logAction('RECON', 'Supplier matching skipped — empty input', {
+      reason:    'No scored/pursuing/new opportunities with solicitation_number',
+      checked_at: new Date().toISOString(),
+    });
     return;
   }
 

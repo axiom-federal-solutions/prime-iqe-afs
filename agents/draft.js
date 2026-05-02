@@ -27,30 +27,101 @@ const COMPANY = {
   teaming_partners: 'Trevor L. Monnie Landscape Services — Louisiana Licensed Landscape Horticulturist (License No. 26-5023)',
 };
 
+// Max proposals to draft per batch run — Sonnet calls are expensive
+// (~$0.50/proposal). Cap at 3 to keep monthly spend predictable while
+// still draining a normal day's approval queue in one cron tick.
+const DRAFT_BATCH_LIMIT = 3;
+
 // ----------------------------------------------------------
 // MAIN FUNCTION: Generate a complete proposal package
-// Called when Mr. Kemp approves a bid in the morning briefing
+//   CLI mode:   node agents/draft.js <bidId>
+//   Batch mode: node agents/draft.js   (no arg)
+//   In batch mode DRAFT looks for bids that Mr. Kemp has explicitly
+//   approved — bids.status='approved' — never auto-drafts. This
+//   preserves the human-in-the-loop rule from the system spec.
+// 2026-05-01 BUG FIX: DRAFT was workflow_dispatch-only with required bid_id
+// input. Once Mr. Kemp approves a bid in BRANDI, nothing actually triggered
+// DRAFT — proposals never got written. Batch mode unblocks this when a
+// scheduled workflow runs `node agents/draft.js` with no arg.
 // ----------------------------------------------------------
 async function runDraft() {
-  // Get the bid ID from the command line argument
-  // Example: node agents/draft.js BID-UUID-HERE
   const bidId = process.argv[2];
 
-  if (!bidId) {
-    console.error('DRAFT: No bid ID provided. Usage: node agents/draft.js <bidId>');
+  // Per-agent kill switch
+  const enabled = await isAgentEnabled('DRAFT');
+  if (!enabled) process.exit(0);
+
+  if (bidId) {
+    // ── Single-bid mode (manual workflow_dispatch) ────────────────────
+    console.log('DRAFT: Single mode — bid ' + bidId);
+    try {
+      await generateProposal(bidId);
+      console.log('DRAFT: Proposal complete — queued for Mr. Kemp review in BRANDI.');
+    } catch (err) {
+      console.error('DRAFT ERROR:', err.message);
+      await logAction('DRAFT', 'Proposal generation failed', { bidId, error: err.message });
+      process.exit(1);
+    }
+    return;
+  }
+
+  // ── Batch mode: drain Mr. Kemp's approved-bid queue ───────────────
+  console.log('DRAFT: Batch mode — checking for approved bids needing proposals (limit ' + DRAFT_BATCH_LIMIT + ')');
+
+  const { data: queue, error: queueErr } = await supabase
+    .from('bids')
+    .select('id, opportunity_id, decision_date')
+    .eq('status', 'approved')
+    .order('decision_date', { ascending: true })
+    .limit(DRAFT_BATCH_LIMIT);
+
+  if (queueErr) {
+    console.error('DRAFT: Queue read failed —', queueErr.message);
+    await logAction('DRAFT', 'Batch queue read failed', { error: queueErr.message });
     process.exit(1);
   }
 
-  console.log('DRAFT: Starting proposal generation for bid ' + bidId);
-
-  try {
-    await generateProposal(bidId);
-    console.log('DRAFT: Proposal complete — queued for Mr. Kemp review in BRANDI.');
-  } catch (err) {
-    console.error('DRAFT ERROR:', err.message);
-    await logAction('DRAFT', 'Proposal generation failed', { bidId, error: err.message });
-    process.exit(1);
+  if (!queue || queue.length === 0) {
+    console.log('DRAFT: No approved bids waiting for proposal generation.');
+    await logAction('DRAFT', 'Batch run — no approved bids', { checked_at: new Date().toISOString() });
+    return;
   }
+
+  console.log('DRAFT: ' + queue.length + ' approved bids in queue. Drafting now...');
+
+  let drafted = 0;
+  let failed  = 0;
+  for (const row of queue) {
+    try {
+      // generateProposal() transitions status to 'draft_ready' (or
+      // 'supply_quote_ready' on the supply branch) internally on success —
+      // we don't overwrite it here. This keeps BRANDI's review queue
+      // (`status IN ['draft_ready','supply_quote_ready','pending_review']`)
+      // working as designed.
+      await generateProposal(row.id);
+      drafted++;
+    } catch (err) {
+      failed++;
+      console.warn('DRAFT: Failed bid ' + row.id + ' —', err.message);
+      await logAction('DRAFT', 'Proposal generation failed (batch)', {
+        bidId: row.id,
+        error: err.message,
+      });
+      // Park the bid so Mr. Kemp can see why it stalled, and so the next
+      // batch run doesn't keep retrying the same broken bid.
+      await supabase
+        .from('bids')
+        .update({ status: 'draft_failed' })
+        .eq('id', row.id);
+    }
+  }
+
+  await logAction('DRAFT', 'Batch run complete', {
+    checked: queue.length,
+    drafted,
+    failed,
+  });
+  console.log('DRAFT: Batch done — ' + drafted + ' drafted, ' + failed + ' failed.');
 }
 
 // Supply NAICS codes — these get a short-form quote, not 4-volume

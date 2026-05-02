@@ -18,54 +18,133 @@ const SUPPLY_NAICS = ['424710', '424130', '424490', '424120'];
 // DOL Davis-Bacon API for prevailing wages
 const DOL_WAGE_URL = 'https://api.dol.gov/V1/SCA/wage-determination';
 
+// Max bids to price in a single batch run — keeps each invocation under
+// the GitHub Actions 10-minute timeout and keeps Anthropic spend bounded.
+const BATCH_LIMIT = 10;
+
 // ----------------------------------------------------------
-// MAIN FUNCTION: Calculate the bid price for an opportunity
+// MAIN FUNCTION: Calculate the bid price for one opportunity (CLI mode)
+// OR auto-process every bid waiting in 'pending_pricing' (batch mode).
+// 2026-05-01 BUG FIX: BID ENGINE was workflow_dispatch-only with a required
+// opportunity_id input. JUDGE inserted rows into `bids` with
+// status='pending_pricing' but nothing ever picked them up — bids piled up
+// forever and DRAFT was starved. Batch mode unblocks the pipeline so a cron
+// or workflow_run trigger can drain the queue automatically.
 // ----------------------------------------------------------
 async function runBidEngine() {
-  // Get the opportunity ID from command line
   const opportunityId = process.argv[2];
 
-  if (!opportunityId) {
-    console.error('BID ENGINE: No opportunity ID provided. Usage: node agents/bidengine.js <opportunityId>');
+  // Per-agent kill switch — T.E.S.T. can disable BID ENGINE via system_config.
+  // Key resolves to AGENT_BIDENGINE_ENABLED (no space) to match the
+  // single-token convention SCOUT/JUDGE/BRANDI use.
+  const enabled = await isAgentEnabled('BIDENGINE');
+  if (!enabled) process.exit(0);
+
+  if (opportunityId) {
+    // ── Single-opportunity mode (manual workflow_dispatch) ────────────
+    console.log('BID ENGINE: Single mode — opportunity ' + opportunityId);
+    try {
+      await priceOneBid(opportunityId);
+    } catch (err) {
+      console.error('BID ENGINE ERROR:', err.message);
+      await logAction('BID ENGINE', 'Pricing failed', { opportunityId, error: err.message });
+      process.exit(1);
+    }
+    return;
+  }
+
+  // ── Batch mode (cron / post-JUDGE workflow_run) ────────────────────
+  console.log('BID ENGINE: Batch mode — draining pending_pricing queue (limit ' + BATCH_LIMIT + ')');
+
+  const { data: queue, error: queueErr } = await supabase
+    .from('bids')
+    .select('id, opportunity_id, created_at')
+    .eq('status', 'pending_pricing')
+    .order('created_at', { ascending: true })
+    .limit(BATCH_LIMIT);
+
+  if (queueErr) {
+    console.error('BID ENGINE: Queue read failed —', queueErr.message);
+    await logAction('BID ENGINE', 'Batch queue read failed', { error: queueErr.message });
     process.exit(1);
   }
 
-  console.log('BID ENGINE: Calculating price for opportunity ' + opportunityId);
+  if (!queue || queue.length === 0) {
+    console.log('BID ENGINE: Queue empty — no bids waiting for pricing.');
+    await logAction('BID ENGINE', 'Batch run — queue empty', { checked_at: new Date().toISOString() });
+    return;
+  }
 
-  try {
-    const result = await calculateBidPrice(opportunityId);
+  console.log('BID ENGINE: ' + queue.length + ' bids in queue. Pricing now...');
 
-    // Find or create the bid record for this opportunity
-    const { data: existingBid } = await supabase
-      .from('bids')
-      .select('id')
-      .eq('opportunity_id', opportunityId)
-      .single();
-
-    if (existingBid) {
+  let priced = 0;
+  let failed = 0;
+  for (const row of queue) {
+    try {
+      await priceOneBid(row.opportunity_id);
+      priced++;
+    } catch (err) {
+      failed++;
+      console.warn('BID ENGINE: Failed bid ' + row.id + ' (opp ' + row.opportunity_id + ') —', err.message);
+      // Park the failed bid so it doesn't get retried every batch run.
+      // Mr. Kemp can reset to 'pending_pricing' to re-attempt.
       await supabase
         .from('bids')
-        .update({ pricing_data: result })
-        .eq('opportunity_id', opportunityId);
-    } else {
-      await supabase.from('bids').insert({
-        opportunity_id: opportunityId,
-        status: 'priced',
-        pricing_data: result,
+        .update({ status: 'pricing_failed' })
+        .eq('id', row.id);
+      await logAction('BID ENGINE', 'Pricing failed (batch)', {
+        bid_id:         row.id,
+        opportunity_id: row.opportunity_id,
+        error:          err.message,
       });
     }
-
-    console.log('BID ENGINE: Price calculated — $' + result.base.toLocaleString() + ' base');
-    await logAction('BID ENGINE', 'Price calculated', {
-      opportunity_id: opportunityId,
-      base_price: result.base,
-      escalated_price: result.escalated,
-    });
-  } catch (err) {
-    console.error('BID ENGINE ERROR:', err.message);
-    await logAction('BID ENGINE', 'Pricing failed', { opportunityId, error: err.message });
-    process.exit(1);
   }
+
+  await logAction('BID ENGINE', 'Batch run complete', {
+    checked: queue.length,
+    priced,
+    failed,
+  });
+  console.log('BID ENGINE: Batch done — ' + priced + ' priced, ' + failed + ' failed.');
+}
+
+// Price a single opportunity and transition the linked bid to 'priced'.
+// Extracted from runBidEngine so both single and batch modes share logic.
+async function priceOneBid(opportunityId) {
+  const result = await calculateBidPrice(opportunityId);
+
+  // Find or create the bid record for this opportunity
+  const { data: existingBid } = await supabase
+    .from('bids')
+    .select('id, status')
+    .eq('opportunity_id', opportunityId)
+    .single();
+
+  if (existingBid) {
+    // 2026-05-01 BUG FIX: previously only updated pricing_data, leaving
+    // status='pending_pricing' so the bid would be reprocessed forever and
+    // downstream agents (DRAFT, BRANDI) never saw a 'priced' bid.
+    await supabase
+      .from('bids')
+      .update({
+        pricing_data: result,
+        status:       'priced',
+      })
+      .eq('id', existingBid.id);
+  } else {
+    await supabase.from('bids').insert({
+      opportunity_id: opportunityId,
+      status:         'priced',
+      pricing_data:   result,
+    });
+  }
+
+  console.log('BID ENGINE: Price calculated — $' + result.base.toLocaleString() + ' base');
+  await logAction('BID ENGINE', 'Price calculated', {
+    opportunity_id:  opportunityId,
+    base_price:      result.base,
+    escalated_price: result.escalated,
+  });
 }
 
 // ----------------------------------------------------------
