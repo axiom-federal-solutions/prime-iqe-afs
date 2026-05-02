@@ -437,11 +437,17 @@ async function upsertOpportunity(opp, type, naics) {
   // NOTE: 'status' is intentionally omitted from this payload.
   // The DB column has DEFAULT 'new' so new rows start as 'new' automatically.
   // Updates must never overwrite a status set by the user (passed, pursuing, reviewing).
+  // 2026-05-02: capture PSC (Product Service Code) so the dashboard's unified
+  // filter system can prefer PSC > NAICS for classification. SAM.gov returns
+  // it as `classificationCode`; FPDS sometimes uses `productOrServiceCode`.
+  const psc = opp.classificationCode || opp.productOrServiceCode || opp.psc || null;
+
   const { error } = await supabase.from('opportunities').upsert({
     solicitation_number: solNum,
     title:               opp.title || 'Federal Opportunity',
     agency,
     naics,
+    psc,                                       // 2026-05-02: NEW — see SQL migration in sql/add-psc-column.sql
     type:                type,
     value:               value,
     posted_date:         opp.postedDate ? opp.postedDate.split('T')[0] : new Date().toISOString().split('T')[0],

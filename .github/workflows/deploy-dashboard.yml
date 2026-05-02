@@ -31,12 +31,17 @@ jobs:
         uses: actions/checkout@v4
 
       # ── 2. Package the dashboard ──────────────────────────────────────
-      # We only need index.html for the dashboard — it pulls everything
-      # from Supabase at runtime. No build step required.
+      # 2026-05-02: also copy dashboard/ folder which holds the unified
+      # filter system (filter-system.js + filter-system.css). Without these
+      # the new Domain → Category → Sub filtering UI fails to mount.
       - name: Prepare deploy folder
         run: |
           mkdir -p _site
           cp index.html _site/index.html
+          # Filter system + Command Center search — required for tab filtering
+          if [ -d "dashboard" ]; then
+            cp -r dashboard _site/dashboard
+          fi
           # Copy logo files so they render on the live Pages URL
           cp "Prime logo 1.png" _site/ 2>/dev/null || true
           cp "Prime logo 2.png" _site/ 2>/dev/null || true

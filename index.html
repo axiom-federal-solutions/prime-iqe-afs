@@ -126,6 +126,8 @@ body{font-family:'Outfit',system-ui,sans-serif;background:var(--bg);color:var(--
 .growth-status{display:inline-flex;align-items:center;gap:4px;padding:3px 8px;border-radius:4px;font-size:9px;font-weight:700}
 @media(max-width:900px){.sb{display:none}.main{padding:12px}.sgrid{grid-template-columns:repeat(auto-fill,minmax(52px,1fr))}}
 </style>
+<!-- Unified filter system styles — Domain → Category → Sub + Command Center search -->
+<link rel="stylesheet" href="dashboard/filter-system.css">
 </head>
 <body>
 
@@ -474,54 +476,11 @@ function daysLeft(deadline){if(!deadline)return null;const d=Math.ceil((new Date
 // Supply NAICS: IT, training, janitorial, food, logistics, manufacturing, etc.
 // 2026-04-30: removed 541511/541512/541519/611430/541611 — IT/SAP/training out of scope
 const SUPPLY_NAICS_PREFIXES=['541330','561110','561210','424410','332999','339999','611420','541618','488490','424710','424130','424490','424120','424690','423440','424310'];
-// ─── SUPPLY CATEGORY FILTER — maps each tab button to specific NAICS prefixes ──
-// Used by selectSupplyCat() and filterBySupplyCat() to drill into product categories
-const SUPPLY_CATS={
-  all:   {label:'🏷️ All',      color:'var(--cyan)',   naics:[]},                                        // empty = show all
-  fuel:  {label:'⛽ Fuel',     color:'var(--amber)',  naics:['424710','424720']},
-  jan:   {label:'🧹 Janitorial',color:'var(--green)', naics:['561720','424130']},
-  ppe:   {label:'🧤 PPE',      color:'var(--cyan)',   naics:['339113','423440']},
-  office:{label:'📎 Office',   color:'var(--violet)', naics:['424120','453210']},
-  food:  {label:'☕ Food',     color:'var(--gold)',   naics:['424490','311999']},
-  chem:  {label:'🧪 Chemicals',color:'var(--rose)',   naics:['424690']},
-  safety:{label:'🦺 Safety',   color:'var(--amber)',  naics:['423450']},
-  uni:   {label:'👔 Uniforms', color:'var(--violet)', naics:['424310','315990']},
-};
-// Which category tab is currently active — 'all' means show everything
-let activeSupplyCat='all';
-
-// Filter an array of opps to only those matching the active supply category
-function filterBySupplyCat(opps){
-  const cat=SUPPLY_CATS[activeSupplyCat];
-  if(!cat||!cat.naics.length)return opps;   // 'all' has empty naics array
-  return opps.filter(o=>cat.naics.some(p=>(o.naics||'').startsWith(p)));
-}
-
-// Called when user clicks a category tab button in the Supply vertical
-function selectSupplyCat(key){
-  activeSupplyCat=key;
-  // Re-style all buttons
-  Object.keys(SUPPLY_CATS).forEach(k=>{
-    const btn=document.getElementById('scat-'+k);
-    if(!btn)return;
-    const isActive=k===key;
-    const c=SUPPLY_CATS[k].color;
-    btn.style.background=isActive?c+'22':'transparent';
-    btn.style.color=isActive?c:'var(--t2)';
-    btn.style.borderColor=isActive?c:'var(--bd)';
-  });
-  // Rebuild the state map and opp list using the new category filter
-  const activeOpps=filterBySupplyCat(
-    OPPS.filter(o=>getVertical(o)==='supply'&&(!o.status||o.status==='new'||o.status==='scored'||o.status==='reviewing'||o.status==='pursuing'))
-  );
-  const stateData=buildStateMap(activeOpps,'supply');
-  renderGrid(document.getElementById('s-map'),stateData,'supply');
-  const listEl=document.getElementById('supply-opp-list');
-  if(listEl) listEl.innerHTML=activeOpps.length?activeOpps.map(o=>oppRow(o,OPPS.indexOf(o))).join(''):emptyState('No '+SUPPLY_CATS[key].label+' opportunities','Run SCOUT to pull fresh contracts for this category.');
-  // Clear any open state detail panel
-  const det=document.getElementById('s-detail');
-  if(det)det.innerHTML='';
-}
+// 2026-05-02: Replaced legacy SUPPLY_CATS / selectSupplyCat / filterBySupplyCat
+// pair with the unified filter system in dashboard/filter-system.js.
+// All three verticals (Supply, Construction, Real Estate) now share one
+// taxonomy + one filter pipeline. See TAXONOMY in filter-system.js to add
+// or modify categories — UI re-renders from config automatically.
 // Real Estate / rental NAICS
 const RE_NAICS_PREFIXES=['531110','531120','531210','531311','531312','531390','532412','532120'];
 function getVertical(o){
@@ -1618,6 +1577,12 @@ function renderHome(){
   document.getElementById('t-home').innerHTML=`
     ${renderSAMExpiryBanner()}
     ${haltBanner}
+    <!-- 2026-05-02: Command Center fuzzy search — finds opps regardless of score.
+         Useful when you know what you want ("paper products", "fuel", "barracks")
+         and need to bypass the PRIME/ACQ/LEASE score sort. Container is populated
+         after innerHTML by renderCommandSearch() at the bottom of renderHome(). -->
+    <div id="fx-command-search"></div>
+
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
       <div style="background:var(--card);border:1px solid var(--goldBd);border-left:4px solid var(--gold);border-radius:8px;padding:12px 16px;flex:1;margin-right:12px">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
@@ -1756,6 +1721,12 @@ function renderPerformance(){
       </div>
     </div>
   `;
+  // 2026-05-02: mount the Command Center fuzzy search now that the container exists.
+  // Lets the user find opps by keyword/NAICS/agency regardless of score — useful when
+  // an opp didn't classify cleanly but the user knows what they're hunting for.
+  if (typeof renderCommandSearch === 'function') {
+    renderCommandSearch(document.getElementById('fx-command-search'));
+  }
 }
 
 // ─── DYNAMIC STATE MAP (Priority 1 fix) ────────────────────────────────
@@ -1857,9 +1828,10 @@ function renderGrid(el,states,vt){
 }
 
 function showStateDetail(code,vt,tileEl){
-  // For supply, also filter by whichever category tab is active (fuel, PPE, etc.)
+  // 2026-05-02: respects whatever taxonomy filters are active (Domain → Category → Sub).
+  // Click a state in Supply with "Cleaning & Sanitation" selected → see only LA's cleaning opps.
   const allForVtState=OPPS.filter(o=>getVertical(o)===vt&&o.state===code);
-  const oppsForVt=vt==='supply'?filterBySupplyCat(allForVtState):allForVtState;
+  const oppsForVt=(typeof filterContracts === 'function')?filterContracts(allForVtState, vt):allForVtState;
   const stateInfo=STATE_META[code]||{n:code,notes:''};
   const sl=vt==='supply'?'ACQ':vt==='realestate'?'LEASE':'PRIME';
   const totalVal=oppsForVt.reduce((a,o)=>a+(o.value||0),0);
@@ -1901,8 +1873,9 @@ function showStateDetail(code,vt,tileEl){
 }
 
 function renderVertical(vt){
-  // Reset supply category filter each time the vertical re-renders (data refresh)
-  if(vt==='supply') activeSupplyCat='all';
+  // 2026-05-02: removed `activeSupplyCat='all'` — taxonomy filter state lives
+  // in FILTERS[vt] (filter-system.js) and persists across data refreshes,
+  // which is what the user wants when SCOUT pulls fresh opps.
   const oppsForVt=OPPS.filter(o=>getVertical(o)===vt);
   // Active pipeline: new + reviewing + pursuing. Passed/expired go to archive.
   const activeOpps=oppsForVt.filter(o=>!o.status||o.status==='new'||o.status==='scored'||o.status==='reviewing'||o.status==='pursuing');
@@ -1912,8 +1885,8 @@ function renderVertical(vt){
   const label={'construction':'🏗️ Construction — 21 NAICS Codes · 50 States','supply':'📦 Supply — 7 NAICS Codes · 50 States','realestate':'🏢 Real Estate & Rental — 9 NAICS Codes'}[vt];
   const sub={'construction':'PRIME Score · Green = can bid · Click state for live opportunities + supplier matches','supply':'ACQ Score · No license required · Click state for opportunities','realestate':'LEASE Score · Asset-dependent — you must own the property or equipment'}[vt];
   const color=vtColor(vt);
-  // State map uses active opps only
-  const stateData=buildStateMap(activeOpps,vt);
+  // 2026-05-02: state map + opp list both reflect taxonomy filters now
+  const filteredOpps = (typeof filterContracts === 'function') ? filterContracts(activeOpps, vt) : activeOpps;
 
   const el=document.getElementById('t-'+vt);
   el.innerHTML=`
@@ -1927,46 +1900,46 @@ function renderVertical(vt){
         </div>
       </div>
     </div>
-    ${vt==='supply'?`
-    <!-- SUPPLY CATEGORY TABS — click to drill into fuel, PPE, office, etc. -->
-    <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:14px">
-      ${Object.entries(SUPPLY_CATS).map(([k,v])=>{
-        const isActive=k===activeSupplyCat;
-        return `<button id="scat-${k}" onclick="selectSupplyCat('${k}')"
-          style="padding:5px 12px;border-radius:20px;border:1px solid ${isActive?v.color:'var(--bd)'};background:${isActive?v.color+'22':'transparent'};color:${isActive?v.color:'var(--t2)'};font-family:'Outfit',sans-serif;font-size:10px;font-weight:700;cursor:pointer;letter-spacing:.04em;transition:all .15s">${v.label}</button>`;
-      }).join('')}
-    </div>`:''}
-    <div id="${vt[0]}-map"></div><div id="${vt[0]}-detail"></div>
-    <!-- GAP FIX 4 — Score tier filter buttons -->
-    <div style="display:flex;justify-content:space-between;align-items:center;margin:20px 0 8px">
-      <div style="font-size:10px;font-weight:700;color:var(--t3);letter-spacing:.12em;text-transform:uppercase">Active ${vt==='realestate'?'Real Estate & Rental':vt.charAt(0).toUpperCase()+vt.slice(1)} Opportunities</div>
-      <div style="display:flex;gap:6px;align-items:center">
-        <div id="${vt}-filters" style="display:flex;gap:4px">
-          <button onclick="vtFilter('${vt}','all')" id="${vt}-f-all" style="padding:4px 10px;border-radius:5px;border:1px solid var(--cyanBd);background:var(--cyanDim);color:var(--cyan);font-family:'Outfit',sans-serif;font-size:9px;font-weight:700;cursor:pointer;letter-spacing:.06em">ALL</button>
-          <button onclick="vtFilter('${vt}','strong')" id="${vt}-f-strong" style="padding:4px 10px;border-radius:5px;border:1px solid var(--bd);background:transparent;color:var(--t2);font-family:'Outfit',sans-serif;font-size:9px;font-weight:700;cursor:pointer;letter-spacing:.06em">🔥 ≥85</button>
-          <button onclick="vtFilter('${vt}','bid')" id="${vt}-f-bid" style="padding:4px 10px;border-radius:5px;border:1px solid var(--bd);background:transparent;color:var(--t2);font-family:'Outfit',sans-serif;font-size:9px;font-weight:700;cursor:pointer;letter-spacing:.06em">✅ ≥70</button>
-          <button onclick="vtFilter('${vt}','pending')" id="${vt}-f-pending" style="padding:4px 10px;border-radius:5px;border:1px solid var(--bd);background:transparent;color:var(--t2);font-family:'Outfit',sans-serif;font-size:9px;font-weight:700;cursor:pointer;letter-spacing:.06em">⏳ Unscored</button>
+    <!-- 2026-05-02: Two-column layout — taxonomy filter panel | state map + opp list.
+         Filter panel is rendered after innerHTML by renderFilterPanel(). -->
+    <div class="fx-vertical-layout">
+      <div id="fx-${vt}"></div>
+      <div>
+        <div id="${vt[0]}-map"></div><div id="${vt[0]}-detail"></div>
+        <!-- Score tier filter buttons (All / ≥85 / ≥70 / Unscored) — works on top of taxonomy filters -->
+        <div style="display:flex;justify-content:space-between;align-items:center;margin:20px 0 8px">
+          <div style="font-size:10px;font-weight:700;color:var(--t3);letter-spacing:.12em;text-transform:uppercase">Active ${vt==='realestate'?'Real Estate & Rental':vt.charAt(0).toUpperCase()+vt.slice(1)} Opportunities</div>
+          <div style="display:flex;gap:6px;align-items:center">
+            <div id="${vt}-filters" style="display:flex;gap:4px">
+              <button onclick="vtFilter('${vt}','all')" id="${vt}-f-all" style="padding:4px 10px;border-radius:5px;border:1px solid var(--cyanBd);background:var(--cyanDim);color:var(--cyan);font-family:'Outfit',sans-serif;font-size:9px;font-weight:700;cursor:pointer;letter-spacing:.06em">ALL</button>
+              <button onclick="vtFilter('${vt}','strong')" id="${vt}-f-strong" style="padding:4px 10px;border-radius:5px;border:1px solid var(--bd);background:transparent;color:var(--t2);font-family:'Outfit',sans-serif;font-size:9px;font-weight:700;cursor:pointer;letter-spacing:.06em">🔥 ≥85</button>
+              <button onclick="vtFilter('${vt}','bid')" id="${vt}-f-bid" style="padding:4px 10px;border-radius:5px;border:1px solid var(--bd);background:transparent;color:var(--t2);font-family:'Outfit',sans-serif;font-size:9px;font-weight:700;cursor:pointer;letter-spacing:.06em">✅ ≥70</button>
+              <button onclick="vtFilter('${vt}','pending')" id="${vt}-f-pending" style="padding:4px 10px;border-radius:5px;border:1px solid var(--bd);background:transparent;color:var(--t2);font-family:'Outfit',sans-serif;font-size:9px;font-weight:700;cursor:pointer;letter-spacing:.06em">⏳ Unscored</button>
+            </div>
+            <button class="refresh-btn" onclick="loadData(true)"><span>↻</span> Refresh</button>
+          </div>
         </div>
-        <button class="refresh-btn" onclick="loadData(true)"><span>↻</span> Refresh</button>
+        <div id="${vt}-opp-list">
+        ${filteredOpps.length?filteredOpps.map(o=>oppRow(o,OPPS.indexOf(o))).join(''):emptyState(`No active ${vt} opportunities`,'Opportunities you pass on move to the Passed Archive. Run SCOUT to pull fresh contracts.')}
+        </div>
       </div>
     </div>
-    <div id="${vt}-opp-list">
-    ${(()=>{
-      const listOpps=vt==='supply'?filterBySupplyCat(activeOpps):activeOpps;
-      return listOpps.length?listOpps.map(o=>oppRow(o,OPPS.indexOf(o))).join(''):emptyState(`No active ${vt} opportunities`,'Opportunities you pass on move to the Passed Archive. Run SCOUT to pull fresh contracts.');
-    })()}
-    </div>
   `;
-  // For supply: also filter state map by active category
-  const mapOpps=vt==='supply'?filterBySupplyCat(activeOpps):activeOpps;
-  renderGrid(document.getElementById(vt[0]+'-map'),buildStateMap(mapOpps,vt),vt);
+  // State map shows the same filtered opp set
+  renderGrid(document.getElementById(vt[0]+'-map'),buildStateMap(filteredOpps,vt),vt);
+  // Mount the unified filter panel (Domain → Category → Sub-category)
+  if (typeof renderFilterPanel === 'function') {
+    renderFilterPanel(vt, document.getElementById('fx-'+vt), activeOpps);
+  }
 }
 
 // GAP FIX 4 — Vertical tier filter (All / Strong ≥85 / BID ≥70 / Unscored)
+// 2026-05-02: now stacks on top of the unified taxonomy filter (filter-system.js)
+// instead of the legacy SUPPLY_CATS pipeline.
 function vtFilter(vt, tier){
   let activeOpps=OPPS.filter(o=>getVertical(o)===vt&&(!o.status||o.status==='new'||o.status==='scored'||o.status==='reviewing'||o.status==='pursuing'));
-  // For supply, also apply the active category filter
-  if(vt==='supply') activeOpps=filterBySupplyCat(activeOpps);
+  // Apply taxonomy filters first (Domain → Category → Sub), THEN tier filter.
+  if (typeof filterContracts === 'function') activeOpps = filterContracts(activeOpps, vt);
   let filtered;
   if(tier==='strong') filtered=activeOpps.filter(o=>scoreOf(o)>=85);
   else if(tier==='bid') filtered=activeOpps.filter(o=>scoreOf(o)>=70&&scoreOf(o)<85);
@@ -2522,5 +2495,8 @@ renderHelp();
 loadData();
 setInterval(()=>loadData(), 300000);
 </script>
+<!-- Unified filter system: TAXONOMY config + mapping engine + filter UI + Command Center search.
+     Loaded after the main script so it can read OPPS, getVertical, oppRow, etc. -->
+<script src="dashboard/filter-system.js"></script>
 </body>
 </html>
