@@ -75,7 +75,17 @@ async function findProtestableAwards() {
     .eq('result', 'lost')
     .gte('decision_date', tenDaysAgo.toISOString().split('T')[0]);
 
-  const protestable = (recentLosses || []).filter(bid => {
+  // 2026-05-02: log empty input so dashboard distinguishes
+  // "RECON ran but had nothing to chew on" from "RECON never ran".
+  if (!recentLosses || recentLosses.length === 0) {
+    await logAction('RECON', 'No recent losses in protest window', {
+      window_days: PROTEST_DEADLINE_DAYS,
+      checked_at: new Date().toISOString(),
+    });
+    return [];
+  }
+
+  const protestable = recentLosses.filter(bid => {
     const decisionDate = new Date(bid.decision_date);
     const daysAgo = Math.floor((new Date() - decisionDate) / 86400000);
     return daysAgo <= PROTEST_DEADLINE_DAYS;

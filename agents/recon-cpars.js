@@ -71,6 +71,18 @@ async function getPendingRatings() {
     .not('evaluation_date', 'is', null);
 
   if (error) throw new Error('Could not load CPARS data: ' + error.message);
+
+  // 2026-05-02: log empty input so dashboard shows the agent ran.
+  // CPARS data is manually entered by Mr. Kemp after federal performance
+  // evaluations — this table will be empty until Walker has won + delivered
+  // its first contract.
+  if (!data || data.length === 0) {
+    await logAction('RECON', 'No CPARS evaluations to review', {
+      reason: 'cpars_ratings table empty or all responses already submitted',
+      checked_at: new Date().toISOString(),
+    });
+  }
+
   return data || [];
 }
 

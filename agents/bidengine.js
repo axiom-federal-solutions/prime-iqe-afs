@@ -293,8 +293,22 @@ async function calculateSupplyPrice(opp) {
   let estimateNote;
 
   if (haveRealPrices) {
-    materialCost = prices.reduce((sum, p) => sum + (p.unit_price || 0), 0);
-    estimateNote = `Material cost from ${prices.length} live distributor quote(s).`;
+    // 2026-05-02 BUG FIX: was summing unit_price across distributors —
+    // 5 quotes × $100 produced $500 material cost. Now averages for a
+    // market baseline, and surfaces lowest/highest in the note so Mr. Kemp
+    // can see his pricing room.
+    const validPrices = prices.map(p => p.unit_price || 0).filter(v => v > 0);
+    if (validPrices.length === 0) {
+      materialCost = Math.round((opp.value || 100000) * 0.65);
+      estimateNote = `Distributor rows exist but no valid unit_price values — falling back to 65% of ceiling.`;
+    } else {
+      const avgPrice = validPrices.reduce((s, v) => s + v, 0) / validPrices.length;
+      const minPrice = Math.min(...validPrices);
+      const maxPrice = Math.max(...validPrices);
+      materialCost = Math.round(avgPrice);
+      estimateNote = `Material cost averaged from ${prices.length} live distributor quote(s) — ` +
+                     `range: $${minPrice.toLocaleString()} (most competitive) to $${maxPrice.toLocaleString()}.`;
+    }
   } else {
     // 2026-05-02: fallback — no distributor data yet for this NAICS.
     // Use 65% of contract value as estimated material cost (federal supply

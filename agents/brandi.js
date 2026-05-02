@@ -199,6 +199,27 @@ async function getUrgentOpportunities(hoursThreshold) {
   return data || [];
 }
 
+// 2026-05-02: prefix-based vertical detection — kept aligned with scout.js
+// SUPPLY_NAICS / REAL_ESTATE_NAICS so a bid's vertical doesn't shift between
+// agents. Previously used a hardcoded 5-NAICS supply list that mis-classified
+// the new codes added in Round 2 (339113, 423450, 311999, etc.).
+const _SUPPLY_NAICS_PREFIXES_BRANDI = [
+  '424710','424720','424130','424490','424120','424690','423440','423450',
+  '424310','424410','311999','339113','453210','315990','561720',
+];
+const _RE_NAICS_PREFIXES_BRANDI = [
+  '531110','531120','531190','531210','531311','531312','531390','532120','532412',
+];
+function _bidVertical(bid) {
+  const opp = bid.opportunities || {};
+  const v = (opp.vertical || '').toLowerCase();
+  if (v === 'realestate' || v === 'supply' || v === 'construction') return v;
+  const n = (opp.naics || '').trim();
+  if (_RE_NAICS_PREFIXES_BRANDI.some(p => n.startsWith(p)))      return 'realestate';
+  if (_SUPPLY_NAICS_PREFIXES_BRANDI.some(p => n.startsWith(p))) return 'supply';
+  return 'construction';
+}
+
 async function getPendingApprovals(type) {
   let query = supabase
     .from('bids')
@@ -210,8 +231,9 @@ async function getPendingApprovals(type) {
   const { data } = await query;
   if (!data) return [];
 
-  if (type === 'supply') return data.filter(b => b.opportunities && ['424710','424130','424490','424120','424410'].includes(b.opportunities.naics));
-  if (type === 'construction') return data.filter(b => b.opportunities && !['424710','424130','424490','424120','424410'].includes(b.opportunities.naics));
+  if (type === 'supply')       return data.filter(b => _bidVertical(b) === 'supply');
+  if (type === 'construction') return data.filter(b => _bidVertical(b) === 'construction');
+  if (type === 'realestate')   return data.filter(b => _bidVertical(b) === 'realestate');
   return data;
 }
 
@@ -400,15 +422,97 @@ function oppRow(opp, isUrgent) {
   </div>`;
 }
 
+// 2026-05-02: rebuilt to render BID ENGINE pricing + VAULT compliance status.
+// Previous version showed only title/agency/score — Mr. Kemp couldn't see what
+// price had been calculated, whether the price came from real distributor
+// quotes or an estimate, the real estate breakdown for lease/PM bids, or any
+// VAULT compliance failures that should block submission.
 function pendingRow(bid) {
-  const opp   = bid.opportunities || {};
-  const score = bid.prime_score || opp.prime_score || 0;
-  return `
+  const opp     = bid.opportunities || {};
+  const score   = bid.prime_score || opp.prime_score || 0;
+  const pricing = bid.pricing_data || {};
+  const vertical = _bidVertical(bid);
+
+  // Top line: title + score
+  let html = `
   <div style="border:1px solid rgba(233,196,106,0.2);border-radius:6px;padding:12px;margin-bottom:8px;">
-    <div style="font-size:13px;font-weight:600;color:#EDF0F7;margin-bottom:4px;">${opp.title || 'Federal Bid'}</div>
-    <div style="font-size:11px;color:#8B95AB;">${opp.agency || ''} · Score: <span style="color:${SCORE_COLOR(score)}">${score}</span> · Status: ${bid.status}</div>
-    <div style="font-size:11px;color:#E9C46A;margin-top:4px;">→ Review in PRIME dashboard to approve or reject</div>
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:4px;">
+      <div style="font-size:13px;font-weight:600;color:#EDF0F7;flex:1;margin-right:12px;">${opp.title || 'Federal Bid'}</div>
+      <div style="font-size:14px;font-weight:700;color:${SCORE_COLOR(score)};white-space:nowrap;">${score}</div>
+    </div>
+    <div style="font-size:11px;color:#8B95AB;margin-bottom:6px;">
+      ${opp.agency || '—'} · ${opp.naics || '—'} · ${(vertical || '').toUpperCase()} · Status: ${bid.status}
+    </div>`;
+
+  // BID ENGINE pricing block — rendered if pricing_data is populated
+  if (pricing.base) {
+    const basePrice  = '$' + Math.round(pricing.base).toLocaleString();
+    const escalated  = pricing.escalated && pricing.escalated !== pricing.base
+                         ? ' (year-1) · $' + Math.round(pricing.escalated).toLocaleString() + ' (final yr)'
+                         : '';
+    const sourceTag  = pricing.pricing_source === 'value_based_estimate'
+                         ? ' <span style="color:#F59E0B;font-weight:600;">[ESTIMATE]</span>'
+                         : pricing.pricing_source === 'distributor_quotes'
+                         ? ' <span style="color:#34D399;font-weight:600;">[LIVE QUOTES]</span>'
+                         : '';
+    html += `
+    <div style="background:rgba(0,229,255,0.06);border:1px solid rgba(0,229,255,0.2);border-radius:4px;padding:8px 10px;margin-bottom:6px;">
+      <div style="font-size:11px;font-weight:700;color:#00E5FF;letter-spacing:1px;margin-bottom:2px;">💰 PRICED · ${(pricing.model || '').toUpperCase()}${sourceTag}</div>
+      <div style="font-size:13px;color:#EDF0F7;font-weight:600;">${basePrice}${escalated}</div>`;
+
+    // Real estate sub-breakdowns — make the unique RE fields visible
+    if (vertical === 'realestate' && pricing.breakdown) {
+      const b = pricing.breakdown;
+      if (b.annual_base_rent) {
+        html += `<div style="font-size:10px;color:#8B95AB;margin-top:3px;">
+          Annual rent $${b.annual_base_rent.toLocaleString()} × ${b.term_years || '?'}-yr term · ${b.escalation_pct || 3}%/yr escalation · Total ~$${(b.total_lifetime_rent || 0).toLocaleString()}
+        </div>`;
+      } else if (b.annual_management_fee) {
+        html += `<div style="font-size:10px;color:#8B95AB;margin-top:3px;">
+          PM fee $${b.annual_management_fee.toLocaleString()}/yr (${b.fee_percentage || 4}% of $${(b.managed_portfolio_value || 0).toLocaleString()})
+        </div>`;
+      } else if (b.daily_rate) {
+        html += `<div style="font-size:10px;color:#8B95AB;margin-top:3px;">
+          $${b.daily_rate}/day × ${b.duration_days || 90} days
+        </div>`;
+      } else if (b.retainer) {
+        html += `<div style="font-size:10px;color:#8B95AB;margin-top:3px;">
+          Retainer $${b.retainer.toLocaleString()} + ${b.estimated_hours || 0} hrs @ $${b.hourly_rate || 175}/hr
+        </div>`;
+      }
+    }
+    // Supply pricing source note
+    if (vertical === 'supply' && pricing.note) {
+      html += `<div style="font-size:10px;color:#8B95AB;margin-top:3px;font-style:italic;">${pricing.note}</div>`;
+    }
+
+    html += `</div>`;
+  }
+
+  // VAULT compliance status — shown if VAULT has run on this bid
+  if (bid.compliance_status) {
+    const isEligible = bid.compliance_status === 'ELIGIBLE';
+    const cColor = isEligible ? '#34D399' : '#F87171';
+    const cBg    = isEligible ? 'rgba(52,211,153,0.06)' : 'rgba(248,113,113,0.08)';
+    const cBd    = isEligible ? 'rgba(52,211,153,0.2)'  : 'rgba(248,113,113,0.3)';
+    const failures = (bid.compliance_checks || []).filter(c => c.status === 'FAIL');
+    html += `
+    <div style="background:${cBg};border:1px solid ${cBd};border-radius:4px;padding:8px 10px;margin-bottom:6px;">
+      <div style="font-size:11px;font-weight:700;color:${cColor};letter-spacing:1px;">
+        ${isEligible ? '✅ VAULT: ELIGIBLE' : '🛑 VAULT: INELIGIBLE'}
+      </div>`;
+    if (!isEligible && failures.length > 0) {
+      html += `<div style="font-size:10px;color:#EDF0F7;margin-top:3px;">
+        ${failures.slice(0, 3).map(f => `• ${f.check}: ${f.note}`).join('<br>')}
+      </div>`;
+    }
+    html += `</div>`;
+  }
+
+  // Action prompt
+  html += `<div style="font-size:11px;color:#E9C46A;margin-top:4px;">→ Review in PRIME dashboard to approve or reject</div>
   </div>`;
+  return html;
 }
 
 // ----------------------------------------------------------

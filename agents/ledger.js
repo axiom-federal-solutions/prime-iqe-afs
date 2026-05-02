@@ -305,6 +305,14 @@ async function checkMLThreshold() {
   console.log('LEDGER ML: Bid outcomes available: ' + count + '/' + ML_THRESHOLD + ' needed for ML activation');
 
   if (count < ML_THRESHOLD) {
+    // 2026-05-02: surface ML progress to agent_logs so dashboard can show
+    // "X of 20 outcomes — Y to go" instead of just silently waiting.
+    await logAction('LEDGER', 'L6-01 ML — waiting for more bid outcomes', {
+      outcomes_available: count,
+      threshold:          ML_THRESHOLD,
+      remaining:          ML_THRESHOLD - count,
+      note:               'Mr. Kemp must mark bids as won/lost in the dashboard. Each bid with a non-null result counts.',
+    });
     console.log('LEDGER ML: L6-01 not yet active — need ' + (ML_THRESHOLD - count) + ' more bid outcomes.');
     return;
   }
@@ -314,6 +322,13 @@ async function checkMLThreshold() {
   if (lastTrained) {
     const daysSinceTrain = (Date.now() - new Date(lastTrained)) / 86400000;
     if (daysSinceTrain < 6) {
+      // 2026-05-02: log the skip so dashboard shows ML status as healthy.
+      await logAction('LEDGER', 'L6-01 ML — recent training, skipping', {
+        last_trained:     lastTrained,
+        days_since:       daysSinceTrain.toFixed(1),
+        outcomes_now:     count,
+        next_train_in:    (6 - daysSinceTrain).toFixed(1) + ' days',
+      });
       console.log('LEDGER ML: Already trained ' + daysSinceTrain.toFixed(1) + ' days ago — skipping.');
       return;
     }

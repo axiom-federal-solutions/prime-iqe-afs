@@ -113,10 +113,26 @@ async function scanOSDBUPage(page) {
     }
 
     const text = await response.text();
+    const lowerText = text.toLowerCase();
 
-    // Look for event-related content
-    const hasEvent = page.keywords.some(kw => text.toLowerCase().includes(kw));
-    if (!hasEvent) {
+    // 2026-05-02: tightened event detection. The original check
+    // `keywords.some(...)` matched every OSDBU page because the words
+    // "small business" appear on all of them — false-positive every Monday.
+    // Now we require BOTH:
+    //   (a) at least 2 distinct event keywords matched, AND
+    //   (b) at least one signal that there's an actual scheduled event
+    //       (a date pattern, registration link, or RSVP/register CTA).
+    // Misses are better than spam — Mr. Kemp won't bother reading the brief
+    // if it's full of "events" that don't exist.
+    const matchedKeywords = page.keywords.filter(kw => lowerText.includes(kw.toLowerCase()));
+    const hasEventSignal = (
+      /\b(20\d{2})\b/.test(text) &&                                                // year mention
+      /(register|rsvp|sign[\s-]?up|join us|webinar|conference)/i.test(text) &&     // CTA
+      /(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec|january|february|march|april|june|july|august|september|october|november|december)/i.test(text) // month name
+    );
+
+    if (matchedKeywords.length < 2 || !hasEventSignal) {
+      // Page is online but doesn't show an actual scheduled event right now.
       return 0;
     }
 
