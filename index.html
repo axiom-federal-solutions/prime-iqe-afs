@@ -1589,12 +1589,6 @@ function renderHome(){
   document.getElementById('t-home').innerHTML=`
     ${renderSAMExpiryBanner()}
     ${haltBanner}
-    <!-- 2026-05-02: Command Center fuzzy search — finds opps regardless of score.
-         Useful when you know what you want ("paper products", "fuel", "barracks")
-         and need to bypass the PRIME/ACQ/LEASE score sort. Container is populated
-         after innerHTML by renderCommandSearch() at the bottom of renderHome(). -->
-    <div id="fx-command-search"></div>
-
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
       <div style="background:var(--card);border:1px solid var(--goldBd);border-left:4px solid var(--gold);border-radius:8px;padding:12px 16px;flex:1;margin-right:12px">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
@@ -1614,6 +1608,12 @@ function renderHome(){
       <div class="kpi" style="border-left:3px solid var(--violet)"><div class="kpi-val" style="color:var(--violet)">${supCount}</div><div class="kpi-lbl">Supplier Matches</div><div class="kpi-sub">Indexed from SAM</div></div>
       <div class="kpi" style="border-left:3px solid var(--amber)"><div class="kpi-val" style="color:var(--amber)">${BIDS.length}</div><div class="kpi-lbl">Total Bids</div><div class="kpi-sub">${wonCount} won · ${winRate}% win rate</div></div>
     </div>
+    <!-- 2026-05-02: Command Center fuzzy search — moved here, under the KPI tiles.
+         Mr. Kemp wanted it positioned right under contract total amounts so it sits
+         in his eye-line after he checks pipeline value. Searches across title,
+         description, agency, NAICS, PSC, solicitation # — surfaces opps regardless
+         of score. Useful when you know what you want ("paper products", "fuel"). -->
+    <div id="fx-command-search" style="margin-bottom:16px"></div>
     ${renderMonteCarloRow()}
     ${renderL6StatusPanel()}
     <div style="display:grid;grid-template-columns:1fr 340px;gap:14px">
