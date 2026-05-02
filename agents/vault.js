@@ -10,8 +10,15 @@
 
 const { supabase, logAction, isAgentEnabled } = require('../lib/supabase');
 
-// Current compliance status — kept in sync with Supabase system_config
-// Update these when licenses/certs are renewed
+// Default compliance values — used as fallback when the `compliance` table
+// has no live row for a given item. loadComplianceFromDb() at the start of
+// runVault() overwrites these with whatever is current in the DB so the
+// renewals work without code edits.
+//
+// 2026-05-02: previously these were the source of truth (hardcoded). Now
+// they're a safety net; the `compliance` table is canonical. Edit a row
+// in Supabase Studio when SAM/license/insurance renews — no code changes,
+// no GitHub push, no agent rebuild needed.
 const COMPLIANCE = {
   sam_active:          true,          // SAM.gov registration status
   sam_expiry:          '2026-12-31',  // SAM.gov expiration — must stay current
@@ -39,14 +46,76 @@ const COMPLIANCE = {
   sdb_expiry:          '2027-03-31',
 };
 
+// 2026-05-02: load compliance from the `compliance` table at run start.
+// Maps DB row.type → COMPLIANCE field so the table drives behavior.
+// Expected `compliance` table rows (one per item):
+//   { type: 'sam_registration',     name: 'UEI USMQMFAGL9M4',  expiry_date: '...', status: 'active' }
+//   { type: 'la_contractor_license',name: 'LA #...',           expiry_date: '...', status: 'active' }
+//   { type: 'general_liability',    name: 'Hartford GL',       expiry_date: '...', status: 'active' }
+//   { type: 'workers_comp',         name: 'Hartford WC',       expiry_date: '...', status: 'active' }
+//   { type: 'sdb_certification',    name: 'SBA SDB',           expiry_date: '...', status: 'active' }
+async function loadComplianceFromDb() {
+  try {
+    const { data, error } = await supabase
+      .from('compliance')
+      .select('type, name, expiry_date, status, number');
+    if (error || !data || data.length === 0) {
+      console.warn('VAULT: compliance table empty or unavailable — using hardcoded defaults');
+      return;
+    }
+    const byType = {};
+    for (const row of data) byType[(row.type || '').toLowerCase()] = row;
+
+    // Map DB rows to COMPLIANCE fields. status='active' must be present;
+    // any other status (expired, revoked, pending) marks the item inactive.
+    if (byType['sam_registration']) {
+      COMPLIANCE.sam_active = byType['sam_registration'].status === 'active';
+      COMPLIANCE.sam_expiry = byType['sam_registration'].expiry_date || COMPLIANCE.sam_expiry;
+    }
+    if (byType['la_contractor_license']) {
+      COMPLIANCE.la_contractors_lic = byType['la_contractor_license'].status === 'active';
+      COMPLIANCE.la_lic_expiry = byType['la_contractor_license'].expiry_date || COMPLIANCE.la_lic_expiry;
+    }
+    if (byType['general_liability']) {
+      COMPLIANCE.general_liability = byType['general_liability'].status === 'active';
+      COMPLIANCE.gl_expiry = byType['general_liability'].expiry_date || COMPLIANCE.gl_expiry;
+    }
+    if (byType['workers_comp']) {
+      COMPLIANCE.workers_comp = byType['workers_comp'].status === 'active';
+      COMPLIANCE.wc_expiry = byType['workers_comp'].expiry_date || COMPLIANCE.wc_expiry;
+    }
+    if (byType['sdb_certification']) {
+      COMPLIANCE.sdb_cert = byType['sdb_certification'].status === 'active';
+      COMPLIANCE.sdb_expiry = byType['sdb_certification'].expiry_date || COMPLIANCE.sdb_expiry;
+    }
+    console.log('VAULT: compliance loaded from DB (' + data.length + ' rows)');
+  } catch (err) {
+    console.warn('VAULT: loadComplianceFromDb failed — using hardcoded defaults:', err.message);
+  }
+}
+
 // Warning threshold — alert when a cert or license expires in less than X days
 const EXPIRY_WARNING_DAYS = 90;
 
 // Supply NAICS codes — fast bypass (no bonding, no Davis-Bacon, no license)
-const SUPPLY_NAICS = ['424710','424130','424490','424120','424690','423440','424310'];
+// 2026-05-02: synced with scout.js / TAXONOMY (was 7 codes, now 14).
+// Mismatch was sending 339113/423450/424410/311999/453210/315990/424720
+// bids through the construction gate where they got blocked by bonding
+// and license requirements that don't apply to drop-ship supply.
+const SUPPLY_NAICS = [
+  '424710','424720','424130','424490','424120','424690','423440','423450',
+  '424310','424410','311999','339113','453210','315990','561720',
+];
 
-// Real Estate & Rental NAICS — asset ownership gate (NEW 3rd vertical)
-const REAL_ESTATE_NAICS = ['531110','531120','532412','532120'];
+// Real Estate & Rental NAICS — asset ownership gate (3rd vertical)
+// 2026-05-02: expanded from 4 to 9 codes to match scout.js. Property
+// management (531311/531312), advisory (531210/531390), and land leasing
+// (531190) bids were falling through to the construction gate.
+const REAL_ESTATE_NAICS = [
+  '531110','531120','531190','531210',
+  '531311','531312','531390',
+  '532120','532412',
+];
 
 // ----------------------------------------------------------
 // MAIN: Run daily compliance check
@@ -57,6 +126,10 @@ async function runVault() {
   // Check per-agent enable flag (T.E.S.T. can disable VAULT via system_config)
   const enabled = await isAgentEnabled('VAULT');
   if (!enabled) process.exit(0);
+
+  // 2026-05-02: pull live compliance values from the `compliance` table.
+  // If the table is empty/unavailable, hardcoded defaults remain in effect.
+  await loadComplianceFromDb();
 
   try {
     // --- PART 1: Check system-wide compliance status ---
@@ -140,6 +213,14 @@ async function checkPendingBids() {
 
   if (error || !bids) {
     console.warn('VAULT: Could not load bids —', error?.message);
+    await logAction('VAULT', 'Bid query failed', { error: error?.message || 'unknown' });
+    return 0;
+  }
+
+  // 2026-05-02: log empty input so dashboard can distinguish
+  // "VAULT ran with nothing to do" from "VAULT never ran".
+  if (bids.length === 0) {
+    await logAction('VAULT', 'No pending bids to check', { checked_at: new Date().toISOString() });
     return 0;
   }
 
@@ -252,8 +333,20 @@ async function runConstructionComplianceCheck(bid, opp) {
     compliance_date:   new Date().toISOString(),
   }).eq('id', bid.id);
 
+  // 2026-05-02: per-bid log so BRANDI can render INELIGIBLE reasons in
+  // the morning brief instead of just showing a status badge.
+  const failures = checks.filter(c => c.status === 'FAIL');
+  await logAction('VAULT', eligible ? 'Construction bid ELIGIBLE' : 'Construction bid INELIGIBLE', {
+    bid_id:        bid.id,
+    solicitation:  opp.solicitation_number,
+    naics:         opp.naics,
+    eligible,
+    failures:      failures.map(f => `${f.check}: ${f.note}`),
+    failure_count: failures.length,
+  });
+
   const status = eligible ? 'ELIGIBLE' : 'INELIGIBLE';
-  console.log('VAULT: ' + opp.solicitation_number + ' → ' + status + ' (' + checks.filter(c => c.status === 'FAIL').length + ' failures)');
+  console.log('VAULT: ' + opp.solicitation_number + ' → ' + status + ' (' + failures.length + ' failures)');
 }
 
 // ----------------------------------------------------------
@@ -303,6 +396,16 @@ async function runSupplyComplianceCheck(bid, opp) {
     compliance_status: eligible ? 'ELIGIBLE' : 'INELIGIBLE',
     compliance_date:   new Date().toISOString(),
   }).eq('id', bid.id);
+
+  const supplyFailures = checks.filter(c => c.status === 'FAIL');
+  await logAction('VAULT', eligible ? 'Supply bid ELIGIBLE' : 'Supply bid INELIGIBLE', {
+    bid_id:        bid.id,
+    solicitation:  opp.solicitation_number,
+    naics:         opp.naics,
+    eligible,
+    failures:      supplyFailures.map(f => `${f.check}: ${f.note}`),
+    failure_count: supplyFailures.length,
+  });
 
   console.log('VAULT: ' + opp.solicitation_number + ' (SUPPLY) → ' + (eligible ? 'ELIGIBLE via fast bypass' : 'INELIGIBLE'));
 }
@@ -375,24 +478,62 @@ async function runRealEstateComplianceCheck(bid, opp) {
   }
 
   // *** ASSET OWNERSHIP GATE — the critical real estate check ***
-  // Check if Walker has confirmed asset ownership in the database
-  // Joe must manually enter owned properties/equipment into the system
+  // 2026-05-02: now queries the `assets` table (created by sql/add-assets-table.sql)
+  // instead of the `compliance` table. Compliance is for certs/licenses/insurance;
+  // owned property and equipment now live in their own table with the right schema.
+  // If the assets table doesn't exist yet, the query gracefully fails and the gate
+  // stays closed — Mr. Kemp must run the migration before RE bids can clear.
   const assetType = getAssetTypeFromNAICS(opp.naics);
-  const { data: ownedAssets } = await supabase
-    .from('compliance')
-    .select('id, name, status')
-    .ilike('type', `%${assetType}%`)
-    .eq('status', 'active')
-    .limit(5);
+  const oppState  = opp.state || opp.place_of_performance;
 
-  const hasAsset = ownedAssets && ownedAssets.length > 0;
-  checks.push({
-    check:  'Asset Ownership Confirmed',
-    status: hasAsset ? 'PASS' : 'FAIL',
-    note:   hasAsset
-      ? `Found ${ownedAssets.length} owned ${assetType} in system: ${ownedAssets.map(a => a.name).join(', ')}`
-      : `NO ${assetType.toUpperCase()} found in compliance records — CANNOT BID. Add owned ${assetType} to PRIME to unlock this opportunity.`,
-  });
+  // Prefer assets in the same state as the opportunity (same-state asset
+  // is far more likely to be the right match for a federal lease/RE bid).
+  let assetQuery = supabase
+    .from('assets')
+    .select('id, name, asset_type, city, state, status, ownership_type')
+    .eq('asset_type', assetType)
+    .eq('status', 'active');
+  if (oppState) {
+    // Try same-state first; fall back to any-state if none found
+    const { data: sameState } = await assetQuery.eq('state', oppState).limit(5);
+    var ownedAssets = (sameState && sameState.length > 0) ? sameState : null;
+  }
+  if (!ownedAssets) {
+    const { data: anyState, error: assetErr } = await supabase
+      .from('assets')
+      .select('id, name, asset_type, city, state, status, ownership_type')
+      .eq('asset_type', assetType)
+      .eq('status', 'active')
+      .limit(5);
+    if (assetErr) {
+      // Common cause: assets table doesn't exist yet (migration not run).
+      // Surface this loudly so Mr. Kemp knows what to fix.
+      checks.push({
+        check:  'Asset Ownership Confirmed',
+        status: 'FAIL',
+        note:   '⚠️ assets table query failed — likely missing schema. ' +
+                'Run sql/add-assets-table.sql in Supabase SQL Editor, then add owned assets. ' +
+                'Error: ' + assetErr.message,
+      });
+      eligible = false;
+      ownedAssets = [];
+    } else {
+      ownedAssets = anyState || [];
+    }
+  }
+
+  const hasAsset = ownedAssets.length > 0;
+  if (!checks.find(c => c.check === 'Asset Ownership Confirmed')) {
+    checks.push({
+      check:  'Asset Ownership Confirmed',
+      status: hasAsset ? 'PASS' : 'FAIL',
+      note:   hasAsset
+        ? `Found ${ownedAssets.length} owned ${assetType.replace(/_/g,' ')}: ` +
+          ownedAssets.map(a => `${a.name}${a.state ? ' (' + a.state + ')' : ''}`).join(', ')
+        : `NO ${assetType.replace(/_/g,' ')} on file — CANNOT BID. ` +
+          `Add an asset row to the \`assets\` table (asset_type='${assetType}', status='active') to unlock.`,
+    });
+  }
   if (!hasAsset) eligible = false;  // Hard block — no asset = no bid
 
   // Property insurance check (for real estate leases)
@@ -424,16 +565,35 @@ async function runRealEstateComplianceCheck(bid, opp) {
     compliance_date:   new Date().toISOString(),
   }).eq('id', bid.id);
 
+  const reFailures = checks.filter(c => c.status === 'FAIL');
+  await logAction('VAULT', eligible ? 'Real estate bid ELIGIBLE' : 'Real estate bid INELIGIBLE — asset gate', {
+    bid_id:        bid.id,
+    solicitation:  opp.solicitation_number,
+    naics:         opp.naics,
+    asset_type:    assetType,
+    eligible,
+    failures:      reFailures.map(f => `${f.check}: ${f.note}`),
+    failure_count: reFailures.length,
+  });
+
   console.log('VAULT: ' + opp.solicitation_number + ' (REAL ESTATE) → ' + (eligible ? 'ELIGIBLE — asset confirmed' : 'INELIGIBLE — asset ownership not confirmed'));
 }
 
-// Map NAICS to asset type label for compliance lookup
+// Map NAICS to asset type label for compliance lookup.
+// 2026-05-02: expanded from 4 to 9 NAICS so every code SCOUT scans has an
+// asset_type to look up. Values match what sql/add-assets-table.sql expects
+// in the asset_type column.
 function getAssetTypeFromNAICS(naics) {
   const map = {
-    '531110': 'residential_property',
-    '531120': 'commercial_property',
-    '532412': 'construction_equipment',
-    '532120': 'truck_fleet',
+    '531110': 'residential_property',     // Lessors of residential buildings
+    '531120': 'commercial_property',      // Lessors of nonresidential buildings (GSA leases)
+    '531190': 'land',                     // Lessors of other RE property (land, parking)
+    '531210': 'real_estate_advisory',     // Brokers — service, no physical asset, but partnership records here
+    '531311': 'residential_property',     // Residential property managers — manage residential
+    '531312': 'commercial_property',      // Nonresidential property managers — manage commercial
+    '531390': 'real_estate_advisory',     // Other RE activities (appraisal, title) — service capacity
+    '532120': 'truck_fleet',              // Truck/RV rental
+    '532412': 'construction_equipment',   // Construction equipment rental
   };
   return map[naics] || 'real_estate_asset';
 }
