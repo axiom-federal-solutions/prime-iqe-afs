@@ -128,6 +128,25 @@
 }
 .fx-sub-label{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 
+/* ── Empty buckets — visible but dimmed so taxonomy structure stays clear ── */
+.fx-domain.is-empty .fx-domain-btn,
+.fx-cat.is-empty .fx-cat-btn,
+.fx-sub-btn.is-empty{
+  opacity:.45;
+}
+.fx-domain.is-empty .fx-domain-btn:hover,
+.fx-cat.is-empty .fx-cat-btn:hover,
+.fx-sub-btn.is-empty:hover{
+  opacity:.85; /* hint that they're still clickable, just empty */
+}
+.fx-domain.is-empty .fx-count,
+.fx-cat.is-empty .fx-cat-count,
+.fx-sub-btn.is-empty .fx-cat-count{
+  color:var(--t3);
+  background:transparent;
+  border:1px dashed var(--bd);
+}
+
 /* ── Two-column layout: filter panel + opp list (desktop) ────────── */
 .fx-vertical-layout{
   display:grid;

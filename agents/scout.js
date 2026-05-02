@@ -94,7 +94,13 @@ const CONSTRUCTION_NAICS = [
 
 // ---- SUPPLY NAICS (Active + Tier 1/2 Add-ons) ----
 // Drop-ship model — Walker holds contract, distributor ships
+// 2026-05-02: expanded from 7 → 14 codes so dashboard TAXONOMY headings
+// (Food, Office, PPE, Safety, Uniforms, Petroleum) actually populate.
+// Previously six categories in the filter UI showed zero opps because
+// SCOUT never queried their NAICS codes. The dashboard's getVertical()
+// already routes these correctly to the supply tab via SUPPLY_NAICS_PREFIXES.
 const SUPPLY_NAICS = [
+  // Original 7 (Tier 1 — proven categories)
   '424710',  // Petroleum — highest value supply
   '424130',  // Industrial & Personal Service Paper — janitorial
   '424490',  // Other Grocery & Related Products — PPE classification
@@ -102,6 +108,14 @@ const SUPPLY_NAICS = [
   '424690',  // Other Chemical Merchant — cleaning chemicals, degreasers
   '423440',  // Other Commercial Equipment — safety equipment, alt PPE
   '424310',  // Piece Goods Merchant — uniforms, work clothing, linens
+  // 2026-05-02 expansion (Tier 2 — fill gaps in dashboard taxonomy)
+  '424720',  // Petroleum bulk stations — bulk fuel deliveries (paired with 424710)
+  '339113',  // Surgical & medical instruments — PPE manufacturing source
+  '423450',  // Medical/professional equipment — safety equipment retail (was empty bucket)
+  '424410',  // General-line grocery — federal dining services
+  '311999',  // Other food manufacturing — bulk food contracts
+  '453210',  // Office supplies & stationery stores — small office contracts
+  '315990',  // Apparel accessories & other apparel — uniform accessories
 ];
 
 // ---- REAL ESTATE & RENTAL NAICS (3rd Vertical — LEASE Score) ----

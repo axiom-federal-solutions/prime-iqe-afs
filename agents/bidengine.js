@@ -147,18 +147,38 @@ async function priceOneBid(opportunityId) {
   });
 }
 
+// 2026-05-02: vertical detection for pricing — kept simple and self-contained
+// so BID ENGINE doesn't need to import scout.js's deriveVertical().
+const REAL_ESTATE_NAICS_BID = ['531110','531120','531190','531210','531311','531312','531390','532120','532412'];
+const SUPPLY_NAICS_BID      = ['424710','424720','424130','424490','424120','424690','423440','423450','424310','424410','311999','339113','453210','315990','561720'];
+function _deriveBidVertical(opp) {
+  const v = (opp.vertical || '').toLowerCase();
+  if (v === 'realestate' || v === 'supply' || v === 'construction') return v;
+  const n = (opp.naics || '').trim();
+  if (REAL_ESTATE_NAICS_BID.some(p => n.startsWith(p))) return 'realestate';
+  if (SUPPLY_NAICS_BID.some(p => n.startsWith(p)))      return 'supply';
+  return 'construction';
+}
+
 // ----------------------------------------------------------
 // CALCULATE BID PRICE: Main pricing logic
-// Automatically detects if this is a construction or supply bid
+// 2026-05-02: now routes to construction / supply / real estate.
+// Previously real estate opps fell through to construction pricing (wrong
+// model — federal RE bids use lease offers + property mgmt cost stacks,
+// not Davis-Bacon labor).
 // ----------------------------------------------------------
 async function calculateBidPrice(opportunityId) {
   const opp = await getOpportunity(opportunityId);
+  const vertical = _deriveBidVertical(opp);
 
-  // Use different pricing models for supply vs construction
-  const isSupply = SUPPLY_NAICS.includes(opp.naics);
-  const baseResult = isSupply
-    ? await calculateSupplyPrice(opp)
-    : await calculateConstructionPrice(opp);
+  let baseResult;
+  if (vertical === 'realestate') {
+    baseResult = await calculateRealEstatePrice(opp);
+  } else if (vertical === 'supply') {
+    baseResult = await calculateSupplyPrice(opp);
+  } else {
+    baseResult = await calculateConstructionPrice(opp);
+  }
 
   // L6-07: If competitor profiles are active, layer in competitive positioning
   const competitorIntelActive = await getConfig('L6_07_COMPETITOR_ACTIVE', 'false');
@@ -232,41 +252,73 @@ async function calculateConstructionPrice(opp) {
 
 // ----------------------------------------------------------
 // SUPPLY PRICING: Material cost + shipping + markup
-// First checks for stale pricing — blocks if prices are old
+// 2026-05-02: hardened so an empty distributor_prices table no longer
+// produces a $0 bid. Falls back to value-based estimation (35% of contract
+// value as material cost, mirroring the construction model) and flags the
+// estimate so Mr. Kemp knows to verify before submission.
 // ----------------------------------------------------------
 async function calculateSupplyPrice(opp) {
   console.log('BID ENGINE: Using supply pricing model...');
 
-  // Check for stale prices — if any are older than 14 days, STOP
+  // Check for stale prices on THIS opp's NAICS only — was previously a global
+  // block that stopped pricing every supply bid if any one distributor price
+  // anywhere was stale. Now scoped so unrelated stale data doesn't block a bid.
   const { data: stalePrices } = await supabase
     .from('distributor_prices')
     .select('*')
-    .eq('is_stale', true);
+    .eq('is_stale', true)
+    .eq('naics', opp.naics);
 
   if (stalePrices && stalePrices.length > 0) {
-    await logAction('BID ENGINE', 'BLOCKED — stale pricing detected', {
+    await logAction('BID ENGINE', 'BLOCKED — stale pricing for this NAICS', {
+      naics: opp.naics,
       stale_count: stalePrices.length,
       items: stalePrices.map(p => p.distributor_name),
     });
     throw new Error(
-      'BLOCKED: ' + stalePrices.length + ' distributor prices are stale (>14 days). ' +
-      'Get fresh quotes before bidding.'
+      'BLOCKED: ' + stalePrices.length + ' distributor prices for NAICS ' + opp.naics +
+      ' are stale (>14 days). Get fresh quotes before bidding.'
     );
   }
 
-  // Load current distributor prices
+  // Load current distributor prices for THIS NAICS specifically
   const { data: prices } = await supabase
     .from('distributor_prices')
     .select('*')
-    .eq('is_stale', false);
+    .eq('is_stale', false)
+    .eq('naics', opp.naics);
 
-  const materialCost = (prices || []).reduce((sum, p) => sum + (p.unit_price || 0), 0);
+  const haveRealPrices = prices && prices.length > 0;
+  let materialCost;
+  let estimateNote;
+
+  if (haveRealPrices) {
+    materialCost = prices.reduce((sum, p) => sum + (p.unit_price || 0), 0);
+    estimateNote = `Material cost from ${prices.length} live distributor quote(s).`;
+  } else {
+    // 2026-05-02: fallback — no distributor data yet for this NAICS.
+    // Use 65% of contract value as estimated material cost (federal supply
+    // contracts typically run 60–70% materials, 12% markup, balance shipping).
+    // This produces a defensible bid that Mr. Kemp can refine once real
+    // distributor quotes are entered into the distributor_prices table.
+    const fallbackBase = opp.value || 100000;
+    materialCost = Math.round(fallbackBase * 0.65);
+    estimateNote = '⚠️ ESTIMATED — no distributor quotes on file for NAICS ' +
+      opp.naics + '. Material cost approximated at 65% of contract ceiling. ' +
+      'Enter real distributor quotes in distributor_prices table to refine.';
+    await logAction('BID ENGINE', 'Supply pricing — distributor data missing', {
+      naics: opp.naics,
+      opportunity_id: opp.id,
+      fallback_base: fallbackBase,
+      estimated_material_cost: materialCost,
+    });
+  }
 
   // Add shipping estimate (2% of material cost for regional delivery)
-  const shipping = materialCost * 0.02;
+  const shipping = Math.round(materialCost * 0.02);
 
   // Add markup (12% for supply contracts)
-  const markup = materialCost * 0.12;
+  const markup = Math.round(materialCost * 0.12);
   const basePrice = materialCost + shipping + markup;
 
   // Check competitor prices from public bid openings
@@ -283,17 +335,153 @@ async function calculateSupplyPrice(opp) {
 
   return {
     model: 'supply',
-    base: Math.round(basePrice),
-    escalated: Math.round(basePrice), // Supply = no escalation usually
+    base: basePrice,
+    escalated: basePrice, // Supply = no escalation usually
     breakdown: {
-      materials: Math.round(materialCost),
-      shipping: Math.round(shipping),
-      markup: Math.round(markup),
+      materials: materialCost,
+      shipping,
+      markup,
     },
+    pricing_source: haveRealPrices ? 'distributor_quotes' : 'value_based_estimate',
     competitor_avg: avgCompetitorPrice ? Math.round(avgCompetitorPrice) : null,
-    note: avgCompetitorPrice && basePrice > avgCompetitorPrice
-      ? 'WARNING: Our price is above competitor average. Review markup.'
-      : 'Price is competitive.',
+    note: estimateNote + (avgCompetitorPrice && basePrice > avgCompetitorPrice
+      ? ' WARNING: Above competitor average — review markup.'
+      : ''),
+  };
+}
+
+// ----------------------------------------------------------
+// REAL ESTATE PRICING — 2026-05-02: NEW
+// Federal RE bids fall into four shapes; we route by NAICS:
+//   531120 (GSA office lease)         → annual rent × term (5-year typical)
+//   531110 (residential/military)     → annual rent × term
+//   531190/531210/531390 (advisory)   → service-fee model (hourly + retainer)
+//   531311/531312 (property mgmt)     → % of managed value (3–5% federal range)
+//   532120/532412 (equipment rental)  → daily/monthly rate × duration
+// Without the full RFP attached we estimate; VAULT confirms asset ownership
+// before submission (memory: "RE requires manual asset entry to bid").
+// ----------------------------------------------------------
+async function calculateRealEstatePrice(opp) {
+  console.log('BID ENGINE: Using real estate pricing model...');
+
+  const naics = (opp.naics || '').trim();
+  const value = opp.value || 0;
+  const title = (opp.title || '').toLowerCase();
+
+  // Try to detect lease term from title (1, 3, 5, 10 years are common)
+  let termYears = 5; // default — standard GSA office lease
+  if (title.includes('10 year') || title.includes('10-year')) termYears = 10;
+  else if (title.includes('1 year') || title.includes('annual')) termYears = 1;
+  else if (title.includes('3 year') || title.includes('3-year')) termYears = 3;
+
+  let model, base, breakdown, escalated, note;
+
+  // ── LEASE OFFERS — 531110, 531120, 531190 ──
+  if (naics.startsWith('5311')) {
+    model = 'real_estate_lease';
+    // Annual lease rate estimated as contract value / term, with 3% escalation/yr
+    const annualRate = value > 0 ? value / termYears : 100000;
+    let total = 0;
+    const yearly = [];
+    for (let y = 0; y < termYears; y++) {
+      const yr = Math.round(annualRate * Math.pow(1.03, y));
+      yearly.push({ year: y, price: yr });
+      total += yr;
+    }
+    base = Math.round(annualRate);              // year-1 rent
+    escalated = Math.round(yearly[yearly.length - 1].price);
+    breakdown = {
+      annual_base_rent:    base,
+      term_years:          termYears,
+      escalation_pct:      3,
+      total_lifetime_rent: total,
+      operating_expenses:  Math.round(annualRate * 0.20), // 20% OpEx (CAM, taxes, insurance)
+      tenant_improvement:  Math.round(annualRate * 0.15), // typical TI allowance ask
+    };
+    note = `Lease offer: ${termYears}-yr term, $${base.toLocaleString()}/yr Year 1 with 3% annual escalation. ` +
+           `Total contract value $${total.toLocaleString()}. VAULT must confirm asset ownership before submission.`;
+  }
+
+  // ── PROPERTY MANAGEMENT — 531311, 531312 ──
+  else if (naics.startsWith('53131')) {
+    model = 'real_estate_property_mgmt';
+    // PM contracts price as % of managed portfolio value or flat monthly fee
+    const managedValue = value > 0 ? value : 1000000;
+    const annualFee = Math.round(managedValue * 0.04); // 4% federal PM standard
+    base = annualFee;
+    escalated = Math.round(annualFee * Math.pow(1.025, termYears - 1));
+    breakdown = {
+      annual_management_fee: annualFee,
+      managed_portfolio_value: managedValue,
+      fee_percentage: 4.0,
+      term_years: termYears,
+      escalation_pct: 2.5,
+      monthly_retainer: Math.round(annualFee / 12),
+    };
+    note = `Property management: 4% of managed portfolio value, ${termYears}-yr term. ` +
+           `Includes Trevor Monnie LA Licensed Landscape Horticulturist for grounds compliance.`;
+  }
+
+  // ── BROKERAGE/ADVISORY — 531210, 531390 ──
+  else if (naics.startsWith('5312') || naics.startsWith('53139')) {
+    model = 'real_estate_advisory';
+    // Hourly + retainer model — typical for federal advisory
+    const hourlyRate = 175;       // senior RE consultant blended rate
+    const estimatedHours = value > 0 ? Math.min(value / hourlyRate, 2000) : 500;
+    const retainer = Math.round(value > 0 ? value * 0.10 : 25000);
+    base = Math.round(retainer + estimatedHours * hourlyRate);
+    escalated = base;             // no escalation for advisory
+    breakdown = {
+      retainer,
+      hourly_rate: hourlyRate,
+      estimated_hours: Math.round(estimatedHours),
+      labor_cost: Math.round(estimatedHours * hourlyRate),
+    };
+    note = `Advisory services: $${retainer.toLocaleString()} retainer + ${Math.round(estimatedHours)} hrs @ $${hourlyRate}/hr.`;
+  }
+
+  // ── EQUIPMENT RENTAL — 532120 (vehicles), 532412 (construction equipment) ──
+  else if (naics.startsWith('5321') || naics.startsWith('5324')) {
+    model = 'real_estate_rental';
+    // Daily rate × duration; 90-day default if not specified in title
+    let durationDays = 90;
+    if (title.includes('30 day')) durationDays = 30;
+    else if (title.includes('60 day')) durationDays = 60;
+    else if (title.includes('180 day') || title.includes('6 month')) durationDays = 180;
+    else if (title.includes('1 year') || title.includes('annual')) durationDays = 365;
+
+    const dailyRate = value > 0
+      ? Math.round(value / durationDays)
+      : (naics.startsWith('5324') ? 850 : 175); // construction eq vs vehicle defaults
+    base = dailyRate * durationDays;
+    escalated = base;
+    breakdown = {
+      daily_rate: dailyRate,
+      duration_days: durationDays,
+      mobilization: Math.round(base * 0.05),  // 5% mob
+      insurance: Math.round(base * 0.03),     // 3% liability
+      fuel_maintenance: Math.round(base * 0.08),
+    };
+    note = `Equipment rental: $${dailyRate}/day × ${durationDays} days. ` +
+           `VAULT must confirm equipment availability before bid submission.`;
+  }
+
+  // ── FALLBACK — unknown RE NAICS; use value with margin ──
+  else {
+    model = 'real_estate_generic';
+    base = value > 0 ? Math.round(value * 0.95) : 250000; // bid 5% under ceiling
+    escalated = base;
+    breakdown = { contract_value: value, our_bid_pct_of_ceiling: 95 };
+    note = `Real estate generic: 95% of ceiling value. Refine after RFP review.`;
+  }
+
+  return {
+    model,
+    base: Math.round(base),
+    escalated: Math.round(escalated),
+    breakdown,
+    pricing_source: 'estimated_from_value_and_term',
+    note,
   };
 }
 

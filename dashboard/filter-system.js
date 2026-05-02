@@ -294,13 +294,11 @@ const TAXONOMY = {
             keywords: ['facilities support','base operations','base ops','om&m','operations and maintenance'],
             subs: {},
           },
-          janitorial_svc: {
-            label: 'Janitorial Services',
-            naics: ['561720'],
-            psc:   ['S201'],
-            keywords: ['janitorial service','custodial','cleaning service'],
-            subs: {},
-          },
+          // 2026-05-02: removed Janitorial Services from construction.
+          // 561720 routes to the SUPPLY tab via getVertical() / SUPPLY_NAICS_PREFIXES.
+          // Putting it here too caused a permanently empty bucket. If you want
+          // janitorial visible in the construction tab, change SUPPLY_NAICS_PREFIXES
+          // first — don't dual-list the NAICS.
           landscaping: {
             label: 'Landscaping',
             naics: ['561730'],
@@ -593,16 +591,19 @@ function renderFilterPanel(tabKey, container, activeOpps) {
   </div>`;
 
   // One row per domain (the "division-style header"). Click header = expand/collapse + toggle.
+  // 2026-05-02: empty buckets get .is-empty class — dimmed but kept visible so the user
+  // can see the taxonomy structure even when no opps currently fall there.
   for (const [domainKey, domain] of Object.entries(tab.domains)) {
     const expanded = f.expanded.has(domainKey);
     const domainSelected = f.domains.has(domainKey);
     const cnt = counts.domains[domainKey] || 0;
     const dColor = domain.color || tab.color;
+    const domainEmpty = cnt === 0;
 
-    html += `<div class="fx-domain ${domainSelected?'is-active':''}" style="--dc:${dColor}">`;
+    html += `<div class="fx-domain ${domainSelected?'is-active':''} ${domainEmpty?'is-empty':''}" style="--dc:${dColor}">`;
     html += `<div class="fx-domain-head">
       <button class="fx-toggle" onclick="toggleExpanded('${tabKey}','${domainKey}')" aria-label="Expand">${expanded?'▼':'▶'}</button>
-      <button class="fx-domain-btn" onclick="toggleDomain('${tabKey}','${domainKey}')">
+      <button class="fx-domain-btn" onclick="toggleDomain('${tabKey}','${domainKey}')" ${domainEmpty?'title="No opportunities currently match this domain — kept visible so the taxonomy structure stays consistent."':''}>
         <span class="fx-domain-label">${domain.label}</span>
         <span class="fx-count">${cnt}</span>
       </button>
@@ -613,8 +614,9 @@ function renderFilterPanel(tabKey, container, activeOpps) {
       for (const [catKey, cat] of Object.entries(domain.categories)) {
         const catSelected = f.categories.has(catKey);
         const catCnt = counts.categories[catKey] || 0;
-        html += `<div class="fx-cat ${catSelected?'is-active':''}">
-          <button class="fx-cat-btn" onclick="toggleCategory('${tabKey}','${catKey}')">
+        const catEmpty = catCnt === 0;
+        html += `<div class="fx-cat ${catSelected?'is-active':''} ${catEmpty?'is-empty':''}">
+          <button class="fx-cat-btn" onclick="toggleCategory('${tabKey}','${catKey}')" ${catEmpty?'title="No matching opportunities yet."':''}>
             <span class="fx-cat-mark">${catSelected?'☑':'☐'}</span>
             <span class="fx-cat-label">${cat.label}</span>
             <span class="fx-cat-count">${catCnt}</span>
@@ -629,7 +631,8 @@ function renderFilterPanel(tabKey, container, activeOpps) {
             const sub = subs[subKey];
             const subSelected = f.subs.has(subKey);
             const subCnt = counts.subs[subKey] || 0;
-            html += `<button class="fx-sub-btn ${subSelected?'is-active':''}" onclick="toggleSubCategory('${tabKey}','${subKey}')">
+            const subEmpty = subCnt === 0;
+            html += `<button class="fx-sub-btn ${subSelected?'is-active':''} ${subEmpty?'is-empty':''}" onclick="toggleSubCategory('${tabKey}','${subKey}')">
               <span class="fx-cat-mark">${subSelected?'☑':'☐'}</span>
               <span class="fx-sub-label">${sub.label}</span>
               <span class="fx-cat-count">${subCnt}</span>

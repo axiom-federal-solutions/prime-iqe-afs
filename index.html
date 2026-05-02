@@ -473,9 +473,21 @@ function scoreFactorsHtml(o){
 function fmt(v){if(!v&&v!==0)return '—';return v>=1e9?'$'+(v/1e9).toFixed(3)+'B':v>=1e6?'$'+(v/1e6).toFixed(1)+'M':v>=1000?'$'+(v/1000).toFixed(0)+'K':'$'+Math.round(v);}
 function daysLeft(deadline){if(!deadline)return null;const d=Math.ceil((new Date(deadline)-new Date())/86400000);return Math.max(0,d);}
 // Derive vertical from NAICS if DB column not yet set
-// Supply NAICS: IT, training, janitorial, food, logistics, manufacturing, etc.
-// 2026-04-30: removed 541511/541512/541519/611430/541611 — IT/SAP/training out of scope
-const SUPPLY_NAICS_PREFIXES=['541330','561110','561210','424410','332999','339999','611420','541618','488490','424710','424130','424490','424120','424690','423440','424310'];
+// Supply NAICS prefixes — drives getVertical() routing in the dashboard.
+// 2026-05-02: synced with agents/scout.js so an opp tagged on the agent
+// side as supply lands in the supply tab on the dashboard side. Previously
+// inconsistent: scout.js routed 561720/339113/etc. to supply but the
+// dashboard re-routed them to construction when vertical column was null.
+const SUPPLY_NAICS_PREFIXES=[
+  // Construction-adjacent that route to supply (drop-ship friendly services)
+  '541330','561110','561210','561720',
+  // Manufacturing supply codes
+  '424410','332999','339999','611420','541618','488490',
+  // Distribution/wholesale (the real supply core)
+  '424710','424720','424130','424490','424120','424690','423440','423450','424310',
+  // Manufacturing + retail extensions added 2026-05-02
+  '339113','311999','453210','315990',
+];
 // 2026-05-02: Replaced legacy SUPPLY_CATS / selectSupplyCat / filterBySupplyCat
 // pair with the unified filter system in dashboard/filter-system.js.
 // All three verticals (Supply, Construction, Real Estate) now share one
