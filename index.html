@@ -468,7 +468,7 @@ function scoreFactorsHtml(o){
     ${rows}
   </div>`;
 }
-function fmt(v){if(!v&&v!==0)return '—';return v>=1e6?'$'+(v/1e6).toFixed(1)+'M':v>=1000?'$'+(v/1000).toFixed(0)+'K':'$'+Math.round(v);}
+function fmt(v){if(!v&&v!==0)return '—';return v>=1e9?'$'+(v/1e9).toFixed(3)+'B':v>=1e6?'$'+(v/1e6).toFixed(1)+'M':v>=1000?'$'+(v/1000).toFixed(0)+'K':'$'+Math.round(v);}
 function daysLeft(deadline){if(!deadline)return null;const d=Math.ceil((new Date(deadline)-new Date())/86400000);return Math.max(0,d);}
 // Derive vertical from NAICS if DB column not yet set
 // Supply NAICS: IT, training, janitorial, food, logistics, manufacturing, etc.
@@ -1484,7 +1484,7 @@ function renderMonteCarloRow(){
   }
 
   // Active — render P25/P50/P75 bands
-  const fmt = v => '$' + (v >= 1e6 ? (v/1e6).toFixed(2)+'M' : (v/1e3).toFixed(0)+'K');
+  const fmt = v => '$' + (v >= 1e9 ? (v/1e9).toFixed(3)+'B' : v >= 1e6 ? (v/1e6).toFixed(2)+'M' : (v/1e3).toFixed(0)+'K');
   const p25 = FORECAST.p25 || 0;
   const p50 = FORECAST.p50 || 0;
   const p75 = FORECAST.p75 || 0;
