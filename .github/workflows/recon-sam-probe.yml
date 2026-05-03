@@ -1,0 +1,40 @@
+# =============================================================
+# RECON-SAM-PROBE.YML — One-shot SAM Entity API diagnostic
+# JOB: Make a single call to SAM Entity API with current params and
+#      print the full response body so we know exactly what's wrong.
+# WHEN: Run manually after a 400-error spree from RECON Supplier Scan.
+# COST: 1 SAM API call.
+# =============================================================
+name: RECON SAM Probe
+
+on:
+  workflow_dispatch:
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Probe SAM Entity API v4 + v3 — print full bodies
+        run: |
+          echo "=== Probing SAM Entity API v4 ==="
+          curl -s -w "\nHTTP %{http_code}\n" \
+            "https://api.sam.gov/entity-information/v4/entities?api_key=$SAM_API_KEY&naicsCode=236220&physicalAddressStateCode=LA&page=0&size=2&includeSections=entityRegistration,coreData" \
+            | head -c 2000
+          echo ""
+          echo ""
+          echo "=== Probing SAM Entity API v3 ==="
+          curl -s -w "\nHTTP %{http_code}\n" \
+            "https://api.sam.gov/entity-information/v3/entities?api_key=$SAM_API_KEY&naicsCode=236220&physicalAddressStateCode=LA&page=0&size=2&includeSections=entityRegistration,coreData" \
+            | head -c 2000
+          echo ""
+          echo ""
+          echo "=== Probing SAM Entity API v2 (legacy) ==="
+          curl -s -w "\nHTTP %{http_code}\n" \
+            "https://api.sam.gov/entity-information/v2/entities?api_key=$SAM_API_KEY&naicsCode=236220&physicalAddressStateCode=LA&page=0&size=2&includeSections=entityRegistration,coreData" \
+            | head -c 2000
+        env:
+          SAM_API_KEY: ${{ secrets.SAM_API_KEY }}

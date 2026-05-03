@@ -13,7 +13,12 @@ const { supabase, logAction } = require('../lib/supabase');
 const { claudeHaiku }         = require('../lib/claude');
 
 // SAM.gov Entity Management API (same key as SCOUT)
-const SAM_ENTITY_API = 'https://api.sam.gov/entity-information/v3/entities';
+// 2026-05-02: SAM.gov is rolling v3 → v4. v3 still works but is restrictive
+// about deprecated params (purposeOfRegistrationCode, entityECAFlag).
+// Try v4 first, fall back to v3 — keeps things working when SAM.gov flips.
+const SAM_ENTITY_API_V4 = 'https://api.sam.gov/entity-information/v4/entities';
+const SAM_ENTITY_API_V3 = 'https://api.sam.gov/entity-information/v3/entities';
+const SAM_ENTITY_API    = SAM_ENTITY_API_V4;  // primary
 
 // NAICS codes to scan for suppliers (construction + supply focus)
 const TARGET_NAICS = [
@@ -69,34 +74,81 @@ async function scanSuppliers() {
   console.log('RECON-SUPPLIERS: Starting SAM.gov entity scan...');
   let totalUpserted = 0;
 
+  // Track which API version is working so we don't keep retrying v4 if it 400s every time
+  let usingApi = SAM_ENTITY_API_V4;
+  let v4_400_streak = 0;
+
   for (const naics of TARGET_NAICS) {
     for (const state of TARGET_STATES) {
       try {
+        // 2026-05-02: minimal param set. Removed purposeOfRegistrationCode='Z2'
+        // and entityECAFlag='N' — both are deprecated in v3+ and were causing
+        // 400 errors on every call. registrationStatus also dropped (v4 default).
         const params = new URLSearchParams({
           api_key:                     process.env.SAM_API_KEY,
           naicsCode:                   naics,
           physicalAddressStateCode:    state,
-          registrationStatus:          'Active',
-          purposeOfRegistrationCode:   'Z2',  // All Awards
-          entityECAFlag:               'N',
-          includeSections:             'entityRegistration,coreData,assertions,certifications',
+          includeSections:             'entityRegistration,coreData,assertions',
           page:                        '0',
-          size:                        '100',
+          size:                        '50',
         });
 
-        const res = await fetch(SAM_ENTITY_API + '?' + params, {
+        let res = await fetch(usingApi + '?' + params, {
           headers: { 'Accept': 'application/json' },
         });
 
+        // 2026-05-02: log the error body so we can see WHAT SAM is rejecting.
+        // Previously we only logged status code — no diagnostic info.
         if (!res.ok) {
-          // SAM.gov returns 429 when rate limited — log and continue
           if (res.status === 429) {
             console.log('RECON-SUPPLIERS: SAM rate limited — waiting 10s...');
             await sleep(10000);
             continue;
           }
-          console.log('RECON-SUPPLIERS: SAM error ' + res.status + ' for ' + naics + '/' + state);
-          continue;
+
+          // Capture body for diagnosis
+          const errBody = await res.text().catch(() => '(unreadable)');
+          const errSnippet = errBody.slice(0, 200).replace(/\s+/g, ' ');
+
+          // If v4 keeps 400'ing on the first 3 calls, fail over to v3
+          if (res.status === 400 && usingApi === SAM_ENTITY_API_V4 && v4_400_streak < 3) {
+            v4_400_streak++;
+            if (v4_400_streak === 3) {
+              console.log('RECON-SUPPLIERS: v4 returned 400 three times — falling back to v3');
+              await logAction('RECON', 'SAM Entity API v4 fallback to v3', {
+                trigger:      '3x 400 errors on v4',
+                error_sample: errSnippet,
+              });
+              usingApi = SAM_ENTITY_API_V3;
+              // retry this NAICS/state on v3 immediately
+              res = await fetch(usingApi + '?' + params, {
+                headers: { 'Accept': 'application/json' },
+              });
+              if (!res.ok) {
+                const v3Err = await res.text().catch(() => '(unreadable)');
+                console.log('RECON-SUPPLIERS: v3 also failed ' + res.status + ' for ' + naics + '/' + state + ' — ' + v3Err.slice(0, 200));
+                continue;
+              }
+              // v3 worked — fall through to parse below
+            } else {
+              console.log('RECON-SUPPLIERS: v4 SAM error ' + res.status + ' for ' + naics + '/' + state + ' — ' + errSnippet);
+              continue;
+            }
+          } else {
+            console.log('RECON-SUPPLIERS: SAM error ' + res.status + ' for ' + naics + '/' + state + ' — ' + errSnippet);
+            // Surface the FIRST error body to agent_logs so we have ground truth
+            // even after the workflow run is gone.
+            if (totalUpserted === 0 && naics === TARGET_NAICS[0] && state === TARGET_STATES[0]) {
+              await logAction('RECON', 'SAM Entity API rejected request', {
+                api_url:    usingApi,
+                status:     res.status,
+                error_body: errSnippet,
+                naics, state,
+                hint:       'If 400, SAM.gov likely deprecated a parameter. Check api.sam.gov docs.',
+              });
+            }
+            continue;
+          }
         }
 
         const data = await res.json();
