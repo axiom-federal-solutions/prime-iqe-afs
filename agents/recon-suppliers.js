@@ -78,21 +78,24 @@ async function scanSuppliers() {
   let usingApi = SAM_ENTITY_API_V4;
   let v4_400_streak = 0;
 
-  // 2026-05-02 (rev 2): SAM Entity API doesn't accept physicalAddressStateCode
-  // (probe confirmed). Iterate NAICS only, pull a wider page (250), then
-  // filter to our TARGET_STATES client-side. Trades a few extra API calls
-  // worth of bandwidth for a working scan.
+  // 2026-05-02 (rev 3): SAM Entity API caps page size at 10 (size=250 returned
+  // "Size Cannot Exceed 10 Records"). Paginate up to MAX_PAGES per NAICS, with
+  // client-side state filter applied per page. Stops early when a page returns
+  // empty (no more records). 9 NAICS * 10 pages = max 90 calls, well under quota.
   const TARGET_STATES_SET = new Set(TARGET_STATES);
+  const MAX_PAGES = 10;
   for (const naics of TARGET_NAICS) {
-    // Loop kept as inner-no-op to preserve sleep cadence — but only ONE call per NAICS now
-    for (let page = 0; page < 1; page++) {
+    let naicsKept = 0;
+    let stoppedEarly = false;
+    for (let page = 0; page < MAX_PAGES; page++) {
+      if (stoppedEarly) break;
       try {
         const params = new URLSearchParams({
           api_key:         process.env.SAM_API_KEY,
           naicsCode:       naics,
           includeSections: 'entityRegistration,coreData,assertions',
           page:            String(page),
-          size:            '250',  // bigger page since we're not state-filtering server-side
+          size:            '10',  // SAM Entity API hard cap
         });
 
         let res = await fetch(usingApi + '?' + params, {
@@ -225,15 +228,22 @@ async function scanSuppliers() {
           totalUpserted++;
         }
 
-        console.log('RECON-SUPPLIERS: NAICS ' + naics + ' — ' + entities.length + ' entities returned, ' + kept + ' in target states');
+        naicsKept += kept;
+
+        // 2026-05-02: stop paging early if SAM returns fewer than 10 records
+        // (means we've reached the last page for this NAICS). Saves quota.
+        if (entities.length < 10) {
+          stoppedEarly = true;
+        }
 
         // SAM.gov allows ~10 req/sec — stay under the limit
         await sleep(250);
 
       } catch (err) {
-        console.error('RECON-SUPPLIERS: SAM scan error ' + naics + ': ' + err.message);
+        console.error('RECON-SUPPLIERS: SAM scan error ' + naics + ' page ' + page + ': ' + err.message);
       }
     }
+    console.log('RECON-SUPPLIERS: NAICS ' + naics + ' — kept ' + naicsKept + ' suppliers in target states');
   }
 
   await logAction('RECON', 'SAM entity scan complete', {
