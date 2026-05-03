@@ -88,6 +88,19 @@ async function loadComplianceFromDb() {
       COMPLIANCE.sdb_cert = byType['sdb_certification'].status === 'active';
       COMPLIANCE.sdb_expiry = byType['sdb_certification'].expiry_date || COMPLIANCE.sdb_expiry;
     }
+    // 2026-05-02: read bonding capacity from DB so the dashboard's
+    // "Bonding Capacity → VERIFY" warning clears once Mr. Kemp marks it active.
+    if (byType['bonding_capacity']) {
+      // Number column carries the cap as text like '$500,000 single / $1M aggregate'
+      // Extract the first dollar amount as the working bonding limit.
+      const bondTxt = byType['bonding_capacity'].number || '';
+      const match = bondTxt.match(/\$?([\d,]+)/);
+      if (match) {
+        const num = parseInt(match[1].replace(/,/g, ''), 10);
+        if (!isNaN(num)) COMPLIANCE.bonding_limit = num;
+      }
+      COMPLIANCE.bonding_company = byType['bonding_capacity'].issuer || COMPLIANCE.bonding_company;
+    }
     console.log('VAULT: compliance loaded from DB (' + data.length + ' rows)');
   } catch (err) {
     console.warn('VAULT: loadComplianceFromDb failed — using hardcoded defaults:', err.message);
