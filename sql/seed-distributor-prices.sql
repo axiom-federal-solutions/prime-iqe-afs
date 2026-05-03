@@ -14,26 +14,30 @@
 -- (per BID ENGINE's stale check); refresh quarterly at minimum.
 -- ============================================================
 
--- Make sure the table exists with the expected shape. If not, create it.
--- (Some build versions of the schema didn't include this table.)
+-- 2026-05-02 (rev 2): rewritten to match the existing distributor_prices schema
+-- exactly. The actual shape (per introspection) is:
+--   id, distributor_name (NOT NULL), product_category, unit_price,
+--   quote_date (NOT NULL DEFAULT CURRENT_DATE), quote_expiry, created_at
+-- BID ENGINE additionally needs `naics` + `is_stale` to filter quotes per opp.
+-- This migration adds ONLY those two missing columns + indexes/RLS, then seeds.
+
+-- Step 1: ensure the base table exists (no-op if it already does)
 CREATE TABLE IF NOT EXISTS distributor_prices (
   id                UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  naics             TEXT NOT NULL,
   distributor_name  TEXT NOT NULL,
   product_category  TEXT,
-  unit              TEXT,                       -- gallon, case, lb, each, etc.
-  unit_price        DECIMAL(12,2) NOT NULL,
-  contact_email     TEXT,
-  contact_phone     TEXT,
-  state             TEXT,                       -- distributor's home state for shipping math
-  notes             TEXT,
-  quoted_date       DATE DEFAULT CURRENT_DATE,
-  is_stale          BOOLEAN DEFAULT false,
+  unit_price        NUMERIC,
+  quote_date        DATE NOT NULL DEFAULT CURRENT_DATE,
+  quote_expiry      DATE,
   created_at        TIMESTAMPTZ DEFAULT now()
 );
 
-CREATE INDEX IF NOT EXISTS idx_distributor_prices_naics      ON distributor_prices(naics);
-CREATE INDEX IF NOT EXISTS idx_distributor_prices_stale      ON distributor_prices(is_stale);
+-- Step 2: add the two columns BID ENGINE actually needs
+ALTER TABLE distributor_prices ADD COLUMN IF NOT EXISTS naics    TEXT;
+ALTER TABLE distributor_prices ADD COLUMN IF NOT EXISTS is_stale BOOLEAN DEFAULT false;
+
+CREATE INDEX IF NOT EXISTS idx_distributor_prices_naics ON distributor_prices(naics);
+CREATE INDEX IF NOT EXISTS idx_distributor_prices_stale ON distributor_prices(is_stale);
 
 -- Open RLS for the dashboard to display these (read-only via anon key)
 ALTER TABLE distributor_prices ENABLE ROW LEVEL SECURITY;
@@ -45,114 +49,103 @@ CREATE POLICY "anon_read" ON distributor_prices FOR SELECT TO anon USING (true);
 -- BID ENGINE averages these across distributors to get the market mid-point.
 -- Numbers are conservative ballparks based on GSA Schedule + DLA award data.
 
--- 424710 — Petroleum & lubricants (fuel)
--- Federal fuel contracts run on per-gallon pricing; baselines reflect
--- 1,000-gallon delivery quote from a regional distributor.
-INSERT INTO distributor_prices (naics, distributor_name, product_category, unit, unit_price, state, notes)
-VALUES
-  ('424710', 'Mansfield Oil',          'Diesel #2',     'per 1000-gal delivery', 3450.00, 'GA', 'Regional Gulf South distributor'),
-  ('424710', 'BJ Services',            'Diesel #2',     'per 1000-gal delivery', 3380.00, 'TX', 'DLA-experienced'),
-  ('424710', 'Parker Petroleum',       'Diesel #2',     'per 1000-gal delivery', 3520.00, 'LA', 'Local LA distributor'),
-  ('424710', 'World Fuel Services',    'JP-8 aviation', 'per 1000-gal delivery', 4200.00, 'FL', 'Aviation-grade')
-ON CONFLICT DO NOTHING;
+-- 2026-05-02: INSERTs use only the existing schema columns
+-- (id, distributor_name, product_category, unit_price, quote_date, quote_expiry, created_at)
+-- plus the two new ones we just added (naics, is_stale).
+-- Unit-of-measure and distributor location are folded into product_category text.
 
--- 424720 — Petroleum bulk stations (added 2026-05-02 to scout)
-INSERT INTO distributor_prices (naics, distributor_name, product_category, unit, unit_price, state, notes)
+-- 424710 — Petroleum & lubricants (fuel)
+INSERT INTO distributor_prices (naics, distributor_name, product_category, unit_price)
 VALUES
-  ('424720', 'PetroChoice',            'Lubricants & oils', 'per 55-gal drum',   320.00, 'TX', 'Bulk lubricant supplier'),
-  ('424720', 'RelaDyne',               'Industrial lube',   'per 55-gal drum',   305.00, 'LA', 'Gulf South bulk'),
-  ('424720', 'Apex Oil',               'Hydraulic fluid',   'per 55-gal drum',   285.00, 'MS', 'DLA contractor history')
-ON CONFLICT DO NOTHING;
+  ('424710', 'Mansfield Oil',          'Diesel #2 — per 1000-gal delivery (GA, regional Gulf South)',  3450.00),
+  ('424710', 'BJ Services',            'Diesel #2 — per 1000-gal delivery (TX, DLA-experienced)',     3380.00),
+  ('424710', 'Parker Petroleum',       'Diesel #2 — per 1000-gal delivery (LA, local distributor)',   3520.00),
+  ('424710', 'World Fuel Services',    'JP-8 aviation — per 1000-gal delivery (FL, aviation-grade)',  4200.00);
+
+-- 424720 — Petroleum bulk stations
+INSERT INTO distributor_prices (naics, distributor_name, product_category, unit_price)
+VALUES
+  ('424720', 'PetroChoice',            'Lubricants & oils — per 55-gal drum (TX)',                    320.00),
+  ('424720', 'RelaDyne',               'Industrial lube — per 55-gal drum (LA)',                      305.00),
+  ('424720', 'Apex Oil',               'Hydraulic fluid — per 55-gal drum (MS, DLA contractor)',      285.00);
 
 -- 424130 — Industrial & personal service paper (janitorial)
-INSERT INTO distributor_prices (naics, distributor_name, product_category, unit, unit_price, state, notes)
+INSERT INTO distributor_prices (naics, distributor_name, product_category, unit_price)
 VALUES
-  ('424130', 'Sysco Sygma',            'Paper goods bulk',  'per pallet',         1250.00, 'LA', 'Foodservice + janitorial'),
-  ('424130', 'Veritiv',                'Janitorial paper',  'per pallet',         1180.00, 'GA', 'National wholesaler'),
-  ('424130', 'Imperial Bag & Paper',   'Janitorial paper',  'per pallet',         1320.00, 'TX', 'GSA Schedule 51 holder')
-ON CONFLICT DO NOTHING;
+  ('424130', 'Sysco Sygma',            'Paper goods bulk — per pallet (LA, foodservice + janitorial)', 1250.00),
+  ('424130', 'Veritiv',                'Janitorial paper — per pallet (GA, national wholesaler)',      1180.00),
+  ('424130', 'Imperial Bag & Paper',   'Janitorial paper — per pallet (TX, GSA Schedule 51)',          1320.00);
 
--- 424490 — Other grocery & related products (food / PPE classification)
-INSERT INTO distributor_prices (naics, distributor_name, product_category, unit, unit_price, state, notes)
+-- 424490 — Other grocery & related products
+INSERT INTO distributor_prices (naics, distributor_name, product_category, unit_price)
 VALUES
-  ('424490', 'Sysco',                  'Bulk food MRE-style','per case',           185.00, 'TX', 'Federal dining mainstay'),
-  ('424490', 'US Foods',               'Bulk food',          'per case',           172.00, 'GA', 'Federal contracts experienced'),
-  ('424490', 'Performance Food Group', 'Federal foodservice','per case',           179.00, 'VA', 'Federal foodservice specialist')
-ON CONFLICT DO NOTHING;
+  ('424490', 'Sysco',                  'Bulk food MRE-style — per case (TX, federal dining)',          185.00),
+  ('424490', 'US Foods',               'Bulk food — per case (GA, federal contracts)',                 172.00),
+  ('424490', 'Performance Food Group', 'Federal foodservice — per case (VA, foodservice specialist)',  179.00);
 
--- 424410 — General-line grocery (added 2026-05-02 to scout)
-INSERT INTO distributor_prices (naics, distributor_name, product_category, unit, unit_price, state, notes)
+-- 424410 — General-line grocery
+INSERT INTO distributor_prices (naics, distributor_name, product_category, unit_price)
 VALUES
-  ('424410', 'Sysco',                  'General grocery',    'per case',           165.00, 'TX', 'See also 424490'),
-  ('424410', 'Reinhart Foodservice',   'General grocery',    'per case',           170.00, 'WI', 'GSA approved')
-ON CONFLICT DO NOTHING;
+  ('424410', 'Sysco',                  'General grocery — per case (TX)',                              165.00),
+  ('424410', 'Reinhart Foodservice',   'General grocery — per case (WI, GSA approved)',                170.00);
 
--- 311999 — Other food manufacturing (added 2026-05-02 to scout)
-INSERT INTO distributor_prices (naics, distributor_name, product_category, unit, unit_price, state, notes)
+-- 311999 — Other food manufacturing
+INSERT INTO distributor_prices (naics, distributor_name, product_category, unit_price)
 VALUES
-  ('311999', 'Hormel Foods',           'Federal food mfg',   'per case',           195.00, 'MN', 'Federal-spec packaging'),
-  ('311999', 'Conagra',                'Federal food mfg',   'per case',           188.00, 'IL', 'Federal foodservice')
-ON CONFLICT DO NOTHING;
+  ('311999', 'Hormel Foods',           'Federal food mfg — per case (MN, federal-spec packaging)',     195.00),
+  ('311999', 'Conagra',                'Federal food mfg — per case (IL, federal foodservice)',        188.00);
 
 -- 424120 — Stationery & office supplies
-INSERT INTO distributor_prices (naics, distributor_name, product_category, unit, unit_price, state, notes)
+INSERT INTO distributor_prices (naics, distributor_name, product_category, unit_price)
 VALUES
-  ('424120', 'Office Depot Business',  'Office supply mix',  'per pallet',          950.00, 'FL', 'GSA Schedule 75 holder'),
-  ('424120', 'Staples Advantage',      'Office supply mix',  'per pallet',         1050.00, 'MA', 'Federal office supply'),
-  ('424120', 'WB Mason',               'Office supply mix',  'per pallet',          910.00, 'MA', 'Northeast distributor')
-ON CONFLICT DO NOTHING;
+  ('424120', 'Office Depot Business',  'Office supply mix — per pallet (FL, GSA Schedule 75)',         950.00),
+  ('424120', 'Staples Advantage',      'Office supply mix — per pallet (MA, federal office)',         1050.00),
+  ('424120', 'WB Mason',               'Office supply mix — per pallet (MA, Northeast distributor)',   910.00);
 
--- 453210 — Office supplies & stationery stores (added 2026-05-02)
-INSERT INTO distributor_prices (naics, distributor_name, product_category, unit, unit_price, state, notes)
+-- 453210 — Office supplies & stationery stores
+INSERT INTO distributor_prices (naics, distributor_name, product_category, unit_price)
 VALUES
-  ('453210', 'Office Depot Retail',    'Small-quantity office','per case',          120.00, 'FL', 'Smaller orders < $25K'),
-  ('453210', 'Staples Retail',         'Small-quantity office','per case',          135.00, 'MA', 'Smaller orders < $25K')
-ON CONFLICT DO NOTHING;
+  ('453210', 'Office Depot Retail',    'Small-quantity office — per case (FL, orders < $25K)',         120.00),
+  ('453210', 'Staples Retail',         'Small-quantity office — per case (MA, orders < $25K)',         135.00);
 
 -- 424690 — Other chemical merchant (cleaning chemicals)
-INSERT INTO distributor_prices (naics, distributor_name, product_category, unit, unit_price, state, notes)
+INSERT INTO distributor_prices (naics, distributor_name, product_category, unit_price)
 VALUES
-  ('424690', 'Brenntag',               'Industrial cleaners','per drum',            285.00, 'TX', 'Largest US chem distributor'),
-  ('424690', 'Univar Solutions',       'Industrial cleaners','per drum',            295.00, 'IL', 'GSA-experienced'),
-  ('424690', 'Hubbard-Hall',           'Specialty cleaners', 'per drum',            330.00, 'CT', 'Specialty cleaning compounds')
-ON CONFLICT DO NOTHING;
+  ('424690', 'Brenntag',               'Industrial cleaners — per drum (TX, largest US distributor)',  285.00),
+  ('424690', 'Univar Solutions',       'Industrial cleaners — per drum (IL, GSA-experienced)',         295.00),
+  ('424690', 'Hubbard-Hall',           'Specialty cleaners — per drum (CT, specialty compounds)',      330.00);
 
--- 423440 — Other commercial equipment (safety equipment + alt PPE)
-INSERT INTO distributor_prices (naics, distributor_name, product_category, unit, unit_price, state, notes)
+-- 423440 — Other commercial equipment (safety + PPE)
+INSERT INTO distributor_prices (naics, distributor_name, product_category, unit_price)
 VALUES
-  ('423440', 'Grainger',               'Industrial PPE',     'per case',            215.00, 'IL', 'Federal PPE supplier'),
-  ('423440', 'MSC Industrial',         'Industrial PPE',     'per case',            225.00, 'NY', 'GSA Schedule 51'),
-  ('423440', 'Fastenal',               'Industrial PPE',     'per case',            205.00, 'MN', 'GSA + DLA contracts')
-ON CONFLICT DO NOTHING;
+  ('423440', 'Grainger',               'Industrial PPE — per case (IL, federal PPE supplier)',         215.00),
+  ('423440', 'MSC Industrial',         'Industrial PPE — per case (NY, GSA Schedule 51)',              225.00),
+  ('423440', 'Fastenal',               'Industrial PPE — per case (MN, GSA + DLA contracts)',          205.00);
 
--- 339113 — Surgical & medical instruments (added 2026-05-02 — PPE manufacturing)
-INSERT INTO distributor_prices (naics, distributor_name, product_category, unit, unit_price, state, notes)
+-- 339113 — Surgical & medical instruments (PPE manufacturing)
+INSERT INTO distributor_prices (naics, distributor_name, product_category, unit_price)
 VALUES
-  ('339113', 'Medline Industries',     'Medical PPE',        'per case',            245.00, 'IL', 'VA medical contracts'),
-  ('339113', 'Cardinal Health',        'Medical PPE',        'per case',            260.00, 'OH', 'Federal medical')
-ON CONFLICT DO NOTHING;
+  ('339113', 'Medline Industries',     'Medical PPE — per case (IL, VA medical contracts)',            245.00),
+  ('339113', 'Cardinal Health',        'Medical PPE — per case (OH, federal medical)',                 260.00);
 
--- 423450 — Medical/professional equipment (added 2026-05-02 — was empty bucket)
-INSERT INTO distributor_prices (naics, distributor_name, product_category, unit, unit_price, state, notes)
+-- 423450 — Medical/professional equipment
+INSERT INTO distributor_prices (naics, distributor_name, product_category, unit_price)
 VALUES
-  ('423450', 'Henry Schein',           'Federal med equip',  'per case',            340.00, 'NY', 'VA + military medical'),
-  ('423450', 'McKesson',               'Federal med equip',  'per case',            355.00, 'TX', 'Federal medical equip')
-ON CONFLICT DO NOTHING;
+  ('423450', 'Henry Schein',           'Federal med equip — per case (NY, VA + military medical)',     340.00),
+  ('423450', 'McKesson',               'Federal med equip — per case (TX, federal medical equip)',     355.00);
 
 -- 424310 — Piece goods merchant (uniforms)
-INSERT INTO distributor_prices (naics, distributor_name, product_category, unit, unit_price, state, notes)
+INSERT INTO distributor_prices (naics, distributor_name, product_category, unit_price)
 VALUES
-  ('424310', 'Cintas',                 'Federal uniforms',   'per uniform set',     145.00, 'OH', 'Federal uniform supplier'),
-  ('424310', 'Aramark Uniform',        'Federal uniforms',   'per uniform set',     138.00, 'PA', 'Federal uniform supplier'),
-  ('424310', 'UniFirst',               'Federal uniforms',   'per uniform set',     142.00, 'MA', 'GSA-experienced')
-ON CONFLICT DO NOTHING;
+  ('424310', 'Cintas',                 'Federal uniforms — per uniform set (OH, federal supplier)',    145.00),
+  ('424310', 'Aramark Uniform',        'Federal uniforms — per uniform set (PA, federal supplier)',    138.00),
+  ('424310', 'UniFirst',               'Federal uniforms — per uniform set (MA, GSA-experienced)',     142.00);
 
--- 315990 — Apparel accessories (added 2026-05-02 to scout)
-INSERT INTO distributor_prices (naics, distributor_name, product_category, unit, unit_price, state, notes)
+-- 315990 — Apparel accessories
+INSERT INTO distributor_prices (naics, distributor_name, product_category, unit_price)
 VALUES
-  ('315990', 'Galls',                  'Federal apparel acc','per case',            210.00, 'KY', 'Public safety uniforms'),
-  ('315990', 'LC Industries',          'Federal apparel',    'per case',            195.00, 'NC', 'Federal-blind made (AbilityOne)')
-ON CONFLICT DO NOTHING;
+  ('315990', 'Galls',                  'Federal apparel acc — per case (KY, public safety uniforms)',  210.00),
+  ('315990', 'LC Industries',          'Federal apparel — per case (NC, AbilityOne)',                  195.00);
 
 -- ── Sanity check ───────────────────────────────────────────────────
 -- Run this after the inserts to confirm coverage:

@@ -1616,15 +1616,17 @@ function renderHome(){
     <div id="fx-command-search" style="margin-bottom:16px"></div>
     ${renderMonteCarloRow()}
     ${renderL6StatusPanel()}
-    <div style="display:grid;grid-template-columns:1fr 340px;gap:14px">
-      <div>
-        <div style="font-size:10px;font-weight:700;color:var(--t3);letter-spacing:.12em;margin-bottom:8px;text-transform:uppercase">Top Opportunities — All Verticals</div>
-        ${topHtml}
-      </div>
-      <div class="feed">
-        <div style="font-size:10px;font-weight:700;color:var(--t3);letter-spacing:.12em;margin-bottom:10px;text-transform:uppercase">Agent Feed</div>
-        ${feedHtml}
-      </div>
+    <!-- 2026-05-02: stacked layout — Top Opportunities full-width on top,
+         Agent Feed full-width below. Was a 2-column grid (1fr 340px) which
+         compressed both. Stacking gives more room for opp titles + agency
+         labels and lets the agent feed breathe. -->
+    <div style="margin-bottom:18px">
+      <div style="font-size:10px;font-weight:700;color:var(--t3);letter-spacing:.12em;margin-bottom:8px;text-transform:uppercase">Top Opportunities — All Verticals</div>
+      ${topHtml}
+    </div>
+    <div class="feed">
+      <div style="font-size:10px;font-weight:700;color:var(--t3);letter-spacing:.12em;margin-bottom:10px;text-transform:uppercase">Agent Feed</div>
+      ${feedHtml}
     </div>`;
   tk();
 }
