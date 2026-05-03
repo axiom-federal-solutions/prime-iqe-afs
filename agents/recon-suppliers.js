@@ -78,19 +78,21 @@ async function scanSuppliers() {
   let usingApi = SAM_ENTITY_API_V4;
   let v4_400_streak = 0;
 
+  // 2026-05-02 (rev 2): SAM Entity API doesn't accept physicalAddressStateCode
+  // (probe confirmed). Iterate NAICS only, pull a wider page (250), then
+  // filter to our TARGET_STATES client-side. Trades a few extra API calls
+  // worth of bandwidth for a working scan.
+  const TARGET_STATES_SET = new Set(TARGET_STATES);
   for (const naics of TARGET_NAICS) {
-    for (const state of TARGET_STATES) {
+    // Loop kept as inner-no-op to preserve sleep cadence — but only ONE call per NAICS now
+    for (let page = 0; page < 1; page++) {
       try {
-        // 2026-05-02: minimal param set. Removed purposeOfRegistrationCode='Z2'
-        // and entityECAFlag='N' — both are deprecated in v3+ and were causing
-        // 400 errors on every call. registrationStatus also dropped (v4 default).
         const params = new URLSearchParams({
-          api_key:                     process.env.SAM_API_KEY,
-          naicsCode:                   naics,
-          physicalAddressStateCode:    state,
-          includeSections:             'entityRegistration,coreData,assertions',
-          page:                        '0',
-          size:                        '50',
+          api_key:         process.env.SAM_API_KEY,
+          naicsCode:       naics,
+          includeSections: 'entityRegistration,coreData,assertions',
+          page:            String(page),
+          size:            '250',  // bigger page since we're not state-filtering server-side
         });
 
         let res = await fetch(usingApi + '?' + params, {
@@ -120,30 +122,28 @@ async function scanSuppliers() {
                 error_sample: errSnippet,
               });
               usingApi = SAM_ENTITY_API_V3;
-              // retry this NAICS/state on v3 immediately
+              // retry this NAICS on v3 immediately
               res = await fetch(usingApi + '?' + params, {
                 headers: { 'Accept': 'application/json' },
               });
               if (!res.ok) {
                 const v3Err = await res.text().catch(() => '(unreadable)');
-                console.log('RECON-SUPPLIERS: v3 also failed ' + res.status + ' for ' + naics + '/' + state + ' — ' + v3Err.slice(0, 200));
+                console.log('RECON-SUPPLIERS: v3 also failed ' + res.status + ' for ' + naics + ' — ' + v3Err.slice(0, 200));
                 continue;
               }
               // v3 worked — fall through to parse below
             } else {
-              console.log('RECON-SUPPLIERS: v4 SAM error ' + res.status + ' for ' + naics + '/' + state + ' — ' + errSnippet);
+              console.log('RECON-SUPPLIERS: v4 SAM error ' + res.status + ' for ' + naics + ' — ' + errSnippet);
               continue;
             }
           } else {
-            console.log('RECON-SUPPLIERS: SAM error ' + res.status + ' for ' + naics + '/' + state + ' — ' + errSnippet);
-            // Surface the FIRST error body to agent_logs so we have ground truth
-            // even after the workflow run is gone.
-            if (totalUpserted === 0 && naics === TARGET_NAICS[0] && state === TARGET_STATES[0]) {
+            console.log('RECON-SUPPLIERS: SAM error ' + res.status + ' for ' + naics + ' — ' + errSnippet);
+            if (totalUpserted === 0 && naics === TARGET_NAICS[0]) {
               await logAction('RECON', 'SAM Entity API rejected request', {
                 api_url:    usingApi,
                 status:     res.status,
                 error_body: errSnippet,
-                naics, state,
+                naics,
                 hint:       'If 400, SAM.gov likely deprecated a parameter. Check api.sam.gov docs.',
               });
             }
@@ -154,6 +154,9 @@ async function scanSuppliers() {
         const data = await res.json();
         const entities = data.entityData || [];
 
+        // 2026-05-02 (rev 2): client-side state filter — replaces the
+        // physicalAddressStateCode URL param SAM.gov rejected.
+        let kept = 0;
         for (const entity of entities) {
           const reg  = entity.entityRegistration || {};
           const core = entity.coreData || {};
@@ -162,6 +165,11 @@ async function scanSuppliers() {
 
           // Skip if no UEI — can't identify this entity
           if (!reg.ueiSAM) continue;
+
+          // Skip if not in our TARGET_STATES (Gulf South + Southeast + agency HQs)
+          const entState = (addr.stateOrProvinceCode || '').toUpperCase();
+          if (!TARGET_STATES_SET.has(entState)) continue;
+          kept++;
 
           // Parse certifications and socioeconomic flags from SBA types
           const certs = [];
@@ -217,22 +225,26 @@ async function scanSuppliers() {
           totalUpserted++;
         }
 
+        console.log('RECON-SUPPLIERS: NAICS ' + naics + ' — ' + entities.length + ' entities returned, ' + kept + ' in target states');
+
         // SAM.gov allows ~10 req/sec — stay under the limit
-        await sleep(150);
+        await sleep(250);
 
       } catch (err) {
-        console.error('RECON-SUPPLIERS: SAM scan error ' + naics + '/' + state + ': ' + err.message);
+        console.error('RECON-SUPPLIERS: SAM scan error ' + naics + ': ' + err.message);
       }
     }
   }
 
   await logAction('RECON', 'SAM entity scan complete', {
-    total_upserted: totalUpserted,
-    naics_scanned:  TARGET_NAICS.length,
-    states_scanned: TARGET_STATES.length,
+    total_upserted:  totalUpserted,
+    naics_scanned:   TARGET_NAICS.length,
+    state_filter:    TARGET_STATES.join(','),
+    state_filter_mode: 'client-side',
+    api_used:        usingApi,
   });
 
-  console.log('RECON-SUPPLIERS: SAM scan done — ' + totalUpserted + ' suppliers upserted.');
+  console.log('RECON-SUPPLIERS: SAM scan done — ' + totalUpserted + ' suppliers upserted (filtered to ' + TARGET_STATES.length + ' target states).');
   return totalUpserted;
 }
 
