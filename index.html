@@ -449,22 +449,35 @@ function scoreFactorsHtml(o){
   // Parse if stored as a JSON string
   let factors={};
   try{ factors=(typeof sf==='string'?JSON.parse(sf):sf)||{}; }catch(e){}
-  if(!sf||Object.keys(factors).length===0)return '';
+  // 2026-05-03: render the breakdown ALWAYS — even when JUDGE hasn't scored
+  // yet. Missing factors show as 0 with a "pending" tint so the structure
+  // is visible immediately.
   const map=FACTOR_MAPS[vt]||FACTOR_MAPS.construction;
   const color=vtColor(vt);
+  const hasAnyData=Object.keys(factors).length>0;
   const rows=map.map(f=>{
-    const val=factors[f.key]??null;
-    const pct=val!==null?Math.round(val):'—';
-    const barW=val!==null?Math.min(100,Math.round(val))+'%':'0%';
-    const barC=val>=70?'var(--green)':val>=55?'var(--gold)':'var(--amber)';
-    return `<div style="margin-bottom:7px">
+    const raw=factors[f.key];
+    const val=(raw==null||isNaN(raw))?0:Number(raw);
+    const pct=Math.round(val);
+    const barW=Math.min(100,pct)+'%';
+    const barC=pct>=70?'var(--green)':pct>=55?'var(--gold)':pct>=30?'var(--amber)':'var(--t3)';
+    const isPending=raw==null;
+    return `<div style="margin-bottom:7px;${isPending?'opacity:.55':''}">
       <div style="display:flex;justify-content:space-between;font-size:9px;margin-bottom:3px">
         <span style="color:var(--t2)">${f.label} <span style="color:var(--t3)">(${f.weight}%)</span></span>
-        <span style="font-weight:700;color:${val!==null?barC:'var(--t3)'}">${pct}</span>
+        <span style="font-weight:700;color:${barC}">${pct}${isPending?' <span style="color:var(--t3);font-weight:400">(pending)</span>':''}</span>
       </div>
       <div class="bar"><div class="bar-fill" style="width:${barW};background:${barC}"></div></div>
     </div>`;
   }).join('');
+  // Always-visible header even when no data
+  if(!hasAnyData){
+    return `<div class="det-section">
+      <div class="det-sec-label">📊 ${slOf(o)} Score Breakdown</div>
+      <div style="font-size:10px;color:var(--t3);margin-bottom:8px;font-style:italic">Pending JUDGE scoring run — factors will populate after next agent run.</div>
+      ${rows}
+    </div>`;
+  }
   return `<div class="det-section">
     <div class="det-sec-label">📊 ${slOf(o)} Score Breakdown</div>
     ${rows}
@@ -472,6 +485,9 @@ function scoreFactorsHtml(o){
 }
 function fmt(v){if(!v&&v!==0)return '—';return v>=1e9?'$'+(v/1e9).toFixed(3)+'B':v>=1e6?'$'+(v/1e6).toFixed(1)+'M':v>=1000?'$'+(v/1000).toFixed(0)+'K':'$'+Math.round(v);}
 function daysLeft(deadline){if(!deadline)return null;const d=Math.ceil((new Date(deadline)-new Date())/86400000);return Math.max(0,d);}
+// 2026-05-03: SCOUT stores deadline as `deadline`; older code read `response_deadline`.
+// Helper picks whichever is populated so detail panel + opp lists stop blanking.
+function getDeadline(o){return o&&(o.deadline||getDeadline(o))||null;}
 // Derive vertical from NAICS if DB column not yet set
 // Supply NAICS prefixes — drives getVertical() routing in the dashboard.
 // 2026-05-02: synced with agents/scout.js so an opp tagged on the agent
@@ -585,7 +601,7 @@ function go(id,btn){
 
 // ─── OPPORTUNITY ROW ───────────────────────────────────────────────────
 function oppRow(o,idx){
-  const s=scoreOf(o), sl=slOf(o), days=daysLeft(o.response_deadline);
+  const s=scoreOf(o), sl=slOf(o), days=daysLeft(getDeadline(o));
   const sa=o.set_aside_type||o.set_aside||'';
   const src=o.source||'';
   // If the full score is missing but SCOUT left a rough pre_prime_score, show it with ~ prefix and gray color
@@ -623,8 +639,8 @@ function oppRow(o,idx){
 async function showDetail(idx){
   const o=OPPS[idx];
   if(!o)return;
-  const s=scoreOf(o), sl=slOf(o), days=daysLeft(o.response_deadline);
-  const deadline=o.response_deadline?new Date(o.response_deadline).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'2-digit'}):'—';
+  const s=scoreOf(o), sl=slOf(o), days=daysLeft(getDeadline(o));
+  const deadline=getDeadline(o)?new Date(getDeadline(o)).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'2-digit'}):'—';
   // GAP1 FIX: join on solicitation_number (not opportunity_id/notice_id which don't exist)
   const matched=SUPS.filter(sp=>sp.solicitation_number&&o.solicitation_number&&sp.solicitation_number===o.solicitation_number).slice(0,5);
 
@@ -675,10 +691,29 @@ async function showDetail(idx){
       </div>
     </div>
 
-    ${o.description?`<div style="background:var(--card);border-radius:8px;padding:14px;margin-bottom:12px;border:1px solid var(--bd)">
-      <div style="font-size:9px;font-weight:700;color:var(--t3);text-transform:uppercase;letter-spacing:.1em;margin-bottom:7px">Description</div>
-      <div style="font-size:10px;color:var(--t2);line-height:1.75">${o.description.slice(0,500)}${o.description.length>500?'…':''}</div>
-    </div>`:''}
+    ${(()=>{
+      // 2026-05-03: SAM.gov sometimes puts a URL in the description field
+      // instead of synopsis text. Detect that and render appropriately.
+      const desc = o.description || o.synopsis || '';
+      const isUrl = /^https?:\/\//i.test(desc.trim()) && desc.trim().length < 500 && !/\s/.test(desc.trim());
+      if (!desc) {
+        return `<div style="background:var(--card);border-radius:8px;padding:14px;margin-bottom:12px;border:1px solid var(--bd)">
+          <div style="font-size:9px;font-weight:700;color:var(--t3);text-transform:uppercase;letter-spacing:.1em;margin-bottom:7px">Description</div>
+          <div style="font-size:10px;color:var(--t3);font-style:italic">No synopsis available. ${o.notice_url?`<a href="${o.notice_url}" target="_blank" style="color:var(--cyan)">Open on SAM.gov ↗</a>`:'Open the SAM.gov posting for full details.'}</div>
+        </div>`;
+      }
+      if (isUrl) {
+        return `<div style="background:var(--card);border-radius:8px;padding:14px;margin-bottom:12px;border:1px solid var(--amberBd)">
+          <div style="font-size:9px;font-weight:700;color:var(--amber);text-transform:uppercase;letter-spacing:.1em;margin-bottom:7px">Description — Link Only</div>
+          <div style="font-size:10px;color:var(--t2);line-height:1.6;margin-bottom:8px">SAM.gov posted this as a link rather than synopsis text. Click through for the full statement of work / RFP details.</div>
+          <a href="${desc.trim()}" target="_blank" style="display:inline-block;font-size:11px;color:var(--cyan);text-decoration:none;padding:6px 10px;background:var(--cyanDim);border:1px solid var(--cyanBd);border-radius:5px;word-break:break-all">${desc.trim()} ↗</a>
+        </div>`;
+      }
+      return `<div style="background:var(--card);border-radius:8px;padding:14px;margin-bottom:12px;border:1px solid var(--bd)">
+        <div style="font-size:9px;font-weight:700;color:var(--t3);text-transform:uppercase;letter-spacing:.1em;margin-bottom:7px">Description</div>
+        <div style="font-size:10px;color:var(--t2);line-height:1.75">${desc.slice(0,800).replace(/</g,'&lt;')}${desc.length>800?'…':''}</div>
+      </div>`;
+    })()}
 
     ${o.notice_url?`<a href="${o.notice_url}" target="_blank" style="display:block;text-align:center;padding:10px;border-radius:6px;background:var(--cyanDim);border:1px solid var(--cyanBd);color:var(--cyan);font-size:11px;font-weight:600;text-decoration:none;margin-bottom:14px">🔗 View Full Posting on SAM.gov ↗</a>`:''}
 
@@ -742,8 +777,19 @@ async function showDetail(idx){
     }
 
     const [bidRes, intelRes, incRes]=await Promise.all(queries);
+    // 2026-05-03: also load incumbents for NON-supply verticals so Market Comps
+    // can use them as a fallback when competitor_intel is empty.
+    let incFallback = incRes?.data || [];
+    if (!isSupply) {
+      const naicsPrefix = (o.naics||'').substring(0,6);
+      const { data } = await sb.from('incumbents').select('*')
+        .like('naics', naicsPrefix + '%')
+        .order('start_date',{ascending:false})
+        .limit(5);
+      incFallback = data || [];
+    }
     renderBidPricing(bidRes.data, o, intelRes.data||[]);
-    renderCompetitorIntel(intelRes.data||[], o);
+    renderCompetitorIntel(intelRes.data||[], o, incFallback);
     if(isSupply) renderIncumbentHistory(incRes?.data||[], o);
   }catch(e){
     console.warn('Detail async load failed:',e);
@@ -835,18 +881,43 @@ function renderBidPricing(bid, o, competitors){
 }
 
 // Render competitor intel section
-function renderCompetitorIntel(rows, o){
+// 2026-05-03: when competitor_intel is empty, fall back to incumbents table
+// (same shape via mapping). Better than showing "no data" when RECON has at
+// least pulled incumbent history for the NAICS.
+function renderCompetitorIntel(rows, o, fallbackIncumbents){
   const el=document.getElementById('det-intel-section');
   if(!el)return;
-  if(!rows||rows.length===0){
-    el.innerHTML=`<div class="det-sec-label">🔍 Market Comps — Previous Awards</div>
-      <div style="font-size:10px;color:var(--t3);padding:10px 0">No award history found for NAICS ${o.naics||'—'} yet. Run RECON to pull FPDS data.</div>`;
+
+  // Use competitor_intel rows if any; otherwise normalize incumbents to the same shape
+  let display = rows && rows.length ? rows : null;
+  let dataSource = 'FPDS award history';
+  if (!display && fallbackIncumbents && fallbackIncumbents.length) {
+    display = fallbackIncumbents.map(i => ({
+      company_name: i.incumbent_name,
+      agency:       i.agency,
+      award_value:  i.contract_value,
+      award_date:   i.start_date,
+      state:        i.state,
+    }));
+    dataSource = 'Incumbent history (FPDS)';
+  }
+
+  if (!display || display.length === 0) {
+    el.innerHTML = `<div class="det-sec-label">🔍 Market Comps — Previous Awards</div>
+      <div style="background:var(--card);border:1px solid var(--bd);border-radius:8px;padding:14px;font-size:10px;color:var(--t3);line-height:1.7">
+        No award history found for NAICS ${o.naics||'—'} yet. RECON pulls this from FPDS weekly. To populate now:
+        <br>→ <a href="${GH_ACTIONS}" target="_blank" style="color:var(--cyan)">Run RECON - Market Intelligence</a> manually.
+        <br>→ Or wait for the Sunday 10 PM CT cron.
+      </div>`;
     return;
   }
-  const avg=Math.round(rows.reduce((a,r)=>a+(r.award_value||0),0)/rows.length);
+  const avg = Math.round(display.reduce((a,r)=>a+(r.award_value||0),0)/display.length);
   el.innerHTML=`<div class="det-sec-label">🔍 Market Comps — NAICS ${o.naics||'—'} Awards</div>
-    <div style="text-align:right;font-size:10px;color:var(--t2);margin-bottom:8px">Avg win price: <b style="color:var(--gold)">${fmt(avg)}</b></div>
-    ${rows.map(r=>`<div class="intel-row">
+    <div style="display:flex;justify-content:space-between;font-size:10px;color:var(--t2);margin-bottom:8px">
+      <span style="color:var(--t3)">Source: ${dataSource}</span>
+      <span>Avg win price: <b style="color:var(--gold)">${fmt(avg)}</b></span>
+    </div>
+    ${display.map(r=>`<div class="intel-row">
       <div style="flex:1">
         <div style="font-size:11px;font-weight:600">${r.company_name||'Unknown'}</div>
         <div style="font-size:9px;color:var(--t3);margin-top:2px">${r.agency||'—'} · ${r.award_date?new Date(r.award_date).toLocaleDateString('en-US',{month:'short',year:'2-digit'}):'—'}</div>
@@ -998,7 +1069,7 @@ function renderPassed(){
     const statusColor=isExpired?'var(--t3)':'var(--red)';
     const statusLabel=isExpired?'EXPIRED':'PASSED';
     const actionDate=o.passed_at?new Date(o.passed_at).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}):'—';
-    const deadline=o.response_deadline?new Date(o.response_deadline).toLocaleDateString('en-US',{month:'short',day:'numeric'}):'—';
+    const deadline=getDeadline(o)?new Date(getDeadline(o)).toLocaleDateString('en-US',{month:'short',day:'numeric'}):'—';
     return `<div class="opp-row" style="opacity:.75;border-left:3px solid ${statusColor}">
       <div onclick="showDetail(${idx})" style="flex:1;cursor:pointer;display:flex;flex-direction:column;gap:3px">
         <div style="display:flex;align-items:center;gap:8px">
@@ -1342,10 +1413,10 @@ function updateActionBadge(){
 }
 function getUrgentOpps(){
   return OPPS.filter(o=>{
-    const s=scoreOf(o), days=daysLeft(o.response_deadline);
+    const s=scoreOf(o), days=daysLeft(getDeadline(o));
     const hasBid=BIDS.some(b=>b.opportunity_id===o.id);
     return s>=70 && days!==null && days<=14 && !hasBid;
-  }).sort((a,b)=>daysLeft(a.response_deadline)-daysLeft(b.response_deadline));
+  }).sort((a,b)=>daysLeft(getDeadline(a))-daysLeft(getDeadline(b)));
 }
 
 // ─── ACTION QUEUE ──────────────────────────────────────────────────────
@@ -1428,7 +1499,7 @@ function renderActionQueue(){
   const urgentHtml=urgent.length
     ?urgent.map(o=>{
       const idx=OPPS.indexOf(o);
-      const s=scoreOf(o), days=daysLeft(o.response_deadline);
+      const s=scoreOf(o), days=daysLeft(getDeadline(o));
       return `<div class="opp" onclick="showDetail(${idx})" style="border-left:3px solid var(--red)">
         <div>
           <div style="font-size:12px;font-weight:600;line-height:1.3">${o.title||'Untitled'}</div>
@@ -1453,7 +1524,7 @@ function renderActionQueue(){
         <div style="text-align:right;font-size:13px;font-weight:700">${fmt(o.value)}</div>
         <div style="text-align:center"><span style="font-size:18px;font-weight:800;color:${sc(scoreOf(o))}">${scoreOf(o)||'—'}</span></div>
         <div style="text-align:center">${rb(o.recommendation||'BID')}</div>
-        <div style="text-align:right;font-size:10px;color:var(--t3)">🕐 ${daysLeft(o.response_deadline)!=null?daysLeft(o.response_deadline)+'d':'—'}</div>
+        <div style="text-align:right;font-size:10px;color:var(--t3)">🕐 ${daysLeft(getDeadline(o))!=null?daysLeft(getDeadline(o))+'d':'—'}</div>
       </div>`;
     }).join('')
     :`<div style="padding:16px;text-align:center;font-size:11px;color:var(--t3)">No new opportunities in the last 24 hours. SCOUT runs 4× daily.</div>`;
@@ -1658,7 +1729,7 @@ function renderHome(){
     <div style="text-align:right;font-size:13px;font-weight:700">${fmt(o.value)}</div>
     <div style="text-align:center"><span style="font-size:18px;font-weight:800;color:${sc(scoreOf(o))}">${scoreOf(o)||'—'}</span><span style="font-size:8px;color:var(--t3);margin-left:3px">${slOf(o)}</span></div>
     <div style="text-align:center">${rb(o.recommendation||'BID')}</div>
-    <div style="text-align:right;font-size:10px;color:var(--t3)">🕐 ${daysLeft(o.response_deadline)!=null?daysLeft(o.response_deadline)+'d':'—'}</div>
+    <div style="text-align:right;font-size:10px;color:var(--t3)">🕐 ${daysLeft(getDeadline(o))!=null?daysLeft(getDeadline(o))+'d':'—'}</div>
   </div>`).join(''):emptyState('No opportunities loaded yet','Run SCOUT SAM Scan from GitHub Actions to pull live contracts. Takes ~2 minutes.');
 
   document.getElementById('t-home').innerHTML=`
@@ -1885,6 +1956,58 @@ function buildStateMap(oppsForVertical, vt){
 const REGION_ORDER=['Gulf Coast','Southeast','Mid-Atlantic','Northeast','Great Lakes',
   'Midwest','Plains','Mountain','Southwest','Pacific','Territories','Other'];
 
+// 2026-05-03: License gating per vertical.
+// Construction is the only vertical with a state-by-state licensing burden —
+// supply contracts ship interstate (no state license required) and real
+// estate is asset-based (license tied to where Walker owns property).
+//
+//   green  = fully licensed OR no license needed in that state for this vertical
+//   blue   = conditional / reciprocal / pending application (can bid w/ caveat)
+//   red    = NO license — cannot bid in this state for this vertical
+//
+// CONSTRUCTION map: starts with LA (home state) green; everywhere else
+// requires the contractor license process. Reciprocity exists with MS/AL/TX
+// (Gulf South neighbors). All other states = red until license earned.
+const CONSTRUCTION_LICENSE = {
+  // Fully licensed — bid without caveat
+  green: ['LA'],
+  // Reciprocal / partial / under reciprocity agreement / pending application
+  blue:  ['MS','AL','TX','AR','OK'],
+  // Everything else = red (default)
+};
+// SUPPLY: drop-ship model = no state license required ANYWHERE → all green
+// REAL ESTATE: license follows asset ownership; without an `assets` row in
+// that state, can't bid → red. With an active asset → green. We resolve at
+// render time using the assets table data when available.
+function getLicenseColor(vt, stateCode){
+  if (vt === 'supply') return 'green';                                       // no license needed
+  if (vt === 'construction') {
+    if (CONSTRUCTION_LICENSE.green.includes(stateCode)) return 'green';
+    if (CONSTRUCTION_LICENSE.blue.includes(stateCode))  return 'blue';
+    return 'red';
+  }
+  if (vt === 'realestate') {
+    // `assets` (loaded by loadData) — green if Walker owns/manages an active asset there
+    if (typeof ASSETS !== 'undefined' && Array.isArray(ASSETS) &&
+        ASSETS.some(a => (a.state||'').toUpperCase()===stateCode && a.status==='active')) {
+      return 'green';
+    }
+    // `agreement_pending` asset = blue (conditional)
+    if (typeof ASSETS !== 'undefined' && Array.isArray(ASSETS) &&
+        ASSETS.some(a => (a.state||'').toUpperCase()===stateCode && (a.ownership_type==='agreement_pending' || a.status==='pending'))) {
+      return 'blue';
+    }
+    return 'red';
+  }
+  return 'green';
+}
+const LICENSE_COLOR_VAR = { green: 'var(--green)', blue: 'var(--cyan)', red: 'var(--red)' };
+const LICENSE_LEGEND = {
+  construction: '🟢 Licensed · 🔵 Reciprocal/pending · 🔴 No license — cannot bid',
+  supply:       '🟢 Drop-ship — no state license required (50/50)',
+  realestate:   '🟢 Asset on file · 🔵 Asset pending · 🔴 No asset — cannot bid',
+};
+
 function renderGrid(el,states,vt){
   // Use fixed region order so layout never jumps as data loads
   const regionsPresent=new Set(states.map(s=>s.r));
@@ -1892,7 +2015,7 @@ function renderGrid(el,states,vt){
   // Append any regions not in our fixed order (shouldn't happen but safety net)
   [...regionsPresent].forEach(r=>{ if(!regions.includes(r)) regions.push(r); });
 
-  let h='';
+  let h=`<div style="font-size:9px;color:var(--t3);margin:0 0 6px;padding-left:2px">${LICENSE_LEGEND[vt]||''}</div>`;
   regions.forEach(rg=>{
     const rs=states.filter(s=>s.r===rg).sort((a,b)=>a.c.localeCompare(b.c));
     if(!rs.length)return;
@@ -1903,13 +2026,15 @@ function renderGrid(el,states,vt){
       const hasOpps=s.opps>0;
       const isHome=s.c==='LA';
       const cl=s.hot&&hasOpps?'hot':!hasOpps&&!isHome?'dim':'';
-      const co=hasOpps?vtColor(vt):isHome?'var(--gold)':'var(--t3)';
+      // 2026-05-03: state-letter color follows LICENSE STATUS, not opp count.
+      // Green = can bid here; Blue = conditional; Red = cannot bid (no license/asset).
+      const licColor = LICENSE_COLOR_VAR[getLicenseColor(vt, s.c)] || 'var(--t3)';
       const oppLabel=hasOpps?s.opps+' opp'+(s.opps>1?'s':''):isHome?'Home':'—';
       const valLabel=s.v>0?`<div style="font-size:7px;color:var(--t3)">${fmt(s.v)}</div>`:'';
       h+=`<div class="stile ${cl}" onclick="showStateDetail('${s.c}','${vt}',this)" title="${s.n}${s.notes?' · '+s.notes:''}">
         ${s.hot&&hasOpps?'<div class="hpb" style="background:var(--greenDim);border:1px solid var(--greenBd);color:var(--green)">●</div>':''}
         ${isHome&&!hasOpps?'<div class="hpb" style="background:var(--goldDim);border:1px solid var(--goldBd);color:var(--gold)">★</div>':''}
-        <div style="font-size:11px;font-weight:900;color:${co}">${s.c}</div>
+        <div style="font-size:11px;font-weight:900;color:${licColor}">${s.c}</div>
         <div style="font-size:8px;font-weight:700;color:${hasOpps?sc(s.s):isHome?'var(--gold)':'var(--t3)'}">${oppLabel}</div>
         ${valLabel}
       </div>`;
@@ -2136,13 +2261,13 @@ function renderMoney(){
 
   document.getElementById('t-money').innerHTML=`
     <div style="font-size:16px;font-weight:700;margin-bottom:14px">💰 Money Recovery — EXEC</div>
-    <!-- 2026-05-02: Monte Carlo revenue forecast moved here from home tab. -->
-    ${renderMonteCarloRow()}
     <div class="kpi-row" style="margin-bottom:16px">
       <div class="kpi" style="border-left:3px solid var(--green)"><div class="kpi-val" style="color:var(--green)">${fmt(totalInterest)||'$0'}</div><div class="kpi-lbl">Interest Claimable</div><div class="kpi-sub">FAR 52.232-25</div></div>
       <div class="kpi" style="border-left:3px solid var(--amber)"><div class="kpi-val" style="color:var(--amber)">${latePayments.length}</div><div class="kpi-lbl">Late Invoices</div><div class="kpi-sub">${fmt(totalInvoiced)} outstanding</div></div>
       <div class="kpi" style="border-left:3px solid var(--cyan)"><div class="kpi-val" style="color:var(--cyan)">${CLAIMS.filter(c=>c.payment_received).length}</div><div class="kpi-lbl">Resolved</div></div>
     </div>
+    <!-- 2026-05-03: Monte Carlo moved BELOW the Interest/Late/Resolved KPI row per user feedback. -->
+    ${renderMonteCarloRow()}
     ${latePayments.length?`<div style="font-size:10px;font-weight:700;color:var(--amber);letter-spacing:.1em;text-transform:uppercase;margin-bottom:8px">⚠ Late Payments — Interest Accruing</div>${claimsHtml}`:
       CONTRACTS.length?`<div style="padding:20px;text-align:center;font-size:11px;color:var(--green)">✅ No late payments detected. All invoices current.</div>`:
       emptyState('No invoices tracked yet','EXEC monitors payment timelines once active contracts are in the system. Interest claims (FAR 52.232-25) appear here automatically.')}
