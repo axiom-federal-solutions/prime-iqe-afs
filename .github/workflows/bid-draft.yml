@@ -1,0 +1,36 @@
+name: BID DRAFT - Generate Google Sheet
+
+# Two trigger paths:
+#   1. Manual workflow_dispatch with a bid_id (single-bid mode)
+#   2. Hourly cron — drains bids.status='approved' that don't yet have proposals row
+on:
+  schedule:
+    - cron: '15 * * * *'   # 15 minutes past every hour — picks up Mr. Kemp's approvals fast
+  workflow_dispatch:
+    inputs:
+      bid_id:
+        description: 'Bid UUID — leave blank to drain the approved-bid queue'
+        required: false
+        type: string
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
+
+jobs:
+  draft:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '24' }
+      - run: npm install
+      - name: Generate bid draft Sheet
+        env:
+          SUPABASE_URL:           ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY:   ${{ secrets.SUPABASE_SERVICE_KEY }}
+          GOOGLE_CLIENT_ID:       ${{ secrets.GOOGLE_CLIENT_ID }}
+          GOOGLE_CLIENT_SECRET:   ${{ secrets.GOOGLE_CLIENT_SECRET }}
+          GOOGLE_REFRESH_TOKEN:   ${{ secrets.GOOGLE_REFRESH_TOKEN }}
+        # Empty input → batch mode. Non-empty → single bid.
+        run: node agents/draft-bid.js "${{ github.event.inputs.bid_id }}"
