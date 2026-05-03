@@ -1,0 +1,39 @@
+name: Google OAuth + Drive Probe
+
+# One-shot smoke test that confirms GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET,
+# and GOOGLE_REFRESH_TOKEN are wired correctly. Run this ONCE after adding
+# the secrets, BEFORE expecting the bid-draft automation to work.
+#
+# What success looks like in the workflow output:
+#   ✅ OAuth token exchange succeeded
+#   ✅ Drive `about` succeeded — authenticated as PrimeOps1@gmail.com
+#   ✅ Drive file list succeeded
+#   ALL CHECKS PASSED
+#
+# Common failure modes:
+#   "OAuth token exchange failed" → wrong client_id/secret OR refresh_token expired
+#   "Drive about failed: 403" → Drive API not enabled in Google Cloud Console
+#   "Drive about failed: 401" → wrong OAuth scopes during refresh-token grant
+on:
+  workflow_dispatch:
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '24' }
+      - run: npm install
+      - name: Run Google OAuth + Drive probe
+        run: node agents/google-probe.js
+        env:
+          SUPABASE_URL:           ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY:   ${{ secrets.SUPABASE_SERVICE_KEY }}
+          GOOGLE_CLIENT_ID:       ${{ secrets.GOOGLE_CLIENT_ID }}
+          GOOGLE_CLIENT_SECRET:   ${{ secrets.GOOGLE_CLIENT_SECRET }}
+          GOOGLE_REFRESH_TOKEN:   ${{ secrets.GOOGLE_REFRESH_TOKEN }}
