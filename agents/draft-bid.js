@@ -12,9 +12,15 @@
 const { supabase, logAction, isAgentEnabled } = require('../lib/supabase');
 const { ensureFolder, createSheetInFolder, getFileMeta } = require('../lib/google-drive');
 const { writeRange, renameFirstTab, buildDraftRows }     = require('../lib/google-sheets');
+const { createDocFromTemplate }                          = require('../lib/google-docs');
 
 const BATCH_LIMIT     = 5;   // up to 5 drafts per run; Sonnet API time-budget
 const ROOT_FOLDER     = 'PRIME — Federal Bid Drafts';
+
+// 2026-05-03: optional Google Doc template ID. If set, the agent ALSO
+// creates a Doc from this template alongside the Sheet, with placeholders
+// like {{TITLE}} {{AGENCY}} {{VALUE}} replaced. Set as GitHub Secret.
+const TEMPLATE_DOC_ID = process.env.GOOGLE_TEMPLATE_DOC_ID || null;
 
 // ----------------------------------------------------------
 // MAIN: single-bid CLI mode OR batch (drain approved queue)
@@ -130,7 +136,30 @@ async function draftOneBid(bidId) {
   const range = `Bid Draft!A1:C${rows.length}`;
   await writeRange(sheet.spreadsheetId, range, rows);
 
-  // 7. Insert proposals row + transition bid status
+  // 7. (Optional) Generate the Doc from template if GOOGLE_TEMPLATE_DOC_ID configured
+  let docInfo = null;
+  if (TEMPLATE_DOC_ID) {
+    try {
+      console.log('DRAFT-BID: generating Doc from template ' + TEMPLATE_DOC_ID + '...');
+      docInfo = await createDocFromTemplate(
+        TEMPLATE_DOC_ID,
+        sheetTitle.replace(/^📊 /, '📋 '), // same title, different emoji prefix
+        folderId,
+        { opp, bid, compliance, suppliers }
+      );
+      console.log('DRAFT-BID: Doc created — ' + docInfo.documentUrl);
+    } catch (docErr) {
+      // Doc failure shouldn't block Sheet creation — log and continue.
+      console.warn('DRAFT-BID: Doc generation failed (Sheet still created):', docErr.message);
+      await logAction('DRAFT-BID', 'Doc generation failed (Sheet ok)', {
+        bid_id: bidId,
+        template_id: TEMPLATE_DOC_ID,
+        error: docErr.message,
+      });
+    }
+  }
+
+  // 8. Insert proposals row + transition bid status
   const { error: proposalErr } = await supabase.from('proposals').insert({
     bid_id:           bidId,
     opportunity_id:   opp.id,
@@ -138,19 +167,27 @@ async function draftOneBid(bidId) {
     drive_folder_id:  folderId,
     sheet_url:        sheet.spreadsheetUrl,
     sheet_title:      sheetTitle,
+    doc_file_id:      docInfo?.documentId || null,
+    doc_url:          docInfo?.documentUrl || null,
     status:           'draft',
   });
   if (proposalErr) throw new Error('Proposal insert failed: ' + proposalErr.message);
 
   await supabase.from('bids').update({ status: 'drafted' }).eq('id', bidId);
 
-  console.log('DRAFT-BID: ✅ done — ' + sheet.spreadsheetUrl);
-  await logAction('DRAFT-BID', 'Draft Sheet created', {
+  console.log('DRAFT-BID: ✅ done');
+  console.log('  Sheet: ' + sheet.spreadsheetUrl);
+  if (docInfo) console.log('  Doc:   ' + docInfo.documentUrl);
+
+  await logAction('DRAFT-BID', 'Draft created', {
     bid_id:        bidId,
     opportunity:   opp.title,
     sheet_url:     sheet.spreadsheetUrl,
     sheet_id:      sheet.spreadsheetId,
+    doc_url:       docInfo?.documentUrl || null,
+    doc_id:        docInfo?.documentId  || null,
     rows_written:  rows.length,
+    placeholders_replaced: docInfo?.placeholderCount || 0,
     suppliers:     suppliers.length,
     compliance_checks: compliance.length,
   });

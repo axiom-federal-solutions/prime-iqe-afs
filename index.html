@@ -2124,18 +2124,24 @@ function renderVertical(vt){
       <div>
         <div id="${vt[0]}-map"></div><div id="${vt[0]}-detail"></div>
         <!-- Score tier filter buttons (All / ≥85 / ≥70 / Unscored) — works on top of taxonomy filters -->
-        <div style="display:flex;justify-content:space-between;align-items:center;margin:20px 0 8px">
+        <!-- 2026-05-03: button labels now show "🔥 [N] Score above 85" / "✅ [N] Score 70-84" / "⏳ [N] Unscored" -->
+        ${(()=>{
+          const strongCount  = filteredOpps.filter(o=>scoreOf(o)>=85).length;
+          const bidCount     = filteredOpps.filter(o=>scoreOf(o)>=70 && scoreOf(o)<85).length;
+          const unscoredCount= filteredOpps.filter(o=>!o.prime_score && !o.acq_score && !o.lease_score).length;
+          return `
+        <div style="display:flex;justify-content:space-between;align-items:center;margin:20px 0 8px;flex-wrap:wrap;gap:8px">
           <div style="font-size:10px;font-weight:700;color:var(--t3);letter-spacing:.12em;text-transform:uppercase">Active ${vt==='realestate'?'Real Estate & Rental':vt.charAt(0).toUpperCase()+vt.slice(1)} Opportunities</div>
-          <div style="display:flex;gap:6px;align-items:center">
-            <div id="${vt}-filters" style="display:flex;gap:4px">
-              <button onclick="vtFilter('${vt}','all')" id="${vt}-f-all" style="padding:4px 10px;border-radius:5px;border:1px solid var(--cyanBd);background:var(--cyanDim);color:var(--cyan);font-family:'Outfit',sans-serif;font-size:9px;font-weight:700;cursor:pointer;letter-spacing:.06em">ALL</button>
-              <button onclick="vtFilter('${vt}','strong')" id="${vt}-f-strong" style="padding:4px 10px;border-radius:5px;border:1px solid var(--bd);background:transparent;color:var(--t2);font-family:'Outfit',sans-serif;font-size:9px;font-weight:700;cursor:pointer;letter-spacing:.06em">🔥 ≥85</button>
-              <button onclick="vtFilter('${vt}','bid')" id="${vt}-f-bid" style="padding:4px 10px;border-radius:5px;border:1px solid var(--bd);background:transparent;color:var(--t2);font-family:'Outfit',sans-serif;font-size:9px;font-weight:700;cursor:pointer;letter-spacing:.06em">✅ ≥70</button>
-              <button onclick="vtFilter('${vt}','pending')" id="${vt}-f-pending" style="padding:4px 10px;border-radius:5px;border:1px solid var(--bd);background:transparent;color:var(--t2);font-family:'Outfit',sans-serif;font-size:9px;font-weight:700;cursor:pointer;letter-spacing:.06em">⏳ Unscored</button>
+          <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+            <div id="${vt}-filters" style="display:flex;gap:4px;flex-wrap:wrap">
+              <button onclick="vtFilter('${vt}','all')" id="${vt}-f-all" style="padding:4px 10px;border-radius:5px;border:1px solid var(--cyanBd);background:var(--cyanDim);color:var(--cyan);font-family:'Outfit',sans-serif;font-size:9px;font-weight:700;cursor:pointer;letter-spacing:.06em">ALL · ${filteredOpps.length}</button>
+              <button onclick="vtFilter('${vt}','strong')" id="${vt}-f-strong" style="padding:4px 10px;border-radius:5px;border:1px solid var(--bd);background:transparent;color:var(--t2);font-family:'Outfit',sans-serif;font-size:9px;font-weight:700;cursor:pointer;letter-spacing:.06em" title="Score above 85 — STRONG BID tier">🔥 ${strongCount} · Score above 85</button>
+              <button onclick="vtFilter('${vt}','bid')" id="${vt}-f-bid" style="padding:4px 10px;border-radius:5px;border:1px solid var(--bd);background:transparent;color:var(--t2);font-family:'Outfit',sans-serif;font-size:9px;font-weight:700;cursor:pointer;letter-spacing:.06em" title="Score 70-84 — BID tier">✅ ${bidCount} · Score 70-84</button>
+              <button onclick="vtFilter('${vt}','pending')" id="${vt}-f-pending" style="padding:4px 10px;border-radius:5px;border:1px solid var(--bd);background:transparent;color:var(--t2);font-family:'Outfit',sans-serif;font-size:9px;font-weight:700;cursor:pointer;letter-spacing:.06em" title="No score yet — JUDGE pending">⏳ ${unscoredCount} · Unscored</button>
             </div>
             <button class="refresh-btn" onclick="loadData(true)"><span>↻</span> Refresh</button>
           </div>
-        </div>
+        </div>`;})()}
         <div id="${vt}-opp-list">
         ${filteredOpps.length?filteredOpps.map(o=>oppRow(o,OPPS.indexOf(o))).join(''):emptyState(`No active ${vt} opportunities`,'Opportunities you pass on move to the Passed Archive. Run SCOUT to pull fresh contracts.')}
         </div>

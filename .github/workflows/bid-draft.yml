@@ -27,10 +27,15 @@ jobs:
       - run: npm install
       - name: Generate bid draft Sheet
         env:
-          SUPABASE_URL:           ${{ secrets.SUPABASE_URL }}
-          SUPABASE_SERVICE_KEY:   ${{ secrets.SUPABASE_SERVICE_KEY }}
-          GOOGLE_CLIENT_ID:       ${{ secrets.GOOGLE_CLIENT_ID }}
-          GOOGLE_CLIENT_SECRET:   ${{ secrets.GOOGLE_CLIENT_SECRET }}
-          GOOGLE_REFRESH_TOKEN:   ${{ secrets.GOOGLE_REFRESH_TOKEN }}
+          SUPABASE_URL:             ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY:     ${{ secrets.SUPABASE_SERVICE_KEY }}
+          GOOGLE_CLIENT_ID:         ${{ secrets.GOOGLE_CLIENT_ID }}
+          GOOGLE_CLIENT_SECRET:     ${{ secrets.GOOGLE_CLIENT_SECRET }}
+          GOOGLE_REFRESH_TOKEN:     ${{ secrets.GOOGLE_REFRESH_TOKEN }}
+          # Optional: when set, the agent ALSO creates a Doc from this template
+          # alongside the Sheet, with placeholders like {{TITLE}} replaced.
+          GOOGLE_TEMPLATE_DOC_ID:   ${{ secrets.GOOGLE_TEMPLATE_DOC_ID }}
+          CAGE_CODE:                ${{ secrets.CAGE_CODE }}
+          SAM_UEI:                  ${{ secrets.SAM_UEI }}
         # Empty input → batch mode. Non-empty → single bid.
         run: node agents/draft-bid.js "${{ github.event.inputs.bid_id }}"
