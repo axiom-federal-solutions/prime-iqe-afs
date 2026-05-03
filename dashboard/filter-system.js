@@ -50,17 +50,23 @@ const TAXONOMY = {
             label: 'Food & Beverage',
             naics: ['424490','311999'],
             psc:   ['8970','8915','8920','8925','8945','8950','8955','8960'],
-            keywords: ['food','beverage','dining','meal','coffee','snack','catering','grocer'],
+            // 2026-05-02: added MRE/galley/dfac/troops + federal foodservice terminology
+            keywords: ['food','beverage','dining','meal','coffee','snack','catering','grocer',
+                       'mre','galley','dfac','dining facility','troop subsistence','fresh fruit and vegetable',
+                       'subsistence','prime vendor','lunch','breakfast','vending'],
             subs: {
-              dining:   { label:'Dining Services',   keywords:['cafeteria','dining hall','meal plan','catering'] },
-              bulk:     { label:'Bulk Supplies',     keywords:['bulk','case','pallet','wholesale'] },
+              dining:   { label:'Dining Services',   keywords:['cafeteria','dining hall','meal plan','catering','dfac','galley','mess hall'] },
+              bulk:     { label:'Bulk Supplies',     keywords:['bulk','case','pallet','wholesale','prime vendor','subsistence'] },
             },
           },
           office: {
             label: 'Office & Stationery',
             naics: ['424120','453210'],
             psc:   ['7510','7520','7530','7540'],
-            keywords: ['office supplies','paper','toner','ink','pen','notebook','envelope','copy paper','printer paper'],
+            // 2026-05-02: added GSA Schedule, BPA, Schedule 75, MAS terminology
+            keywords: ['office supplies','paper','toner','ink','pen','notebook','envelope','copy paper','printer paper',
+                       'gsa schedule 75','bpa','blanket purchase','federal supply schedule','fss','mas',
+                       'multiple award schedule','sin','schedule 75','consumable','abilityone','jwod'],
             subs: {},
           },
         },
@@ -134,11 +140,15 @@ const TAXONOMY = {
             label: 'Commercial & Institutional',
             naics: ['236220'],
             psc:   ['Y1AA','Y1BB','Y1AZ','Y1BZ','Z1AA','Z1AZ'],
-            keywords: ['construction','renovation','building','facility','office building','headquarters'],
+            // 2026-05-02: added federal contracting vocabulary
+            keywords: ['construction','renovation','building','facility','office building','headquarters',
+                       'milcon','military construction','usace','navfac','matoc','idiq','sabre',
+                       'design-bid-build','sustainment','modernization','recapitalization','spawar',
+                       'p-xxx project','vamc','medical center construction'],
             subs: {
-              new_constr: { label:'New Construction', keywords:['new construction','design-build','construct'] },
-              renovation: { label:'Renovation/Reno',   keywords:['renovation','remodel','rehab','retrofit','restoration'] },
-              repair:     { label:'Repair',            keywords:['repair','replace','restore'] },
+              new_constr: { label:'New Construction', keywords:['new construction','design-build','construct','greenfield','sabre'] },
+              renovation: { label:'Renovation/Reno',   keywords:['renovation','remodel','rehab','retrofit','restoration','recapitalization','modernization'] },
+              repair:     { label:'Repair',            keywords:['repair','replace','restore','sustainment','jocd'] },
             },
           },
           multifamily: {
@@ -291,7 +301,10 @@ const TAXONOMY = {
             label: 'Facilities Support',
             naics: ['561210'],
             psc:   ['S201','S204','S299'],
-            keywords: ['facilities support','base operations','base ops','om&m','operations and maintenance'],
+            // 2026-05-02: BOS, BOSS, FACOPS, FRP, sustainment vocabulary
+            keywords: ['facilities support','base operations','base ops','om&m','operations and maintenance',
+                       'bos','boss','facops','base operating support','om&s','o&m','sustainment','facility maintenance',
+                       'logcap','frp','full range of products','facility services','janitorial services'],
             subs: {},
           },
           // 2026-05-02: removed Janitorial Services from construction.
@@ -331,17 +344,24 @@ const TAXONOMY = {
             label: 'Office / Nonresidential',
             naics: ['531120'],
             psc:   ['X1AA','X1BA','X1DA'],
-            keywords: ['lease','office space','warehouse lease','nonresidential lease','gsa lease'],
+            // 2026-05-02: added GSA-specific lease terminology
+            keywords: ['lease','office space','warehouse lease','nonresidential lease','gsa lease',
+                       'rlp','request for lease proposal','solicitation for offers','sfo',
+                       'full service','fully serviced','occupancy','build-to-suit','lease replacement',
+                       'gsa form 1364','tenant improvement','ti allowance','noi','rentable square feet','rsf','usf'],
             subs: {
-              gsa:    { label:'GSA Office Lease',  keywords:['gsa','general services administration'] },
-              military:{label:'Military / Federal', keywords:['army','navy','air force','dod','federal']},
+              gsa:    { label:'GSA Office Lease',  keywords:['gsa','general services administration','rlp','sfo','build-to-suit'] },
+              military:{label:'Military / Federal', keywords:['army','navy','air force','dod','federal','jbab','navfac']},
             },
           },
           residential: {
             label: 'Residential',
             naics: ['531110'],
             psc:   ['X1HA'],
-            keywords: ['residential lease','housing','quarters','barracks','family housing','privatized housing'],
+            // 2026-05-02: added BAH, MHPI, RCI terminology
+            keywords: ['residential lease','housing','quarters','barracks','family housing','privatized housing',
+                       'bah','basic allowance for housing','mhpi','military housing privatization','rci',
+                       'unaccompanied housing','dormitory','furnished housing','tlf','transient lodging'],
             subs: {},
           },
           land: {
@@ -500,12 +520,30 @@ function _cachedMap(opp, tabKey) {
 
 // ─────────────────────────────────────────────────────────────
 // 3) FILTER STATE — one bucket per tab. No React, just an object.
+// 2026-05-02: added `regions` (Set of region names) and `panelCollapsed`
+// (bool) for the new region filter + collapsible panel feature.
 // ─────────────────────────────────────────────────────────────
 const FILTERS = {
-  supply:       { domains: new Set(), categories: new Set(), subs: new Set(), expanded: new Set() },
-  construction: { domains: new Set(), categories: new Set(), subs: new Set(), expanded: new Set() },
-  realestate:   { domains: new Set(), categories: new Set(), subs: new Set(), expanded: new Set() },
+  supply:       { domains: new Set(), categories: new Set(), subs: new Set(), expanded: new Set(), regions: new Set(), panelCollapsed: false },
+  construction: { domains: new Set(), categories: new Set(), subs: new Set(), expanded: new Set(), regions: new Set(), panelCollapsed: false },
+  realestate:   { domains: new Set(), categories: new Set(), subs: new Set(), expanded: new Set(), regions: new Set(), panelCollapsed: false },
 };
+
+// Region → states mapping (matches index.html STATE_META.r values).
+// Used for the "All States / By Region / Custom" selector on each vertical.
+const REGION_STATES = {
+  'Gulf Coast':      ['LA','MS','AL','TX','FL'],
+  'Southeast':       ['GA','NC','SC','TN','KY','AR','VA','WV'],
+  'Mid-Atlantic':    ['MD','DC','DE','PA','NJ'],
+  'Northeast':       ['NY','MA','CT','RI','VT','NH','ME'],
+  'Great Lakes':     ['MI','OH','IL','IN','WI'],
+  'Midwest':         ['MO','IA','MN','KS','NE','ND','SD'],
+  'Plains':          ['OK'],
+  'Mountain':        ['CO','UT','WY','MT','ID','NM'],
+  'Southwest':       ['AZ','NV'],
+  'Pacific':         ['CA','OR','WA','HI','AK'],
+};
+const ALL_REGIONS = Object.keys(REGION_STATES);
 
 function toggleDomain(tabKey, domainKey) {
   const f = FILTERS[tabKey]; if (!f) return;
@@ -529,8 +567,46 @@ function toggleExpanded(tabKey, domainKey) {
 }
 function clearFilters(tabKey) {
   const f = FILTERS[tabKey]; if (!f) return;
-  f.domains.clear(); f.categories.clear(); f.subs.clear();
+  f.domains.clear(); f.categories.clear(); f.subs.clear(); f.regions.clear();
   _onFilterChange(tabKey);
+}
+
+// 2026-05-02: region selector toggles. "All States" = empty regions Set.
+// Selecting one or more regions narrows the state map + opp list to those.
+function toggleRegion(tabKey, regionName) {
+  const f = FILTERS[tabKey]; if (!f) return;
+  if (f.regions.has(regionName)) f.regions.delete(regionName); else f.regions.add(regionName);
+  _onFilterChange(tabKey);
+}
+function clearRegions(tabKey) {
+  const f = FILTERS[tabKey]; if (!f) return;
+  f.regions.clear();
+  _onFilterChange(tabKey);
+}
+function selectAllRegions(tabKey) {
+  const f = FILTERS[tabKey]; if (!f) return;
+  ALL_REGIONS.forEach(r => f.regions.add(r));
+  _onFilterChange(tabKey);
+}
+
+// Collapse/expand the entire filter panel. State persists in FILTERS[tabKey].
+function togglePanelCollapsed(tabKey) {
+  const f = FILTERS[tabKey]; if (!f) return;
+  f.panelCollapsed = !f.panelCollapsed;
+  _renderFilterPanelOnly(tabKey);
+}
+
+// Returns the set of US state codes that pass the active region filter for a tab.
+// Empty regions Set = "all states allowed". Used by index.html's renderVertical
+// when filtering opps for the state map and opp list.
+function regionAllowedStates(tabKey) {
+  const f = FILTERS[tabKey];
+  if (!f || f.regions.size === 0) return null; // null sentinel = no region filter
+  const allowed = new Set();
+  for (const region of f.regions) {
+    (REGION_STATES[region] || []).forEach(s => allowed.add(s));
+  }
+  return allowed;
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -539,9 +615,19 @@ function clearFilters(tabKey) {
 function filterContracts(opps, tabKey) {
   const f = FILTERS[tabKey];
   if (!f) return opps;
-  if (f.domains.size === 0 && f.categories.size === 0 && f.subs.size === 0) return opps;
+  const noTaxFilters = f.domains.size === 0 && f.categories.size === 0 && f.subs.size === 0;
+  const noRegionFilter = f.regions.size === 0;
+  if (noTaxFilters && noRegionFilter) return opps;
+
+  const allowedStates = regionAllowedStates(tabKey); // null if no region filter
 
   return opps.filter(opp => {
+    // Region filter — applies first (cheapest)
+    if (allowedStates) {
+      const st = (opp.state || opp.place_of_performance || '').toUpperCase();
+      if (!allowedStates.has(st)) return false;
+    }
+    if (noTaxFilters) return true;
     const hits = _cachedMap(opp, tabKey);
     const domainOk = f.domains.size === 0    || hits.some(h => f.domains.has(h.domain));
     const catOk    = f.categories.size === 0 || hits.some(h => f.categories.has(h.category));
@@ -583,11 +669,47 @@ function renderFilterPanel(tabKey, container, activeOpps) {
   const filtered = filterContracts(activeOpps || [], tabKey).length;
   const anyActive = f.domains.size + f.categories.size + f.subs.size > 0;
 
-  let html = `<div class="fx-panel" data-tab="${tabKey}">`;
+  const collapsed = !!f.panelCollapsed;
+  const regionsActive = f.regions.size;
+  const totalAnyActive = anyActive || regionsActive > 0;
+
+  let html = `<div class="fx-panel ${collapsed?'is-collapsed':''}" data-tab="${tabKey}">`;
   html += `<div class="fx-head">
     <div class="fx-title">${tab.label} · Filter</div>
-    <div class="fx-summary">${anyActive ? `<span style="color:${tab.color}">${filtered}</span>/${totalActive} match` : `${totalActive} total`}</div>
-    ${anyActive ? `<button class="fx-clear" onclick="clearFilters('${tabKey}')">Clear</button>` : ''}
+    <div class="fx-summary">${totalAnyActive ? `<span style="color:${tab.color}">${filtered}</span>/${totalActive} match` : `${totalActive} total`}</div>
+    ${totalAnyActive ? `<button class="fx-clear" onclick="clearFilters('${tabKey}')">Clear</button>` : ''}
+    <button class="fx-collapse-btn" onclick="togglePanelCollapsed('${tabKey}')" title="${collapsed?'Expand filter':'Collapse filter'}">${collapsed?'▼':'▲'}</button>
+  </div>`;
+
+  // 2026-05-02: when collapsed, show only a one-line summary of active filters.
+  if (collapsed) {
+    const activeBits = [];
+    if (f.regions.size)    activeBits.push(`${f.regions.size} region${f.regions.size>1?'s':''}`);
+    if (f.domains.size)    activeBits.push(`${f.domains.size} domain${f.domains.size>1?'s':''}`);
+    if (f.categories.size) activeBits.push(`${f.categories.size} cat${f.categories.size>1?'s':''}`);
+    if (f.subs.size)       activeBits.push(`${f.subs.size} sub${f.subs.size>1?'s':''}`);
+    html += `<div class="fx-collapsed-summary">${activeBits.length ? activeBits.join(' · ') : 'No filters active'}</div>`;
+    html += `</div>`;
+    container.innerHTML = html;
+    return;
+  }
+
+  // Region selector — All / By Region (multi-select) ──────────────
+  html += `<div class="fx-regions">
+    <div class="fx-regions-head">
+      <span class="fx-regions-title">States</span>
+      <div class="fx-regions-actions">
+        <button class="fx-region-quick" onclick="clearRegions('${tabKey}')">${f.regions.size===0?'<b>All States ●</b>':'All States'}</button>
+        <button class="fx-region-quick" onclick="selectAllRegions('${tabKey}')">Select all regions</button>
+      </div>
+    </div>
+    <div class="fx-region-grid">
+      ${ALL_REGIONS.map(r => {
+        const sel = f.regions.has(r);
+        const stCount = (REGION_STATES[r] || []).length;
+        return `<button class="fx-region-chip ${sel?'is-active':''}" onclick="toggleRegion('${tabKey}','${r}')">${r}<span class="fx-region-count">${stCount}</span></button>`;
+      }).join('')}
+    </div>
   </div>`;
 
   // One row per domain (the "division-style header"). Click header = expand/collapse + toggle.
@@ -829,6 +951,13 @@ window.toggleCategory          = toggleCategory;
 window.toggleSubCategory       = toggleSubCategory;
 window.toggleExpanded          = toggleExpanded;
 window.clearFilters            = clearFilters;
+window.toggleRegion            = toggleRegion;
+window.clearRegions            = clearRegions;
+window.selectAllRegions        = selectAllRegions;
+window.togglePanelCollapsed    = togglePanelCollapsed;
+window.regionAllowedStates     = regionAllowedStates;
+window.REGION_STATES           = REGION_STATES;
+window.ALL_REGIONS             = ALL_REGIONS;
 window.renderFilterPanel       = renderFilterPanel;
 window.commandCenterSearch     = commandCenterSearch;
 window.renderCommandSearch     = renderCommandSearch;

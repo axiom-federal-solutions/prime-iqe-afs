@@ -292,7 +292,7 @@ document.addEventListener('keydown', e=>{
 </div>
 
 <nav class="sb">
-  <div class="sb-logo"><div class="sb-mark"><img src="Prime logo 1.png" alt="PRIME" style="width:38px;height:38px;object-fit:contain;border-radius:8px;display:block"></div><div><div class="sb-title">IQE <span>PRIME</span></div><div class="sb-ver">v19 · 3 Verticals</div></div></div>
+  <div class="sb-logo"><div class="sb-mark"><img src="Prime logo 2.png" alt="PRIME" style="width:38px;height:38px;object-fit:contain;border-radius:8px;display:block"></div><div><div class="sb-title">IQE <span>PRIME</span></div><div class="sb-ver">v19 · 3 Verticals</div></div></div>
   <div class="sb-group">Command</div><button class="sb-btn active" onclick="go('home',this)">🏠 Command Center</button>
   <div class="sb-group">Alerts</div>
   <button class="sb-btn" onclick="go('action',this)" id="sb-action">🚨 Action Queue</button>
@@ -308,8 +308,8 @@ document.addEventListener('keydown', e=>{
   <div class="sb-group">Compliance</div><button class="sb-btn" onclick="go('compliance',this)">🛡️ Certs · Bonds · Safety</button>
   <div class="sb-group">Intelligence</div>
   <button class="sb-btn" onclick="go('intel',this)">🏛️ Market Intel & Congress</button>
-  <button class="sb-btn" onclick="go('performance',this)">📈 Performance</button>
   <button class="sb-btn" onclick="go('events',this)">🤝 OSDBU Events</button>
+  <button class="sb-btn" onclick="go('performance',this)">📈 Performance</button>
   <button class="sb-btn" onclick="go('briefs',this)">📬 Brief Archive</button>
   <div class="sb-group">System</div>
   <button class="sb-btn" onclick="go('system',this)">⚙️ Agents & Config</button>
@@ -1021,9 +1021,9 @@ function renderPassed(){
         <div style="font-size:16px;font-weight:700">🚫 Passed Archive</div>
         <div style="font-size:10px;color:var(--t3);margin-top:2px">Opportunities you decided not to pursue — restore any to bring it back to your pipeline</div>
       </div>
-      <div class="kpi" style="border-left:3px solid var(--t3);min-width:auto">
-        <div class="kpi-val" style="color:var(--t2);font-size:18px">${passedOpps.length}</div>
-        <div class="kpi-lbl">archived</div>
+      <div class="kpi" style="border-left:3px solid var(--t3);min-width:auto;flex:0 0 auto;width:60px;padding:8px 10px">
+        <div class="kpi-val" style="color:var(--t2);font-size:16px">${passedOpps.length}</div>
+        <div class="kpi-lbl" style="font-size:9px">archived</div>
       </div>
     </div>
     ${passed.length>0?`
@@ -1355,6 +1355,76 @@ function renderActionQueue(){
   const newToday=OPPS.filter(o=>o.created_at&&new Date(o.created_at)>yesterday)
     .sort((a,b)=>scoreOf(b)-scoreOf(a));
 
+  // 2026-05-02: surface VAULT alerts here too — every compliance issue
+  // (SAM expiry, license expiry, unverified bonding, NOT TRACKED items)
+  // becomes an Action Queue card so Mr. Kemp sees them at the same place
+  // he reviews urgent opps.
+  const vaultIssuesRaw  = cfgVal('VAULT_SYSTEM_ISSUES');
+  const vaultExpiryRaw  = cfgVal('VAULT_EXPIRY_ALERTS');
+  let vaultIssues = [];
+  let vaultExpiry = [];
+  try { vaultIssues = JSON.parse(vaultIssuesRaw || '[]'); } catch(e) {}
+  try { vaultExpiry = JSON.parse(vaultExpiryRaw  || '[]'); } catch(e) {}
+
+  // Build VAULT action cards
+  const vaultCards = [];
+  // Each system_issue is a string like "WARNING: SAM.gov registration expires in 25 days"
+  for (const issue of vaultIssues) {
+    const isCritical = String(issue).toUpperCase().includes('CRITICAL');
+    vaultCards.push({
+      severity: isCritical ? 'critical' : 'warning',
+      icon:     isCritical ? '🛑' : '⚠️',
+      title:    'VAULT — Compliance Alert',
+      detail:   String(issue),
+      cta_url:  'https://sam.gov',
+      cta_text: 'Resolve →',
+    });
+  }
+  // Each expiry alert: { name, status: 'EXPIRED'|'EXPIRING_SOON', days, critical }
+  for (const exp of vaultExpiry) {
+    const isCritical = exp.critical && (exp.status === 'EXPIRED' || exp.days < 30);
+    vaultCards.push({
+      severity: isCritical ? 'critical' : 'warning',
+      icon:     isCritical ? '🛑' : '⏰',
+      title:    `VAULT — ${exp.name}`,
+      detail:   exp.status === 'EXPIRED'
+                  ? `${exp.name} expired ${exp.days} days ago — UPDATE NOW`
+                  : `${exp.name} expires in ${exp.days} days`,
+      cta_url:  'https://sam.gov',
+      cta_text: 'Renew →',
+    });
+  }
+  // Recent VAULT logs that mark INELIGIBLE bids (per-bid compliance failures)
+  const recentVaultLogs = (RUNS || []).filter(r =>
+    (r.agent === 'VAULT') && /INELIGIBLE/i.test(r.action || '')
+  ).slice(0, 5);
+  for (const log of recentVaultLogs) {
+    const meta = log.metadata || {};
+    vaultCards.push({
+      severity: 'critical',
+      icon:     '🛑',
+      title:    'VAULT — Bid Blocked',
+      detail:   `${meta.solicitation || 'unknown'} (${meta.naics || '?'}) — ${(meta.failures||[]).slice(0,2).join('; ') || 'compliance gate failed'}`,
+      cta_url:  '#',
+      cta_text: 'View →',
+    });
+  }
+
+  const vaultHtml = vaultCards.length
+    ? vaultCards.map(c => {
+        const color = c.severity === 'critical' ? 'var(--red)' : 'var(--amber)';
+        const bg    = c.severity === 'critical' ? 'rgba(248,113,113,0.06)' : 'rgba(245,158,11,0.06)';
+        return `<div style="background:${bg};border:1px solid ${color}33;border-left:3px solid ${color};border-radius:6px;padding:10px 12px;margin-bottom:6px;display:flex;align-items:center;gap:12px">
+          <span style="font-size:16px">${c.icon}</span>
+          <div style="flex:1">
+            <div style="font-size:11px;font-weight:700;color:${color}">${c.title}</div>
+            <div style="font-size:10px;color:var(--t2);margin-top:2px">${c.detail}</div>
+          </div>
+          <a href="${c.cta_url}" target="_blank" style="font-size:10px;font-weight:700;padding:4px 10px;border-radius:4px;background:${color}22;color:${color};text-decoration:none;border:1px solid ${color}44">${c.cta_text}</a>
+        </div>`;
+      }).join('')
+    : '';
+
   const urgentHtml=urgent.length
     ?urgent.map(o=>{
       const idx=OPPS.indexOf(o);
@@ -1391,11 +1461,16 @@ function renderActionQueue(){
   document.getElementById('t-action').innerHTML=`
     <div style="font-size:16px;font-weight:700;margin-bottom:4px">🚨 Action Queue</div>
     <div style="font-size:10px;color:var(--t3);margin-bottom:16px">Opportunities that need a decision NOW — scored 70+ with ≤14 days to deadline and no bid started.</div>
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:12px">
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px;margin-bottom:12px">
       <div class="kpi" style="border-left:3px solid var(--red)"><div class="kpi-val" style="color:var(--red)">${urgent.length}</div><div class="kpi-lbl">Urgent — Decide Today</div><div class="kpi-sub">Score 70+ · ≤14 days · No bid</div></div>
       <div class="kpi" style="border-left:3px solid var(--cyan)"><div class="kpi-val" style="color:var(--cyan)">${newToday.length}</div><div class="kpi-lbl">New Last 24 Hours</div><div class="kpi-sub">Just added by SCOUT</div></div>
+      <div class="kpi" style="border-left:3px solid ${vaultCards.length>0?'var(--amber)':'var(--green)'}"><div class="kpi-val" style="color:${vaultCards.length>0?'var(--amber)':'var(--green)'}">${vaultCards.length}</div><div class="kpi-lbl">VAULT Alerts</div><div class="kpi-sub">Compliance + cert/license</div></div>
     </div>
-    <div style="font-size:10px;font-weight:700;color:var(--red);letter-spacing:.12em;text-transform:uppercase;margin-bottom:8px">🔥 MUST DECIDE NOW</div>
+    ${vaultCards.length>0?`
+      <div style="font-size:10px;font-weight:700;color:var(--amber);letter-spacing:.12em;text-transform:uppercase;margin-bottom:8px">🛡️ VAULT — RESOLVE BEFORE BIDDING</div>
+      ${vaultHtml}
+    `:''}
+    <div style="font-size:10px;font-weight:700;color:var(--red);letter-spacing:.12em;text-transform:uppercase;margin:${vaultCards.length>0?'20px':'0'} 0 8px">🔥 MUST DECIDE NOW</div>
     ${urgentHtml}
     <div style="font-size:10px;font-weight:700;color:var(--cyan);letter-spacing:.12em;text-transform:uppercase;margin:20px 0 8px">⚡ NEW TODAY</div>
     ${newHtml}
@@ -1444,7 +1519,7 @@ function renderMonteCarloRow(){
     <div style="background:var(--card);border:1px solid var(--bd);border-radius:8px;padding:12px 16px;margin-bottom:10px;display:flex;align-items:center;gap:14px">
       <div style="font-size:18px">📈</div>
       <div style="flex:1">
-        <div style="font-size:10px;font-weight:700;color:var(--t3);letter-spacing:.1em;text-transform:uppercase;margin-bottom:4px">Monte Carlo Revenue Forecast — L6-06</div>
+        <div style="font-size:10px;font-weight:700;color:var(--t3);letter-spacing:.1em;text-transform:uppercase;margin-bottom:4px">Monte Carlo Revenue Forecast</div>
         <div style="font-size:11px;color:var(--t2);margin-bottom:6px">Auto-activates after ${MC_THRESH} bid outcomes recorded &nbsp;·&nbsp; <span style="color:var(--cyan)">${outcomeCount}/${MC_THRESH}</span> complete</div>
         <div style="height:4px;background:var(--bd);border-radius:99px;overflow:hidden;width:280px">
           <div style="height:100%;width:${pct}%;background:var(--cyan);border-radius:99px;transition:width .4s"></div>
@@ -1473,7 +1548,7 @@ function renderMonteCarloRow(){
   <div style="background:var(--card);border:1px solid var(--cyanBd);border-radius:8px;padding:14px 16px;margin-bottom:10px">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
       <div>
-        <div style="font-size:10px;font-weight:700;color:var(--cyan);letter-spacing:.1em;text-transform:uppercase">📈 Monte Carlo Revenue Forecast — L6-06</div>
+        <div style="font-size:10px;font-weight:700;color:var(--cyan);letter-spacing:.1em;text-transform:uppercase">📈 Monte Carlo Revenue Forecast</div>
         <div style="font-size:9px;color:var(--t3);margin-top:2px">${sims} simulations · Snapshot ${snap}</div>
       </div>
       <div style="text-align:right">
@@ -1538,7 +1613,7 @@ function renderL6StatusPanel(){
   return `
   <div style="background:var(--card);border:1px solid var(--bd);border-radius:8px;padding:14px;margin-bottom:10px">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
-      <div style="font-size:10px;font-weight:700;color:var(--t3);letter-spacing:.1em;text-transform:uppercase">⚙️ L6 Intelligence Features</div>
+      <div style="font-size:10px;font-weight:700;color:var(--t3);letter-spacing:.1em;text-transform:uppercase">⚙️ Intelligence Features</div>
       ${allLive ? '<span style="font-size:8px;font-weight:700;padding:2px 7px;border-radius:3px;background:var(--greenDim);color:var(--green);text-transform:uppercase;letter-spacing:.08em">ALL ACTIVE</span>' : '<span style="font-size:9px;color:var(--t3)">Accumulating data…</span>'}
     </div>
     ${statusRow('ML Win Scoring','🧠',mlActive,outcomeCount,20)}
@@ -1614,17 +1689,20 @@ function renderHome(){
          description, agency, NAICS, PSC, solicitation # — surfaces opps regardless
          of score. Useful when you know what you want ("paper products", "fuel"). -->
     <div id="fx-command-search" style="margin-bottom:16px"></div>
-    ${renderMonteCarloRow()}
-    ${renderL6StatusPanel()}
-    <!-- 2026-05-02: stacked layout — Top Opportunities full-width on top,
-         Agent Feed full-width below. Was a 2-column grid (1fr 340px) which
-         compressed both. Stacking gives more room for opp titles + agency
-         labels and lets the agent feed breathe. -->
+    <!-- 2026-05-02: Monte Carlo + Intelligence Features moved to Revenue / Intel tabs.
+         Agent Feed moved to System tab. Home stays focused on opportunities + search. -->
+    <!-- Active Construction Opportunities — explainer for the Top Opportunities section -->
+    <div style="background:var(--card);border:1px solid var(--bd);border-radius:8px;padding:10px 14px;margin-bottom:14px">
+      <div style="font-size:11px;color:var(--t2);line-height:1.6">
+        <span style="color:var(--gold);font-weight:700">Top Opportunities</span> are the highest-scoring active solicitations across all 3 verticals — sorted by PRIME / ACQ / LEASE score. Each row shows agency, vertical badge, contract value, model score (color-coded: green ≥85 strong bid · gold ≥70 bid · amber ≥55 conditional), recommendation, and days-to-deadline. Click any row for the full bid package. Score updates automatically every time JUDGE runs.
+      </div>
+    </div>
     <div style="margin-bottom:18px">
       <div style="font-size:10px;font-weight:700;color:var(--t3);letter-spacing:.12em;margin-bottom:8px;text-transform:uppercase">Top Opportunities — All Verticals</div>
       ${topHtml}
     </div>
-    <div class="feed">
+    <div class="feed" style="display:none">
+      <!-- 2026-05-02: Agent Feed moved to System tab — kept hidden anchor in case other code references it -->
       <div style="font-size:10px;font-weight:700;color:var(--t3);letter-spacing:.12em;margin-bottom:10px;text-transform:uppercase">Agent Feed</div>
       ${feedHtml}
     </div>`;
@@ -2058,6 +2136,8 @@ function renderMoney(){
 
   document.getElementById('t-money').innerHTML=`
     <div style="font-size:16px;font-weight:700;margin-bottom:14px">💰 Money Recovery — EXEC</div>
+    <!-- 2026-05-02: Monte Carlo revenue forecast moved here from home tab. -->
+    ${renderMonteCarloRow()}
     <div class="kpi-row" style="margin-bottom:16px">
       <div class="kpi" style="border-left:3px solid var(--green)"><div class="kpi-val" style="color:var(--green)">${fmt(totalInterest)||'$0'}</div><div class="kpi-lbl">Interest Claimable</div><div class="kpi-sub">FAR 52.232-25</div></div>
       <div class="kpi" style="border-left:3px solid var(--amber)"><div class="kpi-val" style="color:var(--amber)">${latePayments.length}</div><div class="kpi-lbl">Late Invoices</div><div class="kpi-sub">${fmt(totalInvoiced)} outstanding</div></div>
@@ -2373,6 +2453,8 @@ function renderIntel(){
   const gaoCheck=cfgVal('RECON_GAO_LAST_CHECK');
   document.getElementById('t-intel').innerHTML=`
     <div style="font-size:16px;font-weight:700;margin-bottom:14px">🏛️ Market Intel</div>
+    <!-- 2026-05-02: Intelligence Features (ML/Monte Carlo/Competitor) panel moved here from home tab. -->
+    ${renderL6StatusPanel()}
     <div class="grid2" style="margin-bottom:16px">
       <div class="card-section" style="border-left:3px solid var(--green)">
         <div style="font-size:11px;font-weight:700;color:var(--green);margin-bottom:8px">GAO PROTESTS</div>
@@ -2461,9 +2543,24 @@ function renderSystem(){
         <div style="font-size:9px;color:var(--t3);margin-top:4px">Resets midnight ET · SCOUT uses ~110/day</div>
       </div>
     </div>
-    <div class="card-section" style="border-left:3px solid var(--gold);margin-bottom:14px">
-      <div style="font-size:11px;font-weight:700;color:var(--gold);margin-bottom:6px">COST BREAKDOWN ~$9.50/mo</div>
-      <div style="font-size:9px;color:var(--t3)">24 workflows · 43 tables · 37 NAICS · 3 verticals · T.E.S.T. v2 active</div>
+    <!-- 2026-05-02: Cost Breakdown removed from dashboard view per Mr. Kemp.
+         Operational cost stays internal and is tracked via cost-guard / agent_cost_log. -->
+    <!-- Agent Feed — moved here from home tab so System tab is the canonical
+         place to see what's running. -->
+    <div class="card-section" style="border-left:3px solid var(--violet);margin-bottom:14px">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+        <div style="font-size:11px;font-weight:700;color:var(--violet);letter-spacing:.08em;text-transform:uppercase">📡 Agent Feed — Recent Activity</div>
+        <button class="refresh-btn" onclick="loadData(true)" style="font-size:10px"><span>↻</span> Refresh</button>
+      </div>
+      <div class="feed">
+        ${RUNS.length?RUNS.slice(0,20).map(r=>{
+          const colors={'BRANDI':'var(--gold)','SCOUT':'var(--green)','JUDGE':'var(--cyan)','VAULT':'var(--green)','RECON':'var(--violet)','EXEC':'var(--cyan)','DRAFT':'var(--green)','TEST':'var(--green)','T.E.S.T.':'var(--green)','LEDGER':'var(--cyan)','BID ENGINE':'var(--cyan)'};
+          const agentKey=r.agent||r.agent_name||'—';
+          const c=colors[agentKey]||'var(--t2)';
+          const ago=r.created_at?Math.round((Date.now()-new Date(r.created_at))/60000)+'m':'—';
+          return `<div class="feed-item"><span style="font-size:9px;font-weight:700;min-width:62px;color:${c}">${agentKey}</span><span style="font-size:10px;color:var(--t2);flex:1;line-height:1.4">${r.action||r.summary||r.outcome||'—'}</span><span style="font-size:9px;color:var(--t3)">${ago}</span></div>`;
+        }).join(''):`<div style="font-size:10px;color:var(--t3);padding:20px 0;text-align:center">No agent activity yet.<br>Run SCOUT to start.</div>`}
+      </div>
     </div>
     <a href="${GH_ACTIONS}" target="_blank" style="display:block;text-align:center;padding:12px;border-radius:8px;background:var(--cyanDim);border:1px solid var(--cyanBd);color:var(--cyan);font-size:12px;font-weight:600;text-decoration:none">▶ Open GitHub Actions to Run Workflows</a>
   `;

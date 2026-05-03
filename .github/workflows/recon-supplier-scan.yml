@@ -15,9 +15,11 @@ on:
     - cron: '0 9 * * 1'
 
   # Also run after JUDGE scores new opportunities (matching only)
+  # 2026-05-02 BUG FIX: was listening for "JUDGE Scoring" but the actual
+  # workflow name is "JUDGE - Opportunity Scoring". Auto-trigger never fired.
   workflow_run:
     workflows:
-      - "JUDGE Scoring"
+      - "JUDGE - Opportunity Scoring"
     types:
       - completed
 

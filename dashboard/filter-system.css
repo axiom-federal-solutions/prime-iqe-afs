@@ -147,6 +147,50 @@
   border:1px dashed var(--bd);
 }
 
+/* ── 2026-05-02: Collapse toggle on filter panel header ─────────── */
+.fx-collapse-btn{
+  font-family:'Outfit',sans-serif;font-size:11px;font-weight:700;
+  background:transparent;border:1px solid var(--bd);border-radius:4px;
+  color:var(--t2);padding:3px 8px;cursor:pointer;letter-spacing:.04em;
+  transition:all .15s;margin-left:6px;
+}
+.fx-collapse-btn:hover{border-color:var(--cyan);color:var(--cyan)}
+.fx-panel.is-collapsed{padding-bottom:8px}
+.fx-collapsed-summary{
+  font-size:11px;color:var(--t2);padding:6px 4px 0;
+  font-style:italic;
+}
+
+/* ── 2026-05-02: Region selector chip grid ──────────────────────── */
+.fx-regions{margin-bottom:10px;padding-bottom:8px;border-bottom:1px solid var(--bd)}
+.fx-regions-head{display:flex;align-items:center;gap:8px;margin-bottom:6px}
+.fx-regions-title{font-size:10px;font-weight:700;color:var(--t3);letter-spacing:.08em;text-transform:uppercase;flex:1}
+.fx-regions-actions{display:flex;gap:4px}
+.fx-region-quick{
+  font-family:'Outfit',sans-serif;font-size:9px;font-weight:600;
+  background:transparent;border:1px solid var(--bd);border-radius:3px;
+  color:var(--t2);padding:2px 6px;cursor:pointer;letter-spacing:.04em;
+  transition:all .15s;
+}
+.fx-region-quick:hover{border-color:var(--cyan);color:var(--cyan)}
+.fx-region-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(96px,1fr));gap:4px}
+.fx-region-chip{
+  display:flex;align-items:center;justify-content:space-between;gap:4px;
+  font-family:'Outfit',sans-serif;font-size:10px;font-weight:500;
+  background:transparent;border:1px solid var(--bd);border-radius:4px;
+  color:var(--t2);padding:4px 7px;cursor:pointer;letter-spacing:.02em;
+  transition:all .15s;
+}
+.fx-region-chip:hover{border-color:var(--cyan);color:var(--t1);background:rgba(255,255,255,.04)}
+.fx-region-chip.is-active{
+  border-color:var(--cyan);background:var(--cyanDim);color:var(--cyan);font-weight:700;
+}
+.fx-region-count{
+  font-size:9px;color:var(--t3);font-weight:500;
+  background:rgba(255,255,255,.04);border-radius:8px;padding:0 5px;
+}
+.fx-region-chip.is-active .fx-region-count{background:rgba(0,229,255,.18);color:var(--cyan)}
+
 /* ── Two-column layout: filter panel + opp list (desktop) ────────── */
 .fx-vertical-layout{
   display:grid;
