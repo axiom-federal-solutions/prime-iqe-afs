@@ -147,7 +147,7 @@
   border:1px dashed var(--bd);
 }
 
-/* ── 2026-05-02: Collapse toggle on filter panel header ─────────── */
+/* ── 2026-05-03: Collapse-to-LEFT — filter panel becomes thin vertical strip ─ */
 .fx-collapse-btn{
   font-family:'Outfit',sans-serif;font-size:11px;font-weight:700;
   background:transparent;border:1px solid var(--bd);border-radius:4px;
@@ -155,10 +155,44 @@
   transition:all .15s;margin-left:6px;
 }
 .fx-collapse-btn:hover{border-color:var(--cyan);color:var(--cyan)}
-.fx-panel.is-collapsed{padding-bottom:8px}
-.fx-collapsed-summary{
-  font-size:11px;color:var(--t2);padding:6px 4px 0;
-  font-style:italic;
+
+/* When the parent layout has .is-collapsed, the filter column shrinks. */
+.fx-vertical-layout.is-collapsed{grid-template-columns:36px 1fr !important}
+
+/* Collapsed-state panel = thin vertical strip with rotated label */
+.fx-panel.is-collapsed{
+  padding:6px 4px;
+  display:flex;flex-direction:column;align-items:center;gap:8px;
+  height:100%;min-height:240px;
+  background:var(--card);
+  border:1px solid var(--bd);
+  border-radius:6px;
+}
+.fx-collapse-btn-vertical{
+  width:28px;height:28px;padding:0;
+  display:flex;align-items:center;justify-content:center;
+  font-size:14px;
+  background:var(--cyanDim);border:1px solid var(--cyanBd);color:var(--cyan);
+}
+.fx-collapse-btn-vertical:hover{background:var(--cyanBd);color:var(--cyan)}
+.fx-vertical-title{
+  writing-mode:vertical-rl;
+  transform:rotate(180deg);
+  font-size:11px;font-weight:700;color:var(--t2);
+  letter-spacing:.1em;
+  cursor:pointer;
+  user-select:none;
+  margin-top:8px;
+}
+.fx-vertical-title:hover{color:var(--cyan)}
+.fx-vertical-summary{
+  writing-mode:vertical-rl;
+  transform:rotate(180deg);
+  font-size:9px;font-weight:600;color:var(--cyan);
+  letter-spacing:.08em;
+  margin-top:6px;
+  background:var(--cyanDim);
+  padding:6px 3px;border-radius:3px;
 }
 
 /* ── 2026-05-02: Region selector chip grid ──────────────────────── */

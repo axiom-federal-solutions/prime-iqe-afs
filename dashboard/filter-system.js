@@ -673,26 +673,38 @@ function renderFilterPanel(tabKey, container, activeOpps) {
   const regionsActive = f.regions.size;
   const totalAnyActive = anyActive || regionsActive > 0;
 
-  let html = `<div class="fx-panel ${collapsed?'is-collapsed':''}" data-tab="${tabKey}">`;
+  // 2026-05-03: collapse-to-left. The wrapper grid (.fx-vertical-layout)
+  // gets .is-collapsed which shrinks the filter column from 280px to 36px.
+  // CSS rotates the title vertically and shows just the expand arrow so
+  // the state map + opp list get the freed-up width.
+  const wrapper = container.parentElement;
+  if (wrapper && wrapper.classList.contains('fx-vertical-layout')) {
+    wrapper.classList.toggle('is-collapsed', collapsed);
+  }
+
+  if (collapsed) {
+    // Render only the vertical strip — title rotated, expand button on top.
+    const activeBits = [];
+    if (f.regions.size)    activeBits.push(`${f.regions.size}R`);
+    if (f.domains.size)    activeBits.push(`${f.domains.size}D`);
+    if (f.categories.size) activeBits.push(`${f.categories.size}C`);
+    if (f.subs.size)       activeBits.push(`${f.subs.size}S`);
+    container.innerHTML = `
+      <div class="fx-panel is-collapsed" data-tab="${tabKey}">
+        <button class="fx-collapse-btn fx-collapse-btn-vertical" onclick="togglePanelCollapsed('${tabKey}')" title="Expand filter">▶</button>
+        <div class="fx-vertical-title" onclick="togglePanelCollapsed('${tabKey}')">${tab.label} · Filter</div>
+        ${activeBits.length ? `<div class="fx-vertical-summary">${activeBits.join(' ')}</div>` : ''}
+      </div>`;
+    return;
+  }
+
+  let html = `<div class="fx-panel" data-tab="${tabKey}">`;
   html += `<div class="fx-head">
     <div class="fx-title">${tab.label} · Filter</div>
     <div class="fx-summary">${totalAnyActive ? `<span style="color:${tab.color}">${filtered}</span>/${totalActive} match` : `${totalActive} total`}</div>
     ${totalAnyActive ? `<button class="fx-clear" onclick="clearFilters('${tabKey}')">Clear</button>` : ''}
-    <button class="fx-collapse-btn" onclick="togglePanelCollapsed('${tabKey}')" title="${collapsed?'Expand filter':'Collapse filter'}">${collapsed?'▼':'▲'}</button>
+    <button class="fx-collapse-btn" onclick="togglePanelCollapsed('${tabKey}')" title="Collapse filter">◀</button>
   </div>`;
-
-  // 2026-05-02: when collapsed, show only a one-line summary of active filters.
-  if (collapsed) {
-    const activeBits = [];
-    if (f.regions.size)    activeBits.push(`${f.regions.size} region${f.regions.size>1?'s':''}`);
-    if (f.domains.size)    activeBits.push(`${f.domains.size} domain${f.domains.size>1?'s':''}`);
-    if (f.categories.size) activeBits.push(`${f.categories.size} cat${f.categories.size>1?'s':''}`);
-    if (f.subs.size)       activeBits.push(`${f.subs.size} sub${f.subs.size>1?'s':''}`);
-    html += `<div class="fx-collapsed-summary">${activeBits.length ? activeBits.join(' · ') : 'No filters active'}</div>`;
-    html += `</div>`;
-    container.innerHTML = html;
-    return;
-  }
 
   // Region selector — All / By Region (multi-select) ──────────────
   html += `<div class="fx-regions">
