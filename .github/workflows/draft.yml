@@ -47,4 +47,14 @@ jobs:
           SAM_UEI: ${{ secrets.SAM_UEI }}
         # Empty input → batch mode (drafts every bids.status='approved').
         # Non-empty input → single-bid mode.
-        run: node agents/draft.js "${{ github.event.inputs.bid_id }}"
+        # BUG FIX 2026-05-04: on cron runs github.event.inputs.bid_id is
+        # undefined → evaluates to "" → passed as process.argv[2] which is
+        # truthy in JS → single-bid mode fires with blank bidId → fails.
+        # Shell conditional strips the empty string so cron always gets batch mode.
+        run: |
+          BID_ID="${{ github.event.inputs.bid_id }}"
+          if [ -n "$BID_ID" ]; then
+            node agents/draft.js "$BID_ID"
+          else
+            node agents/draft.js
+          fi

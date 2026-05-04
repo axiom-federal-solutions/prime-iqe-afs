@@ -494,7 +494,8 @@ function fmt(v){if(!v&&v!==0)return '—';return v>=1e9?'$'+(v/1e9).toFixed(3)+'
 function daysLeft(deadline){if(!deadline)return null;const d=Math.ceil((new Date(deadline)-new Date())/86400000);return Math.max(0,d);}
 // 2026-05-03: SCOUT stores deadline as `deadline`; older code read `response_deadline`.
 // Helper picks whichever is populated so detail panel + opp lists stop blanking.
-function getDeadline(o){return o&&(o.deadline||getDeadline(o))||null;}
+// BUG FIX 2026-05-04: was calling getDeadline(o) recursively (infinite loop when o.deadline is falsy).
+function getDeadline(o){return o&&(o.deadline||o.response_deadline)||null;}
 // Derive vertical from NAICS if DB column not yet set
 // Supply NAICS prefixes — drives getVertical() routing in the dashboard.
 // 2026-05-02: synced with agents/scout.js so an opp tagged on the agent
@@ -1642,9 +1643,10 @@ function renderSAMExpiryBanner(){
 // Shows P25/P50/P75 revenue bands once 10+ bid outcomes exist.
 // If not yet active, shows threshold progress bar.
 function renderMonteCarloRow(){
-  const mlActive   = CONFIG.L6_01_ML_ACTIVE === 'true';
-  const mcActive   = CONFIG.L6_06_MONTE_CARLO_ACTIVE === 'true';
-  const compActive = CONFIG.L6_07_COMPETITOR_ACTIVE === 'true';
+  // BUG FIX 2026-05-04: CONFIG stores entire row objects — must use cfgVal() to read .value
+  const mlActive   = cfgVal('L6_01_ML_ACTIVE') === 'true';
+  const mcActive   = cfgVal('L6_06_MONTE_CARLO_ACTIVE') === 'true';
+  const compActive = cfgVal('L6_07_COMPETITOR_ACTIVE') === 'true';
 
   // Count bid outcomes for threshold display when inactive
   const outcomeCount = BIDS.filter(b => b.result != null).length;
@@ -1717,9 +1719,10 @@ function renderMonteCarloRow(){
 // ─── L6 STATUS PANEL ────────────────────────────────────────────────────
 // Compact card showing which L6 features are live vs still accumulating data.
 function renderL6StatusPanel(){
-  const mlActive   = CONFIG.L6_01_ML_ACTIVE === 'true';
-  const mcActive   = CONFIG.L6_06_MONTE_CARLO_ACTIVE === 'true';
-  const compActive = CONFIG.L6_07_COMPETITOR_ACTIVE === 'true';
+  // BUG FIX 2026-05-04: CONFIG stores entire row objects — must use cfgVal() to read .value
+  const mlActive   = cfgVal('L6_01_ML_ACTIVE') === 'true';
+  const mcActive   = cfgVal('L6_06_MONTE_CARLO_ACTIVE') === 'true';
+  const compActive = cfgVal('L6_07_COMPETITOR_ACTIVE') === 'true';
 
   // Progress counts for pending features
   const outcomeCount  = BIDS.filter(b => b.result != null).length;
@@ -1845,6 +1848,11 @@ function renderHome(){
       ${feedHtml}
     </div>`;
   tk();
+  // BUG FIX 2026-05-04: renderCommandSearch must run AFTER home innerHTML is set,
+  // so #fx-command-search exists in the DOM when it's targeted.
+  if (typeof renderCommandSearch === 'function') {
+    renderCommandSearch(document.getElementById('fx-command-search'));
+  }
 }
 
 // ─── PERFORMANCE TAB ───────────────────────────────────────────────────
@@ -1951,12 +1959,8 @@ function renderPerformance(){
       </div>
     </div>
   `;
-  // 2026-05-02: mount the Command Center fuzzy search now that the container exists.
-  // Lets the user find opps by keyword/NAICS/agency regardless of score — useful when
-  // an opp didn't classify cleanly but the user knows what they're hunting for.
-  if (typeof renderCommandSearch === 'function') {
-    renderCommandSearch(document.getElementById('fx-command-search'));
-  }
+  // NOTE: renderCommandSearch was incorrectly placed here (renderPerformance).
+  // BUG FIX 2026-05-04: moved to renderHome() where #fx-command-search actually lives.
 }
 
 // ─── DYNAMIC STATE MAP (Priority 1 fix) ────────────────────────────────

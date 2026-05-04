@@ -20,7 +20,7 @@ const {
 const COMPANY = {
   legal_name: 'Walker Contractors LLC',
   dba: 'Axiom Federal Solutions',
-  cage_code: process.env.CAGE_CODE || '7JKK0',           // Confirmed CAGE code
+  cage_code: process.env.CAGE_CODE || '7JKKO',           // Confirmed CAGE code (letter O, not zero)
   uei: process.env.SAM_UEI || 'USMQMFAGL9M4',           // Confirmed UEI
   naics_primary: '236220',
   certifications: 'SDB (Small Disadvantaged Business)',
@@ -149,6 +149,8 @@ async function generateProposal(bidId) {
   // Load the bid and its linked opportunity from the database
   const bid = await getBidWithOpportunity(bidId);
   if (!bid) throw new Error('Bid not found: ' + bidId);
+  // BUG FIX 2026-05-04: FK join can return null opportunities if record was deleted
+  if (!bid.opportunities) throw new Error('Opportunity data missing for bid: ' + bidId + ' — re-link the bid or re-run SCOUT');
 
   const naics = bid.opportunities.naics || '';
 
@@ -658,13 +660,21 @@ async function getBidWithOpportunity(bidId) {
 }
 
 async function getRelevantPastPerformance(naics) {
-  // Pull our own past contracts as past performance examples
+  // BUG FIX 2026-05-04: was reading from active_contracts (wrong table).
+  // past_performance is the curated CPARS-style table — same one loaded as PAST_PERF in dashboard.
   const { data } = await supabase
+    .from('past_performance')
+    .select('*')
+    .order('performance_end', { ascending: false })
+    .limit(5);
+  // Fall back to active_contracts if past_performance table is empty
+  if (data && data.length > 0) return data;
+  const { data: contracts } = await supabase
     .from('active_contracts')
     .select('*')
     .order('value', { ascending: false })
     .limit(5);
-  return data || [];
+  return contracts || [];
 }
 
 async function getBidEnginePricing(bidId) {
@@ -702,7 +712,8 @@ async function storeDraft(bidId, volumes) {
     // Proposal text is still stored — download button will be disabled in dashboard
   }
 
-  await supabase
+  // BUG FIX 2026-05-04: check Supabase update error — silent failure left bids stuck in 'approved'
+  const { error: updateErr } = await supabase
     .from('bids')
     .update({
       status:       'draft_ready',
@@ -710,6 +721,9 @@ async function storeDraft(bidId, volumes) {
       proposal_data: payload,
     })
     .eq('id', bidId);
+  if (updateErr) {
+    throw new Error('storeDraft: Supabase update failed — ' + updateErr.message);
+  }
 }
 
 // ----------------------------------------------------------
