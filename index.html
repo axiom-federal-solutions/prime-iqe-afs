@@ -1271,7 +1271,7 @@ async function startBid(oppId, title, value, vertical, naics, needsBond){
     </div>`).join('')}
     ${draftSection}
     <div style="margin-top:10px;display:grid;grid-template-columns:1fr 1fr;gap:6px">
-      <a href="https://drive.google.com/drive/folders/0AEz9bgKf-J0iUk9PVA?usp=drive_link" target="_blank"
+      <a href="https://drive.google.com/drive/my-drive" target="_blank"
          style="display:flex;align-items:center;justify-content:center;gap:6px;padding:9px 10px;border-radius:6px;background:rgba(66,133,244,.12);border:1px solid rgba(66,133,244,.25);color:#4285F4;font-family:'Outfit',sans-serif;font-size:10px;font-weight:600;text-decoration:none">
         <svg width="13" height="13" viewBox="0 0 24 24" fill="#4285F4"><path d="M4.5 20.5L1 14l4-7h14l4 7-3.5 6.5z" opacity=".4"/><path d="M8 14l4-7 4 7H8z"/><path d="M12 7L8 14H1L5 7h7z"/></svg>
         Prime Ops Drive
@@ -2644,8 +2644,6 @@ function renderIntel(){
   const gaoCheck=cfgVal('RECON_GAO_LAST_CHECK');
   document.getElementById('t-intel').innerHTML=`
     <div style="font-size:16px;font-weight:700;margin-bottom:14px">🏛️ Market Intel</div>
-    <!-- 2026-05-02: Intelligence Features (ML/Monte Carlo/Competitor) panel moved here from home tab. -->
-    ${renderL6StatusPanel()}
     <div class="grid2" style="margin-bottom:16px">
       <div class="card-section" style="border-left:3px solid var(--green)">
         <div style="font-size:11px;font-weight:700;color:var(--green);margin-bottom:8px">GAO PROTESTS</div>
@@ -2658,6 +2656,8 @@ function renderIntel(){
     </div>
     <div style="font-size:12px;font-weight:700;color:var(--amber);margin-bottom:10px">CONGRESSIONAL INTELLIGENCE</div>
     ${CONGRESS.map(c=>`<div class="cong-item" style="border-left-color:${c.sc}"><div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:6px"><div><div style="font-size:12px;font-weight:700">${c.bill}</div><div style="font-size:9px;color:var(--t3)">${c.date} · ${c.amount}</div></div><span class="badge" style="background:${c.sc}18;color:${c.sc}">${c.status}</span></div><div style="font-size:11px;color:var(--t2);line-height:1.5;margin-bottom:8px">${c.summary}</div><div class="cong-impact" style="background:${c.ib};border:1px solid ${c.ic}33"><div style="font-size:10px;font-weight:700;color:${c.ic};margin-bottom:4px">⚡ ${c.impact}</div>${c.fx.map(e=>`<div style="color:var(--t2);padding:1px 0 1px 12px;position:relative"><span style="position:absolute;left:0;color:${c.ic}">→</span>${e}</div>`).join('')}</div></div>`).join('')}
+    <!-- Intelligence Features (ML/Monte Carlo/Competitor) panel — bottom of intel tab -->
+    <div style="margin-top:16px">${renderL6StatusPanel()}</div>
   `;
 }
 
