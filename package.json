@@ -30,6 +30,7 @@
     "@anthropic-ai/sdk":    "^0.39.0",
     "@sendgrid/mail":       "^8.1.4",
     "@supabase/supabase-js": "^2.49.4",
+    "docx":                 "^8.5.0",
     "node-fetch":           "^3.3.2"
   },
   "devDependencies": {

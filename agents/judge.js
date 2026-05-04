@@ -744,15 +744,18 @@ async function flagStrongBids(strongBids) {
 }
 
 // ----------------------------------------------------------
-// TRIGGER BID ENGINE: Queue a scored opportunity for pricing
+// TRIGGER BID ENGINE: Queue bid for VAULT clearance first
+// Status flow: vault_pending → VAULT clears → pending_pricing → BID ENGINE
+// VAULT gates every bid. INELIGIBLE bids get status = compliance_hold.
 // ----------------------------------------------------------
 async function triggerBidEngine(oppId, score) {
   await supabase.from('bids').upsert({
     opportunity_id: oppId,
-    status:         'pending_pricing',
+    status:         'vault_pending',   // VAULT must clear before BID ENGINE prices it
     prime_score:    score,
     created_at:     new Date().toISOString(),
   }, { onConflict: 'opportunity_id' });
+  console.log('JUDGE: Bid queued for VAULT review — opportunity ' + oppId);
 }
 
 // Run JUDGE when this file is executed

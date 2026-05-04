@@ -132,26 +132,42 @@ const REAL_ESTATE_NAICS = [
 
 // ----------------------------------------------------------
 // MAIN: Run daily compliance check
+// Modes:
+//   default       — full run: system checks + bid gate + expiry alerts
+//   --bids-only   — only run the bid compliance gate (used inline after JUDGE)
+//                   This is fast (<5s) and safe to call every SCOUT/JUDGE cycle
 // ----------------------------------------------------------
 async function runVault() {
-  console.log('VAULT: Starting daily compliance check...');
+  const bidsOnly = process.argv.includes('--bids-only');
+
+  if (bidsOnly) {
+    console.log('VAULT: Bid-gate mode — checking newly scored bids...');
+  } else {
+    console.log('VAULT: Starting daily compliance check...');
+  }
 
   // Check per-agent enable flag (T.E.S.T. can disable VAULT via system_config)
   const enabled = await isAgentEnabled('VAULT');
   if (!enabled) process.exit(0);
 
-  // 2026-05-02: pull live compliance values from the `compliance` table.
-  // If the table is empty/unavailable, hardcoded defaults remain in effect.
+  // Pull live compliance values from the `compliance` table.
   await loadComplianceFromDb();
 
   try {
-    // --- PART 1: Check system-wide compliance status ---
+    if (bidsOnly) {
+      // ── Inline bid-gate mode (called right after JUDGE in scout-sam.yml) ──
+      const bidChecks = await checkPendingBids();
+      await logAction('VAULT', 'Bid-gate run complete', {
+        bids_checked: bidChecks,
+        checked_at:   new Date().toISOString(),
+      });
+      console.log('VAULT: Bid-gate done — ' + bidChecks + ' bids processed.');
+      return;
+    }
+
+    // ── Full daily mode ──────────────────────────────────────────────────
     const systemChecks = await runSystemComplianceChecks();
-
-    // --- PART 2: Check compliance on all pending bids ---
-    const bidChecks = await checkPendingBids();
-
-    // --- PART 3: Check for expiring credentials ---
+    const bidChecks    = await checkPendingBids();
     const expiryAlerts = checkExpiryAlerts();
 
     await logAction('VAULT', 'Daily compliance check complete', {
@@ -215,13 +231,19 @@ async function runSystemComplianceChecks() {
 // ----------------------------------------------------------
 // CHECK PENDING BIDS: Run eligibility checks on each bid ready to go out
 // Construction bids get the full gate. Supply bids get fast bypass.
+// Status gate:
+//   vault_pending   → newly scored by JUDGE, waiting for VAULT clearance
+//   pending_pricing → VAULT cleared, ready for BID ENGINE
+//   compliance_hold → VAULT blocked, ineligible to bid (shown in dashboard)
+//   draft_ready     → already priced, re-check compliance before proposal sent
+//   pending_review  → in Mr. Kemp's review queue
 // ----------------------------------------------------------
 async function checkPendingBids() {
-  // Get all bids that are in pricing or review stage
+  // Include vault_pending — these are the freshest bids needing clearance
   const { data: bids, error } = await supabase
     .from('bids')
     .select('*, opportunities(*)')
-    .in('status', ['pending_pricing', 'draft_ready', 'pending_review'])
+    .in('status', ['vault_pending', 'pending_pricing', 'draft_ready', 'pending_review'])
     .limit(50);
 
   if (error || !bids) {
@@ -339,27 +361,28 @@ async function runConstructionComplianceCheck(bid, opp) {
     note:   needsDavisBacon ? 'Obtain wage determination from SAM.gov Wage Determinations portal before bidding' : 'Not required for this contract size',
   });
 
-  // Save compliance results to the bid record
+  // Save compliance results + advance or block the bid in the pipeline
+  // ELIGIBLE   → promote to pending_pricing so BID ENGINE picks it up
+  // INELIGIBLE → compliance_hold so it shows up in the dashboard as blocked
+  const failures = checks.filter(c => c.status === 'FAIL');
   await supabase.from('bids').update({
-    compliance_checks: checks,
-    compliance_status: eligible ? 'ELIGIBLE' : 'INELIGIBLE',
-    compliance_date:   new Date().toISOString(),
+    compliance_checks:  checks,
+    compliance_status:  eligible ? 'ELIGIBLE' : 'INELIGIBLE',
+    compliance_date:    new Date().toISOString(),
+    status:             eligible ? 'pending_pricing' : 'compliance_hold',
   }).eq('id', bid.id);
 
-  // 2026-05-02: per-bid log so BRANDI can render INELIGIBLE reasons in
-  // the morning brief instead of just showing a status badge.
-  const failures = checks.filter(c => c.status === 'FAIL');
   await logAction('VAULT', eligible ? 'Construction bid ELIGIBLE' : 'Construction bid INELIGIBLE', {
     bid_id:        bid.id,
     solicitation:  opp.solicitation_number,
     naics:         opp.naics,
     eligible,
+    new_status:    eligible ? 'pending_pricing' : 'compliance_hold',
     failures:      failures.map(f => `${f.check}: ${f.note}`),
     failure_count: failures.length,
   });
 
-  const status = eligible ? 'ELIGIBLE' : 'INELIGIBLE';
-  console.log('VAULT: ' + opp.solicitation_number + ' → ' + status + ' (' + failures.length + ' failures)');
+  console.log('VAULT: ' + opp.solicitation_number + ' → ' + (eligible ? 'ELIGIBLE → pending_pricing' : 'INELIGIBLE → compliance_hold') + ' (' + failures.length + ' failures)');
 }
 
 // ----------------------------------------------------------
@@ -404,23 +427,25 @@ async function runSupplyComplianceCheck(bid, opp) {
   checks.push({ check: 'Davis-Bacon',         status: 'BYPASSED', note: 'Supply contracts are not subject to Davis-Bacon Act' });
   checks.push({ check: "Workers' Comp",       status: 'BYPASSED', note: 'Not applicable — Walker does not employ workers on supply contracts' });
 
+  const supplyFailures = checks.filter(c => c.status === 'FAIL');
   await supabase.from('bids').update({
     compliance_checks: checks,
     compliance_status: eligible ? 'ELIGIBLE' : 'INELIGIBLE',
     compliance_date:   new Date().toISOString(),
+    status:            eligible ? 'pending_pricing' : 'compliance_hold',
   }).eq('id', bid.id);
 
-  const supplyFailures = checks.filter(c => c.status === 'FAIL');
   await logAction('VAULT', eligible ? 'Supply bid ELIGIBLE' : 'Supply bid INELIGIBLE', {
     bid_id:        bid.id,
     solicitation:  opp.solicitation_number,
     naics:         opp.naics,
     eligible,
+    new_status:    eligible ? 'pending_pricing' : 'compliance_hold',
     failures:      supplyFailures.map(f => `${f.check}: ${f.note}`),
     failure_count: supplyFailures.length,
   });
 
-  console.log('VAULT: ' + opp.solicitation_number + ' (SUPPLY) → ' + (eligible ? 'ELIGIBLE via fast bypass' : 'INELIGIBLE'));
+  console.log('VAULT: ' + opp.solicitation_number + ' (SUPPLY) → ' + (eligible ? 'ELIGIBLE → pending_pricing' : 'INELIGIBLE → compliance_hold'));
 }
 
 // ----------------------------------------------------------
@@ -572,19 +597,21 @@ async function runRealEstateComplianceCheck(bid, opp) {
   checks.push({ check: 'Bonding',            status: 'BYPASSED', note: 'Performance bonds not required for lease contracts' });
   checks.push({ check: 'Davis-Bacon',        status: 'BYPASSED', note: 'Davis-Bacon does not apply to lease contracts' });
 
+  const reFailures = checks.filter(c => c.status === 'FAIL');
   await supabase.from('bids').update({
     compliance_checks: checks,
     compliance_status: eligible ? 'ELIGIBLE' : 'INELIGIBLE',
     compliance_date:   new Date().toISOString(),
+    status:            eligible ? 'pending_pricing' : 'compliance_hold',
   }).eq('id', bid.id);
 
-  const reFailures = checks.filter(c => c.status === 'FAIL');
   await logAction('VAULT', eligible ? 'Real estate bid ELIGIBLE' : 'Real estate bid INELIGIBLE — asset gate', {
     bid_id:        bid.id,
     solicitation:  opp.solicitation_number,
     naics:         opp.naics,
     asset_type:    assetType,
     eligible,
+    new_status:    eligible ? 'pending_pricing' : 'compliance_hold',
     failures:      reFailures.map(f => `${f.check}: ${f.note}`),
     failure_count: reFailures.length,
   });

@@ -10,6 +10,7 @@
 // Load helper tools
 const { supabase, logAction, isAgentEnabled } = require('../lib/supabase');
 const { claudeSonnet, claudeHaiku } = require('../lib/claude');
+const { Document, Packer, Paragraph, TextRun, HeadingLevel, AlignmentType, PageBreak } = require('docx');
 
 // Our company info — used in every proposal we write
 const COMPANY = {
@@ -625,23 +626,145 @@ async function storeDraft(bidId, volumes) {
   const payload = {
     ...volumes,
     _meta: {
-      generated_at: new Date().toISOString(),
-      generated_by: 'DRAFT agent (Claude Sonnet)',
-      company: COMPANY.legal_name,
-      dba: COMPANY.dba,
-      cage: COMPANY.cage_code,
-      uei: COMPANY.uei,
+      generated_at:  new Date().toISOString(),
+      generated_by:  'DRAFT agent (Claude Sonnet)',
+      company:       COMPANY.legal_name,
+      dba:           COMPANY.dba,
+      cage:          COMPANY.cage_code,
+      uei:           COMPANY.uei,
       certifications: COMPANY.certifications,
     },
   };
+
+  // Generate a real .docx file and store it base64-encoded in the JSONB payload.
+  // Dashboard "Download DOCX" button decodes and downloads this directly.
+  try {
+    const docxBuf = await generateProposalDocx(volumes);
+    payload._docx_b64 = docxBuf.toString('base64');
+    console.log('DRAFT: .docx generated — ' + Math.round(docxBuf.length / 1024) + ' KB');
+  } catch (docxErr) {
+    console.warn('DRAFT: .docx generation failed (non-fatal) —', docxErr.message);
+    // Proposal text is still stored — download button will be disabled in dashboard
+  }
+
   await supabase
     .from('bids')
     .update({
-      status: 'draft_ready',
-      proposal_url: 'stored_in_db',  // Future: Google Doc URL after creation
+      status:       'draft_ready',
+      proposal_url: 'stored_in_db',
       proposal_data: payload,
     })
     .eq('id', bidId);
+}
+
+// ----------------------------------------------------------
+// GENERATE PROPOSAL DOCX: Build a formatted Word document from proposal volumes
+// Uses the `docx` npm package. Returns a Buffer.
+// ----------------------------------------------------------
+async function generateProposalDocx(volumes) {
+  // Helper: convert a text block (may contain newlines) into Paragraph array
+  function textToParas(text, headingLevel = null) {
+    if (!text || typeof text !== 'string') return [];
+    const lines = text.split('\n').filter(l => l.trim().length > 0);
+    return lines.map((line, i) => {
+      // Detect markdown headings and convert them
+      const h1 = line.match(/^#\s+(.+)/);
+      const h2 = line.match(/^##\s+(.+)/);
+      const h3 = line.match(/^###\s+(.+)/);
+      if (h1) return new Paragraph({ heading: HeadingLevel.HEADING_1, children: [new TextRun({ text: h1[1], bold: true, size: 32, font: 'Arial' })] });
+      if (h2) return new Paragraph({ heading: HeadingLevel.HEADING_2, children: [new TextRun({ text: h2[1], bold: true, size: 28, font: 'Arial' })] });
+      if (h3) return new Paragraph({ heading: HeadingLevel.HEADING_3, children: [new TextRun({ text: h3[1], bold: true, size: 24, font: 'Arial' })] });
+      // Normal paragraph
+      if (i === 0 && headingLevel) {
+        return new Paragraph({ heading: headingLevel, children: [new TextRun({ text: line, font: 'Arial', bold: true })] });
+      }
+      return new Paragraph({ children: [new TextRun({ text: line, font: 'Arial', size: 22 })] });
+    });
+  }
+
+  // Cover section
+  const coverSection = [
+    new Paragraph({ alignment: AlignmentType.CENTER, children: [new TextRun({ text: 'PROPOSAL PACKAGE', font: 'Arial', bold: true, size: 48, color: '1a3a6b' })] }),
+    new Paragraph({ alignment: AlignmentType.CENTER, children: [new TextRun({ text: COMPANY.legal_name + '  /  ' + COMPANY.dba, font: 'Arial', size: 28 })] }),
+    new Paragraph({ alignment: AlignmentType.CENTER, children: [new TextRun({ text: 'UEI: ' + COMPANY.uei + '   |   CAGE: ' + COMPANY.cage_code, font: 'Arial', size: 24 })] }),
+    new Paragraph({ alignment: AlignmentType.CENTER, children: [new TextRun({ text: COMPANY.certifications, font: 'Arial', size: 24, italics: true })] }),
+    new Paragraph({ alignment: AlignmentType.CENTER, children: [new TextRun({ text: 'Generated: ' + new Date().toLocaleDateString('en-US', { year:'numeric', month:'long', day:'numeric' }), font: 'Arial', size: 22, color: '666666' })] }),
+    new Paragraph({ children: [new PageBreak()] }),
+  ];
+
+  // Bid memo (executive summary)
+  const memoSection = volumes.bidMemo ? [
+    new Paragraph({ heading: HeadingLevel.HEADING_1, children: [new TextRun({ text: 'BID/NO-BID RECOMMENDATION MEMO', bold: true, font: 'Arial', size: 32 })] }),
+    ...textToParas(typeof volumes.bidMemo === 'string' ? volumes.bidMemo : JSON.stringify(volumes.bidMemo, null, 2)),
+    new Paragraph({ children: [new PageBreak()] }),
+  ] : [];
+
+  // Volume 1: Technical Approach
+  const vol1 = volumes.technical ? [
+    new Paragraph({ heading: HeadingLevel.HEADING_1, children: [new TextRun({ text: 'VOLUME 1 — TECHNICAL APPROACH', bold: true, font: 'Arial', size: 32, color: '1a3a6b' })] }),
+    ...textToParas(typeof volumes.technical === 'string' ? volumes.technical : JSON.stringify(volumes.technical, null, 2)),
+    new Paragraph({ children: [new PageBreak()] }),
+  ] : [];
+
+  // Volume 2: Management Plan
+  const vol2 = volumes.management ? [
+    new Paragraph({ heading: HeadingLevel.HEADING_1, children: [new TextRun({ text: 'VOLUME 2 — MANAGEMENT PLAN', bold: true, font: 'Arial', size: 32, color: '1a3a6b' })] }),
+    ...textToParas(typeof volumes.management === 'string' ? volumes.management : JSON.stringify(volumes.management, null, 2)),
+    new Paragraph({ children: [new PageBreak()] }),
+  ] : [];
+
+  // Volume 3: Past Performance
+  const vol3 = volumes.pastPerformance ? [
+    new Paragraph({ heading: HeadingLevel.HEADING_1, children: [new TextRun({ text: 'VOLUME 3 — PAST PERFORMANCE', bold: true, font: 'Arial', size: 32, color: '1a3a6b' })] }),
+    ...textToParas(typeof volumes.pastPerformance === 'string' ? volumes.pastPerformance : JSON.stringify(volumes.pastPerformance, null, 2)),
+    new Paragraph({ children: [new PageBreak()] }),
+  ] : [];
+
+  // Volume 4: Price Proposal
+  const priceText = volumes.price
+    ? (typeof volumes.price === 'string' ? volumes.price : JSON.stringify(volumes.price, null, 2))
+    : 'BID ENGINE pricing pending — run bidengine.js first.';
+  const vol4 = [
+    new Paragraph({ heading: HeadingLevel.HEADING_1, children: [new TextRun({ text: 'VOLUME 4 — PRICE PROPOSAL', bold: true, font: 'Arial', size: 32, color: '1a3a6b' })] }),
+    ...textToParas(priceText),
+  ];
+
+  // Handle supply quote format (different volume structure)
+  const supplySection = volumes.supplyQuote ? [
+    new Paragraph({ heading: HeadingLevel.HEADING_1, children: [new TextRun({ text: 'SUPPLY QUOTE', bold: true, font: 'Arial', size: 32, color: '1a3a6b' })] }),
+    ...textToParas(typeof volumes.supplyQuote === 'string' ? volumes.supplyQuote : JSON.stringify(volumes.supplyQuote, null, 2)),
+    new Paragraph({ children: [new PageBreak()] }),
+    new Paragraph({ heading: HeadingLevel.HEADING_1, children: [new TextRun({ text: 'CAPABILITY STATEMENT', bold: true, font: 'Arial', size: 32, color: '1a3a6b' })] }),
+    ...textToParas(typeof volumes.capStatement === 'string' ? volumes.capStatement : ''),
+  ] : [];
+
+  const allChildren = [
+    ...coverSection,
+    ...memoSection,
+    ...(supplySection.length > 0 ? supplySection : [...vol1, ...vol2, ...vol3, ...vol4]),
+  ];
+
+  const doc = new Document({
+    creator:    COMPANY.legal_name,
+    title:      'Proposal Package — ' + COMPANY.dba,
+    description: 'Federal proposal generated by PRIME DRAFT agent',
+    styles: {
+      default: {
+        document: { run: { font: 'Arial', size: 22 } },
+      },
+    },
+    sections: [{
+      properties: {
+        page: {
+          size:   { width: 12240, height: 15840 },          // US Letter
+          margin: { top: 1440, right: 1440, bottom: 1440, left: 1440 }, // 1" margins
+        },
+      },
+      children: allChildren,
+    }],
+  });
+
+  return Packer.toBuffer(doc);
 }
 
 async function queueForBrandiReview(bidId, eventType) {

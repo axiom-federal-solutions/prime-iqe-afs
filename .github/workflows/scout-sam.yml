@@ -102,16 +102,44 @@ jobs:
       - name: Run JUDGE — Score new opportunities
         run: node agents/judge.js
         env:
-          SUPABASE_URL:              ${{ secrets.SUPABASE_URL }}
+          SUPABASE_URL:         ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
-          ANTHROPIC_API_KEY:         ${{ secrets.ANTHROPIC_API_KEY }}
+          ANTHROPIC_API_KEY:    ${{ secrets.ANTHROPIC_API_KEY }}
+
+      # ── VAULT bid gate: clears vault_pending → pending_pricing or compliance_hold ──
+      # Runs in --bids-only mode (fast, skips full system check done at 5:30 AM)
+      - name: Run VAULT — bid compliance gate
+        run: node agents/vault.js --bids-only
+        env:
+          SUPABASE_URL:         ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+          CAGE_CODE:            ${{ secrets.CAGE_CODE }}
+        continue-on-error: true  # Compliance failures are logged, not fatal to workflow
+
+      # ── BID ENGINE: price every bid VAULT just cleared (pending_pricing) ──
+      - name: Run BID ENGINE — price cleared bids
+        run: node agents/bidengine.js
+        env:
+          SUPABASE_URL:         ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+        continue-on-error: true  # Pricing failures are logged per-bid, not fatal
+
+      # ── DRAFT: generate proposals for any bids approved by Mr. Kemp ──
+      # Only processes bids with status='approved'. Runs batch mode automatically.
+      - name: Run DRAFT — generate approved proposals
+        run: node agents/draft.js
+        env:
+          SUPABASE_URL:         ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+          ANTHROPIC_API_KEY:    ${{ secrets.ANTHROPIC_API_KEY }}
+          CAGE_CODE:            ${{ secrets.CAGE_CODE }}
+        continue-on-error: true  # No approved bids is normal — not an error
 
       - name: Check for STRONG BID alerts
         run: node agents/brandi.js alert
         env:
-          SUPABASE_URL:              ${{ secrets.SUPABASE_URL }}
+          SUPABASE_URL:         ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
-          SENDGRID_API_KEY:          ${{ secrets.SENDGRID_API_KEY }}
-          FROM_EMAIL:                ${{ secrets.FROM_EMAIL }}
-        # Continue even if no alerts to send — this is normal
+          SENDGRID_API_KEY:     ${{ secrets.SENDGRID_API_KEY }}
+          FROM_EMAIL:           ${{ secrets.FROM_EMAIL }}
         continue-on-error: true
