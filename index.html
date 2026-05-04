@@ -710,10 +710,20 @@ async function showDetail(idx){
         </div>`;
       }
       if (isUrl) {
-        return `<div style="background:var(--card);border-radius:8px;padding:14px;margin-bottom:12px;border:1px solid var(--amberBd)">
-          <div style="font-size:9px;font-weight:700;color:var(--amber);text-transform:uppercase;letter-spacing:.1em;margin-bottom:7px">Description — Link Only</div>
-          <div style="font-size:10px;color:var(--t2);line-height:1.6;margin-bottom:8px">SAM.gov posted this as a link rather than synopsis text. Click through for the full statement of work / RFP details.</div>
-          <a href="${desc.trim()}" target="_blank" style="display:inline-block;font-size:11px;color:var(--cyan);text-decoration:none;padding:6px 10px;background:var(--cyanDim);border:1px solid var(--cyanBd);border-radius:5px;word-break:break-all">${desc.trim()} ↗</a>
+        // Convert the private API noticedesc URL → public SAM.gov opportunity viewer
+        // API URL:    https://api.sam.gov/prod/opportunities/v1/noticedesc?noticeid=GUID
+        // Public URL: https://sam.gov/opp/GUID/view
+        const noticeIdMatch = desc.match(/[?&]noticeid=([a-f0-9]+)/i);
+        const publicUrl = noticeIdMatch
+          ? `https://sam.gov/opp/${noticeIdMatch[1]}/view`
+          : desc.trim();
+        return `<div style="background:var(--card);border-radius:8px;padding:14px;margin-bottom:12px;border:1px solid var(--cyanBd)">
+          <div style="font-size:9px;font-weight:700;color:var(--cyan);text-transform:uppercase;letter-spacing:.1em;margin-bottom:7px">Full Solicitation — SAM.gov</div>
+          <div style="font-size:10px;color:var(--t2);line-height:1.6;margin-bottom:8px">The full statement of work and RFP documents are posted on SAM.gov. Click below to view the complete solicitation package.</div>
+          <a href="${publicUrl}" target="_blank" style="display:inline-flex;align-items:center;gap:6px;font-size:11px;color:var(--cyan);text-decoration:none;padding:8px 12px;background:var(--cyanDim);border:1px solid var(--cyanBd);border-radius:6px;font-weight:600">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+            View Full Solicitation on SAM.gov ↗
+          </a>
         </div>`;
       }
       return `<div style="background:var(--card);border-radius:8px;padding:14px;margin-bottom:12px;border:1px solid var(--bd)">
@@ -2053,7 +2063,7 @@ function getLicenseColor(vt, stateCode){
 }
 const LICENSE_COLOR_VAR = { green: 'var(--green)', blue: 'var(--cyan)', red: 'var(--red)' };
 const LICENSE_LEGEND = {
-  construction: '🟢 Licensed · 🔵 Reciprocal/pending · 🔴 No license — cannot bid',
+  construction: '🟢 Licensed · 🔵 Conditional — bid eligible · 🔴 No license — cannot bid',
   supply:       '🟢 Drop-ship — no state license required (50/50)',
   realestate:   '🟢 Asset on file · 🔵 Asset pending · 🔴 No asset — cannot bid',
 };

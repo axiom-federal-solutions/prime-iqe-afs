@@ -257,6 +257,41 @@ function toSAMDate(d) {
   return `${m}/${day}/${d.getFullYear()}`;
 }
 
+// ─── RESOLVE DESCRIPTION ────────────────────────────────────────────────
+// SAM.gov sometimes returns a noticedesc API URL as the description instead
+// of inline text. This fetches the actual synopsis text using our API key
+// so the dashboard can display it without requiring authentication.
+async function resolveDescription(desc) {
+  if (!desc) return null;
+  // Check if it's a SAM.gov noticedesc API URL
+  const isNoticeUrl = typeof desc === 'string' && desc.includes('api.sam.gov') && desc.includes('noticedesc');
+  if (!isNoticeUrl) return desc; // Already plain text — return as-is
+  if (!SAM_API_KEY) return desc; // No API key — return the URL as fallback
+
+  try {
+    // Append the API key and fetch the description text
+    const separator = desc.includes('?') ? '&' : '?';
+    const url = `${desc}${separator}api_key=${SAM_API_KEY}`;
+    const res = await fetch(url, { headers: { 'Accept': 'application/json' } });
+    if (!res.ok) return desc; // On failure, fall back to storing the URL
+
+    const text = await res.text();
+    // SAM.gov returns either JSON with a description field, or raw HTML/text
+    try {
+      const json = JSON.parse(text);
+      const fetched = json.description || json.opportunityDescription || json.content || null;
+      if (fetched) return String(fetched).replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+    } catch (_) {
+      // Not JSON — strip HTML tags from raw text response
+      return text.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 4000);
+    }
+    return desc; // Fallback
+  } catch (err) {
+    console.warn('SCOUT: Could not fetch noticedesc — storing URL as fallback:', err.message);
+    return desc;
+  }
+}
+
 async function scanSAMGov(type, naicsCodes, globalCallsUsed = 0) {
   if (!SAM_API_KEY) {
     console.warn('SCOUT: SAM_API_KEY not set — skipping SAM.gov scan');
@@ -469,7 +504,7 @@ async function upsertOpportunity(opp, type, naics) {
     set_aside:           opp.typeOfSetAside || null,
     place_of_performance: state || null,
     state:               state || null,        // 2026-04-30 BUG FIX: dashboard's 50-state map filters on `state` column, not `place_of_performance`. Without this, SAM.gov opps never appeared on the map.
-    description:         opp.description || null,
+    description:         await resolveDescription(opp.description),
     source:              'SAM.gov',
     vertical:            deriveVertical(naics),
     supply_category:     deriveSupplyCategory(naics),  // Stamped here so dashboard can filter without client-side NAICS routing
