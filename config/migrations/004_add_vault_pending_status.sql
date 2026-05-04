@@ -3,7 +3,11 @@
 -- Run in: Supabase Dashboard → SQL Editor → Run
 -- ================================================================
 
--- Drop any existing CHECK constraint on bids.status
+-- Step 1: Migrate any legacy 'draft' rows → 'pending_pricing'
+-- (Dashboard used 'draft' as initial status before vault_pending was introduced)
+UPDATE public.bids SET status = 'pending_pricing' WHERE status = 'draft';
+
+-- Step 2: Drop any existing CHECK constraint on bids.status
 DO $$
 DECLARE
   r RECORD;
@@ -19,7 +23,7 @@ BEGIN
   END LOOP;
 END $$;
 
--- Add updated CHECK with all valid status values (including new ones)
+-- Step 3: Add updated CHECK with all valid status values
 ALTER TABLE public.bids
   ADD CONSTRAINT bids_status_check CHECK (
     status IN (
