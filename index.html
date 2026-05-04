@@ -544,7 +544,7 @@ async function loadData(manual=false){
     const safe = q => q.then(r=>r).catch(()=>({data:[]}));
     const [o,b,s,r,cfg,tst,cl,ev,ac,fc,sp,tm,pp]=await Promise.all([
       safe(sb.from('opportunities').select('*').order('prime_score',{ascending:false,nullsFirst:false}).order('acq_score',{ascending:false,nullsFirst:false}).order('created_at',{ascending:false}).limit(1000)),
-      safe(sb.from('bids').select('*').order('created_at',{ascending:false}).limit(50)),
+      safe(sb.from('bids').select('*, opportunities(id,title,agency,naics,value,set_aside,prime_score,acq_score,psc,solicitation_id,description,response_deadline,posted_date,status)').order('created_at',{ascending:false}).limit(50)),
       safe(sb.from('supplier_matches').select('*, suppliers(name,city,state,certifications,socioeconomic,federal_contract_count,avg_contract_value,naics_codes,capability_tier,contact_email)').order('match_score',{ascending:false}).limit(100)),
       // 2026-04-30 BUG FIX: agents write to agent_logs (via lib/supabase.js logAction), not audit_log.
       // Reading audit_log here meant every agent showed "Not yet run" on the System tab even after
@@ -2265,17 +2265,30 @@ function renderBids(){
     </div>
     ${BIDS.length?BIDS.map(b=>{
       const pd=b.pricing_data;
-      return `<div class="bid-row" style="${b.status==='won'?'border-left:3px solid var(--green)':b.vertical==='realestate'?'border-left:3px solid var(--rose)':''}">
-        <span class="badge" style="background:${vtColors[b.vertical]||'var(--greenDim);color:var(--green)'}">${vtLabel(b.vertical||'construction')}</span>
-        <div style="flex:1">
-          <div style="font-size:12px;font-weight:500">${b.title||'Untitled'}</div>
-          <div style="font-size:10px;color:var(--t3);margin-top:2px">${b.submitted_at?new Date(b.submitted_at).toLocaleDateString('en-US',{month:'short',day:'numeric'}):'—'}
-            ${b.bid_amount?` · ${fmt(b.bid_amount)}`:''}
-            ${pd?` · <span style="color:var(--cyan)">Priced: ${fmt(pd.base)}</span>`:''}
-            ${b.bid_bond_status&&b.bid_bond_status!=='N/A'?`<span class="badge" style="background:${b.bid_bond_status==='Received'?'var(--greenDim);color:var(--green)':'var(--amberDim);color:var(--amber)'}">🔒 ${b.bid_bond_status}</span>`:''}
+      const opp=b.opportunities||{};
+      // Resolve title — prefer bid-level title, fall back to joined opportunity, then ID
+      const title=b.title||opp.title||('Bid '+b.id.slice(0,8));
+      const agency=b.agency||opp.agency||'';
+      const val=b.bid_amount||pd?.total_all_years||opp.value||0;
+      // Detect vertical from NAICS if not stored on bid
+      const naics=b.naics||opp.naics||'';
+      const vert=b.vertical||getVertical({naics,vertical:''});
+      const borderCol=b.status==='won'?'var(--green)':vert==='realestate'?'var(--rose)':vert==='supply'?'var(--cyan)':'var(--greenBd)';
+      const statusCol=statusColors[b.status]||'var(--cyan)';
+      const isDraftReady=b.status==='draft_ready'||b.status==='approved';
+      // Build the opportunity object the detail panel expects — merge bid + joined opp
+      const oppForPanel=JSON.stringify({...opp, id:opp.id||b.opportunity_id, title, agency, naics, value:val}).replace(/'/g,"&#39;");
+      return `<div class="bid-row" onclick='openDetail(${oppForPanel})' style="cursor:pointer;border-left:3px solid ${borderCol};transition:background .15s" onmouseover="this.style.background='rgba(255,255,255,.03)'" onmouseout="this.style.background=''">
+        <span class="badge" style="background:${vtColors[vert]||'var(--greenDim);color:var(--green)'}">${vtLabel(vert)}</span>
+        <div style="flex:1;min-width:0">
+          <div style="font-size:12px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${title}</div>
+          <div style="font-size:10px;color:var(--t3);margin-top:2px">
+            ${agency?`${agency} · `:''}${val?fmt(val):'No value'}
+            ${b.decision_date?` · ${new Date(b.decision_date).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'})}` :''}
+            ${isDraftReady?` · <span style="color:var(--green);font-weight:600">📄 Proposal Ready</span>`:''}
           </div>
         </div>
-        <span class="badge" style="background:${statusColors[b.status]||'var(--cyan)'}18;color:${statusColors[b.status]||'var(--cyan)'}">${(b.status||'draft').toUpperCase()}</span>
+        <span class="badge" style="background:${statusCol}18;color:${statusCol}">${(b.status||'draft').toUpperCase().replace(/_/g,' ')}</span>
       </div>`;
     }).join(''):emptyState('No bids tracked yet','Click any opportunity and hit ⚡ Start Bid, or run BID ENGINE for a scored opportunity.')}
   `;
