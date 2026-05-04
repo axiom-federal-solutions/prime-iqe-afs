@@ -544,7 +544,7 @@ async function loadData(manual=false){
     const safe = q => q.then(r=>r).catch(()=>({data:[]}));
     const [o,b,s,r,cfg,tst,cl,ev,ac,fc,sp,tm,pp]=await Promise.all([
       safe(sb.from('opportunities').select('*').order('prime_score',{ascending:false,nullsFirst:false}).order('acq_score',{ascending:false,nullsFirst:false}).order('created_at',{ascending:false}).limit(1000)),
-      safe(sb.from('bids').select('*, opportunities(id,title,agency,naics,value,set_aside,prime_score,acq_score,psc,solicitation_id,description,response_deadline,posted_date,status)').order('created_at',{ascending:false}).limit(50)),
+      safe(sb.from('bids').select('*').order('created_at',{ascending:false}).limit(50)),
       safe(sb.from('supplier_matches').select('*, suppliers(name,city,state,certifications,socioeconomic,federal_contract_count,avg_contract_value,naics_codes,capability_tier,contact_email)').order('match_score',{ascending:false}).limit(100)),
       // 2026-04-30 BUG FIX: agents write to agent_logs (via lib/supabase.js logAction), not audit_log.
       // Reading audit_log here meant every agent showed "Not yet run" on the System tab even after
@@ -2265,8 +2265,9 @@ function renderBids(){
     </div>
     ${BIDS.length?BIDS.map(b=>{
       const pd=b.pricing_data;
-      const opp=b.opportunities||{};
-      // Resolve title — prefer bid-level title, fall back to joined opportunity, then ID
+      // Look up the linked opportunity from the already-loaded OPPS array
+      const opp=OPPS.find(o=>o.id===b.opportunity_id)||{};
+      // Resolve title — prefer bid-level title, fall back to linked opportunity, then ID
       const title=b.title||opp.title||('Bid '+b.id.slice(0,8));
       const agency=b.agency||opp.agency||'';
       const val=b.bid_amount||pd?.total_all_years||opp.value||0;
