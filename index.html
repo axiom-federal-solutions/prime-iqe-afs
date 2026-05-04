@@ -2277,9 +2277,10 @@ function renderBids(){
       const borderCol=b.status==='won'?'var(--green)':vert==='realestate'?'var(--rose)':vert==='supply'?'var(--cyan)':'var(--greenBd)';
       const statusCol=statusColors[b.status]||'var(--cyan)';
       const isDraftReady=b.status==='draft_ready'||b.status==='approved';
-      // Build the opportunity object the detail panel expects — merge bid + joined opp
-      const oppForPanel=JSON.stringify({...opp, id:opp.id||b.opportunity_id, title, agency, naics, value:val}).replace(/'/g,"&#39;");
-      return `<div class="bid-row" onclick='openDetail(${oppForPanel})' style="cursor:pointer;border-left:3px solid ${borderCol};transition:background .15s" onmouseover="this.style.background='rgba(255,255,255,.03)'" onmouseout="this.style.background=''">
+      // Find the opp index in OPPS so showDetail(idx) can open the detail panel
+      const oppIdx=OPPS.findIndex(o=>o.id===b.opportunity_id);
+      const clickFn=oppIdx>=0?`showDetail(${oppIdx})`:`alert('Opportunity not loaded — hit Refresh or run SCOUT.')`;
+      return `<div class="bid-row" onclick="${clickFn}" style="cursor:pointer;border-left:3px solid ${borderCol};transition:background .15s" onmouseover="this.style.background='rgba(255,255,255,.03)'" onmouseout="this.style.background=''">
         <span class="badge" style="background:${vtColors[vert]||'var(--greenDim);color:var(--green)'}">${vtLabel(vert)}</span>
         <div style="flex:1;min-width:0">
           <div style="font-size:12px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${title}</div>
