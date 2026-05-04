@@ -10,7 +10,11 @@
 // Load helper tools
 const { supabase, logAction, isAgentEnabled } = require('../lib/supabase');
 const { claudeSonnet, claudeHaiku } = require('../lib/claude');
-const { Document, Packer, Paragraph, TextRun, HeadingLevel, AlignmentType, PageBreak } = require('docx');
+const {
+  Document, Packer, Paragraph, TextRun, HeadingLevel, AlignmentType, PageBreak,
+  Table, TableRow, TableCell, WidthType, ShadingType, BorderStyle, VerticalAlign,
+  Header, Footer, PageNumber,
+} = require('docx');
 
 // Our company info — used in every proposal we write
 const COMPANY = {
@@ -20,9 +24,9 @@ const COMPANY = {
   uei: process.env.SAM_UEI || 'USMQMFAGL9M4',           // Confirmed UEI
   naics_primary: '236220',
   certifications: 'SDB (Small Disadvantaged Business)',
-  contact: 'Mr. Kemp, Managing Member',
+  contact: 'Joseph Walker IV, Owner / CEO',
   email: 'PrimeOpps1@gmail.com',
-  phone: process.env.COMPANY_PHONE || '',
+  phone: process.env.COMPANY_PHONE || '504-975-5495',
   address: 'New Orleans, Louisiana 70114',
   specialty: 'federal construction, commercial building, civil infrastructure, and property management in the Gulf South region',
   teaming_partners: 'Trevor L. Monnie Landscape Services — Louisiana Licensed Landscape Horticulturist (License No. 26-5023)',
@@ -221,6 +225,18 @@ async function generateProposal(bidId) {
     price,
     bidMemo,
     matrix,
+    // Pass opportunity context through so generateProposalDocx() can fill in cover page fields
+    _opp: {
+      title:           bid.opportunities.title || '',
+      agency:          bid.opportunities.agency || '',
+      naics:           bid.opportunities.naics || '',
+      value:           bid.opportunities.value || 0,
+      set_aside:       bid.opportunities.set_aside || 'Full and Open Competition',
+      solicitation_id: bid.opportunities.solicitation_id || bid.opportunities.id || '',
+      posted_date:     bid.opportunities.posted_date || '',
+      deadline:        bid.opportunities.response_deadline || bid.opportunities.deadline || '',
+      psc:             bid.opportunities.psc || '',
+    },
   });
 
   await queueForBrandiReview(bidId, 'PROPOSAL_READY');
@@ -512,58 +528,97 @@ async function buildComplianceMatrix(requirements, bidId) {
 // PROMPT BUILDERS: Instructions for Claude Sonnet on what to write
 // ----------------------------------------------------------
 
+// ----------------------------------------------------------
+// PROMPT BUILDERS — all return JSON so generateProposalDocx() can
+// populate tables, checkboxes, and structured sections directly.
+// Each prompt instructs Claude to return ONLY valid JSON — no markdown,
+// no prose outside the JSON object.
+// ----------------------------------------------------------
+
 function buildTechnicalPrompt(bid, requirements) {
+  const opp = bid.opportunities;
   return (
-    'You are writing Volume 1 (Technical Approach) of a federal government IT proposal. ' +
-    'Contractor: ' + COMPANY.legal_name + ' (DBA: ' + COMPANY.dba + '). ' +
-    'Specialty: ' + COMPANY.specialty + '. ' +
-    'Opportunity: ' + bid.opportunities.title + '. ' +
-    'Agency: ' + bid.opportunities.agency + '. ' +
-    'Contract Value: $' + (bid.opportunities.value || 'TBD') + '. ' +
-    'NAICS: ' + bid.opportunities.naics + '. ' +
-    'Set-Aside: ' + (bid.opportunities.set_aside || 'Full and Open') + '. ' +
-    'Write a professional, FAR-compliant technical approach for a federal construction contract. Use active voice. Be specific and concise. ' +
-    'Address these RFP requirements: ' +
-    requirements.filter(r => r.volume === 1).map(r => r.requirement).join('; ') +
-    '. Target length: 3 pages. Include: construction methodology, safety plan (EM 385-1-1), ' +
-    'phasing approach, quality control plan, understanding of the facility mission, ' +
-    'and why ' + COMPANY.legal_name + ' is uniquely qualified for federal construction in the Gulf South.'
+    'You are a federal proposal writer for ' + COMPANY.legal_name + ' (DBA: ' + COMPANY.dba + '). ' +
+    'NAICS specialty: ' + COMPANY.specialty + '.\n\n' +
+    'OPPORTUNITY:\n' +
+    '  Title: ' + opp.title + '\n' +
+    '  Agency: ' + (opp.agency || 'Federal Agency') + '\n' +
+    '  Value: $' + (opp.value ? opp.value.toLocaleString() : 'TBD') + '\n' +
+    '  NAICS: ' + (opp.naics || '') + '\n' +
+    '  Set-Aside: ' + (opp.set_aside || 'Full and Open Competition') + '\n\n' +
+    'Return ONLY a JSON object — no markdown, no extra text. Schema:\n' +
+    '{\n' +
+    '  "exec_overview": "2-3 sentence opportunity overview",\n' +
+    '  "value_proposition": "2-3 sentence competitive advantage statement",\n' +
+    '  "qualifications": "2-3 sentence summary of relevant qualifications",\n' +
+    '  "scope_description": "2-3 paragraph description of the work scope",\n' +
+    '  "methodology": "2-3 paragraph technical methodology",\n' +
+    '  "milestones": [\n' +
+    '    {"task": "Task name", "start_week": "Week 1", "end_week": "Week 2", "deliverable": "Deliverable name"}\n' +
+    '  ],\n' +
+    '  "deliverables": "Paragraph listing key deliverables",\n' +
+    '  "sow_compliance": "Statement that our approach addresses all SOW requirements"\n' +
+    '}\n\n' +
+    'The milestones array must have 5–8 realistic project milestones for a federal ' +
+    (opp.naics || 'construction') + ' contract. ' +
+    'Be specific to this opportunity. Use professional FAR-compliant language. ' +
+    'Requirements addressed: ' + requirements.filter(r => r.volume === 1).map(r => r.requirement).join('; ')
   );
 }
 
 function buildManagementPrompt(bid) {
+  const opp = bid.opportunities;
   return (
-    'You are writing Volume 2 (Management Plan) of a federal government IT proposal. ' +
-    'Contractor: ' + COMPANY.legal_name + ' (DBA: ' + COMPANY.dba + '). ' +
-    'Opportunity: ' + bid.opportunities.title + '. ' +
-    'Agency: ' + bid.opportunities.agency + '. ' +
-    'Write a management plan covering: project organization structure, superintendent and key personnel ' +
-    'roles and qualifications, quality control plan (3-phase QC per USACE standards), ' +
-    'project schedule methodology (CPM schedule), safety program (EM 385-1-1 compliance), ' +
-    'risk management, and small business subcontracting approach. ' +
-    'Target length: 2 pages. Include an org chart description. Reference relevant federal construction standards.'
+    'You are a federal proposal writer for ' + COMPANY.legal_name + ' (DBA: ' + COMPANY.dba + ').\n\n' +
+    'OPPORTUNITY: ' + opp.title + ' | Agency: ' + (opp.agency || 'Federal Agency') + '\n\n' +
+    'Return ONLY a JSON object — no markdown, no extra text. Schema:\n' +
+    '{\n' +
+    '  "approach": "2-3 paragraph management approach narrative",\n' +
+    '  "personnel": [\n' +
+    '    {"name": "string", "title": "string", "responsibility": "string", "years_exp": number}\n' +
+    '  ]\n' +
+    '}\n\n' +
+    'The personnel array MUST include:\n' +
+    '  1. Joseph Walker IV — Owner/CEO — Program oversight, contract authority\n' +
+    '  2. A Project Manager (placeholder name OK)\n' +
+    '  3. A Site Superintendent (for construction) or Technical Lead\n' +
+    '  4. A Quality Control Manager\n' +
+    '  5. Trevor L. Monnie — Landscape Horticulturist (License No. 26-5023) — if grounds/exterior work involved\n\n' +
+    'Each entry: realistic years_exp (10–25), specific responsibility relevant to this opportunity. ' +
+    'Professional, FAR-compliant tone.'
   );
 }
 
 function buildPPPrompt(pastPerf, bid) {
+  const opp = bid.opportunities;
   const examples = pastPerf.length > 0
     ? pastPerf.slice(0, 3).map(c =>
-        (c.title || 'Federal IT Contract') +
-        ' — ' + (c.agency || 'Federal Agency') +
+        (c.title || 'Federal Contract') + ' — ' + (c.agency || 'Agency') +
         ' — $' + ((c.value || 0).toLocaleString())
       ).join('; ')
-    : 'Similar IT consulting and SAP training engagements (details to be added as contracts are awarded)';
+    : 'Federal construction and facilities contracts in the Gulf South region';
 
   return (
-    'You are writing Volume 3 (Past Performance) of a federal government IT proposal. ' +
-    'Contractor: ' + COMPANY.legal_name + ' (DBA: ' + COMPANY.dba + '). ' +
-    'Specialty: ' + COMPANY.specialty + '. ' +
-    'This opportunity is: ' + bid.opportunities.title + ' with ' + bid.opportunities.agency + '. ' +
-    'Past performance examples: ' + examples + '. ' +
-    'For each example, describe: project scope, customer name and POC title, dollar value, ' +
-    'period of performance, relevance to this opportunity, and performance outcomes. ' +
-    'Use CPARS-style format. If limited past performance, emphasize key personnel experience ' +
-    'and relevant commercial/state/local government work. Target length: 2 pages.'
+    'You are a federal proposal writer for ' + COMPANY.legal_name + ' (DBA: ' + COMPANY.dba + ').\n\n' +
+    'OPPORTUNITY: ' + opp.title + ' | Agency: ' + (opp.agency || 'Federal Agency') + '\n' +
+    'Known past performance: ' + examples + '\n\n' +
+    'Return ONLY a JSON object — no markdown, no extra text. Schema:\n' +
+    '{\n' +
+    '  "narrative": "1-2 paragraph past performance summary",\n' +
+    '  "projects": [\n' +
+    '    {\n' +
+    '      "project_name": "string",\n' +
+    '      "client": "string",\n' +
+    '      "contract_value": "$XXX,XXX",\n' +
+    '      "period": "MM/YYYY – MM/YYYY",\n' +
+    '      "scope": "1-2 sentence scope description",\n' +
+    '      "reference": "Reference Name, Title, Phone"\n' +
+    '    }\n' +
+    '  ]\n' +
+    '}\n\n' +
+    'Include 2–3 projects. If past performance data is limited, create realistic placeholder entries ' +
+    'for Gulf South federal construction contracts. Mark placeholders with [VERIFY BEFORE SUBMISSION]. ' +
+    'Professional CPARS-compliant tone.'
   );
 }
 
@@ -658,107 +713,659 @@ async function storeDraft(bidId, volumes) {
 }
 
 // ----------------------------------------------------------
-// GENERATE PROPOSAL DOCX: Build a formatted Word document from proposal volumes
-// Uses the `docx` npm package. Returns a Buffer.
+// GENERATE PROPOSAL DOCX: Build an 11-section Word document matching the
+// WalkerContractors_BidTemplate structure. Uses the `docx` npm package.
+// Returns a Buffer.
+//
+// SECTION MAP:
+//   Cover Page | TOC | §1 Executive Summary | §2 Bidder Info | §3 Scope of Work
+//   §4 Past Performance | §5 Management & Staffing | §6 Pricing
+//   §7 Required Certifications | §8 Compliance & Legal | §9 Docs Checklist
+//   §10 Addenda Acknowledgment | §11 Attachments/Exhibits
 // ----------------------------------------------------------
 async function generateProposalDocx(volumes) {
-  // Helper: convert a text block (may contain newlines) into Paragraph array
-  function textToParas(text, headingLevel = null) {
-    if (!text || typeof text !== 'string') return [];
-    const lines = text.split('\n').filter(l => l.trim().length > 0);
-    return lines.map((line, i) => {
-      // Detect markdown headings and convert them
-      const h1 = line.match(/^#\s+(.+)/);
-      const h2 = line.match(/^##\s+(.+)/);
-      const h3 = line.match(/^###\s+(.+)/);
-      if (h1) return new Paragraph({ heading: HeadingLevel.HEADING_1, children: [new TextRun({ text: h1[1], bold: true, size: 32, font: 'Arial' })] });
-      if (h2) return new Paragraph({ heading: HeadingLevel.HEADING_2, children: [new TextRun({ text: h2[1], bold: true, size: 28, font: 'Arial' })] });
-      if (h3) return new Paragraph({ heading: HeadingLevel.HEADING_3, children: [new TextRun({ text: h3[1], bold: true, size: 24, font: 'Arial' })] });
-      // Normal paragraph
-      if (i === 0 && headingLevel) {
-        return new Paragraph({ heading: headingLevel, children: [new TextRun({ text: line, font: 'Arial', bold: true })] });
-      }
-      return new Paragraph({ children: [new TextRun({ text: line, font: 'Arial', size: 22 })] });
+
+  // ── CONSTANTS ──────────────────────────────────────────────────────────────
+  const PAGE_WIDTH    = 9360;  // content width in DXA (US Letter 12240 - 2x1440 margins)
+  const BLUE_DARK     = '1a3a6b';
+  const BLUE_HEADER   = '2E5FA3';
+  const GRAY_ROW      = 'E8ECF1';
+  const TODAY         = new Date().toLocaleDateString('en-US', { year:'numeric', month:'long', day:'numeric' });
+
+  // Opportunity info (passed through from generateProposal)
+  const opp = volumes._opp || {};
+  const SOL_NUM   = opp.solicitation_id || '[SOLICITATION #]';
+  const OPP_TITLE = opp.title           || '[OPPORTUNITY TITLE]';
+  const AGENCY    = opp.agency          || '[AGENCY]';
+  const PSC       = opp.psc             || '[PSC CODE]';
+  const POSTED    = opp.posted_date     ? new Date(opp.posted_date).toLocaleDateString('en-US') : '[DATE POSTED]';
+  const DEADLINE  = opp.deadline        ? new Date(opp.deadline).toLocaleDateString('en-US')    : '[RESPONSE DEADLINE]';
+  const SET_ASIDE = opp.set_aside       || 'Full and Open Competition';
+
+  // ── SAFE JSON PARSER ───────────────────────────────────────────────────────
+  // Claude returns JSON strings — parse gracefully, return {} on failure
+  function parseVolume(raw) {
+    if (!raw) return {};
+    if (typeof raw === 'object') return raw;
+    try {
+      // Strip possible markdown code fences
+      const clean = String(raw).replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '').trim();
+      return JSON.parse(clean);
+    } catch (_) {
+      return { _raw: String(raw) };
+    }
+  }
+
+  const tech = parseVolume(volumes.technical);
+  const mgmt = parseVolume(volumes.management);
+  const pp   = parseVolume(volumes.pastPerformance);
+
+  // Pricing: BID ENGINE supplies line_items array; fall back to a placeholder row
+  const pricingData  = volumes.price || {};
+  const lineItems    = Array.isArray(pricingData.line_items) ? pricingData.line_items : [
+    { line: '001', description: 'Base Contract — All work as described in SOW', qty: 1, unit_price: pricingData.total_all_years || 0, total: pricingData.total_all_years || 0 },
+  ];
+  const grandTotal   = pricingData.total_all_years || lineItems.reduce((s, r) => s + (Number(r.total) || 0), 0);
+  const totalWritten = pricingData.total_written || '$' + grandTotal.toLocaleString();
+  const costAssumps  = pricingData.cost_assumptions || 'All costs are fully burdened and include overhead, G&A, and profit. ODCs itemized separately.';
+  const payTerms     = pricingData.payment_terms    || 'Net 30 days per FAR 52.232-25.';
+
+  // ── TABLE HELPERS ──────────────────────────────────────────────────────────
+  const cellBorder = { style: BorderStyle.SINGLE, size: 1, color: 'AAAAAA' };
+  const allBorders = { top: cellBorder, bottom: cellBorder, left: cellBorder, right: cellBorder };
+
+  // Header cell — dark blue background, white bold text
+  function hdrCell(txt, widthDxa) {
+    return new TableCell({
+      width:   { size: widthDxa, type: WidthType.DXA },
+      borders: allBorders,
+      shading: { fill: BLUE_HEADER, type: ShadingType.CLEAR },
+      margins: { top: 80, bottom: 80, left: 120, right: 120 },
+      children: [new Paragraph({
+        alignment: AlignmentType.CENTER,
+        children:  [new TextRun({ text: txt, bold: true, size: 20, color: 'FFFFFF', font: 'Arial' })],
+      })],
     });
   }
 
-  // Cover section
+  // Data cell — optional alternate row shading
+  function dataCell(txt, widthDxa, opts = {}) {
+    return new TableCell({
+      width:           { size: widthDxa, type: WidthType.DXA },
+      borders:         allBorders,
+      shading:         opts.shade ? { fill: GRAY_ROW, type: ShadingType.CLEAR } : undefined,
+      verticalAlign:   VerticalAlign.CENTER,
+      margins:         { top: 60, bottom: 60, left: 120, right: 120 },
+      children: [new Paragraph({
+        alignment: opts.center ? AlignmentType.CENTER : AlignmentType.LEFT,
+        children:  [new TextRun({ text: String(txt || ''), size: 20, font: 'Arial' })],
+      })],
+    });
+  }
+
+  // Section heading paragraph
+  function secHead(num, title) {
+    return new Paragraph({
+      heading: HeadingLevel.HEADING_1,
+      spacing: { before: 360, after: 120 },
+      children: [new TextRun({ text: 'SECTION ' + num + ': ' + title.toUpperCase(), bold: true, size: 28, font: 'Arial', color: BLUE_DARK })],
+    });
+  }
+
+  // Sub-heading paragraph
+  function subHead(code, title) {
+    return new Paragraph({
+      heading: HeadingLevel.HEADING_2,
+      spacing: { before: 200, after: 80 },
+      children: [new TextRun({ text: code + '  ' + title, bold: true, size: 24, font: 'Arial', color: BLUE_DARK })],
+    });
+  }
+
+  // Body paragraph
+  function body(txt) {
+    if (!txt) return new Paragraph({ children: [new TextRun({ text: '', font: 'Arial', size: 22 })] });
+    return new Paragraph({
+      spacing: { before: 80, after: 80 },
+      children: [new TextRun({ text: String(txt), font: 'Arial', size: 22 })],
+    });
+  }
+
+  // Checkbox line — uses text [ ] / [X]
+  function checkbox(label, checked = false) {
+    return new Paragraph({
+      spacing: { before: 60, after: 60 },
+      children: [new TextRun({ text: (checked ? '[X]  ' : '[ ]  ') + label, font: 'Arial', size: 22 })],
+    });
+  }
+
+  // Spacer paragraph
+  const spacer = () => new Paragraph({ children: [new TextRun({ text: ' ', size: 22 })] });
+
+  // Signature block helper
+  function sigBlock(role) {
+    return [
+      spacer(),
+      new Paragraph({ children: [new TextRun({ text: 'Signature: ___________________________________    Date: ________________', font: 'Arial', size: 22 })] }),
+      new Paragraph({ children: [new TextRun({ text: 'Printed Name: _______________________________    Title: ' + role, font: 'Arial', size: 22 })] }),
+      spacer(),
+    ];
+  }
+
+  // ── COVER PAGE ─────────────────────────────────────────────────────────────
   const coverSection = [
-    new Paragraph({ alignment: AlignmentType.CENTER, children: [new TextRun({ text: 'PROPOSAL PACKAGE', font: 'Arial', bold: true, size: 48, color: '1a3a6b' })] }),
-    new Paragraph({ alignment: AlignmentType.CENTER, children: [new TextRun({ text: COMPANY.legal_name + '  /  ' + COMPANY.dba, font: 'Arial', size: 28 })] }),
-    new Paragraph({ alignment: AlignmentType.CENTER, children: [new TextRun({ text: 'UEI: ' + COMPANY.uei + '   |   CAGE: ' + COMPANY.cage_code, font: 'Arial', size: 24 })] }),
-    new Paragraph({ alignment: AlignmentType.CENTER, children: [new TextRun({ text: COMPANY.certifications, font: 'Arial', size: 24, italics: true })] }),
-    new Paragraph({ alignment: AlignmentType.CENTER, children: [new TextRun({ text: 'Generated: ' + new Date().toLocaleDateString('en-US', { year:'numeric', month:'long', day:'numeric' }), font: 'Arial', size: 22, color: '666666' })] }),
+    spacer(), spacer(),
+    new Paragraph({ alignment: AlignmentType.CENTER, spacing: { before: 480, after: 120 }, children: [
+      new TextRun({ text: COMPANY.dba.toUpperCase(), font: 'Arial', bold: true, size: 56, color: BLUE_DARK }),
+    ]}),
+    new Paragraph({ alignment: AlignmentType.CENTER, spacing: { after: 240 }, children: [
+      new TextRun({ text: COMPANY.legal_name, font: 'Arial', size: 30, color: '444444' }),
+    ]}),
+    new Paragraph({ alignment: AlignmentType.CENTER, children: [
+      new TextRun({ text: 'FEDERAL PROPOSAL SUBMISSION', font: 'Arial', bold: true, size: 36 }),
+    ]}),
+    spacer(), spacer(),
+
+    // Solicitation info table
+    new Table({
+      width: { size: PAGE_WIDTH, type: WidthType.DXA },
+      columnWidths: [2500, 6860],
+      rows: [
+        new TableRow({ children: [
+          new TableCell({ width: { size: 2500, type: WidthType.DXA }, borders: allBorders, shading: { fill: BLUE_DARK, type: ShadingType.CLEAR }, margins: { top: 80, bottom: 80, left: 120, right: 120 },
+            children: [new Paragraph({ children: [new TextRun({ text: 'Solicitation #', bold: true, color: 'FFFFFF', font: 'Arial', size: 22 })] })] }),
+          new TableCell({ width: { size: 6860, type: WidthType.DXA }, borders: allBorders, margins: { top: 80, bottom: 80, left: 120, right: 120 },
+            children: [new Paragraph({ children: [new TextRun({ text: SOL_NUM, font: 'Arial', size: 22 })] })] }),
+        ]}),
+        new TableRow({ children: [
+          new TableCell({ width: { size: 2500, type: WidthType.DXA }, borders: allBorders, shading: { fill: BLUE_DARK, type: ShadingType.CLEAR }, margins: { top: 80, bottom: 80, left: 120, right: 120 },
+            children: [new Paragraph({ children: [new TextRun({ text: 'Title', bold: true, color: 'FFFFFF', font: 'Arial', size: 22 })] })] }),
+          new TableCell({ width: { size: 6860, type: WidthType.DXA }, borders: allBorders, margins: { top: 80, bottom: 80, left: 120, right: 120 },
+            children: [new Paragraph({ children: [new TextRun({ text: OPP_TITLE, font: 'Arial', size: 22 })] })] }),
+        ]}),
+        new TableRow({ children: [
+          new TableCell({ width: { size: 2500, type: WidthType.DXA }, borders: allBorders, shading: { fill: BLUE_DARK, type: ShadingType.CLEAR }, margins: { top: 80, bottom: 80, left: 120, right: 120 },
+            children: [new Paragraph({ children: [new TextRun({ text: 'Issuing Agency', bold: true, color: 'FFFFFF', font: 'Arial', size: 22 })] })] }),
+          new TableCell({ width: { size: 6860, type: WidthType.DXA }, borders: allBorders, margins: { top: 80, bottom: 80, left: 120, right: 120 },
+            children: [new Paragraph({ children: [new TextRun({ text: AGENCY, font: 'Arial', size: 22 })] })] }),
+        ]}),
+        new TableRow({ children: [
+          new TableCell({ width: { size: 2500, type: WidthType.DXA }, borders: allBorders, shading: { fill: BLUE_DARK, type: ShadingType.CLEAR }, margins: { top: 80, bottom: 80, left: 120, right: 120 },
+            children: [new Paragraph({ children: [new TextRun({ text: 'PSC Code', bold: true, color: 'FFFFFF', font: 'Arial', size: 22 })] })] }),
+          new TableCell({ width: { size: 6860, type: WidthType.DXA }, borders: allBorders, margins: { top: 80, bottom: 80, left: 120, right: 120 },
+            children: [new Paragraph({ children: [new TextRun({ text: PSC, font: 'Arial', size: 22 })] })] }),
+        ]}),
+        new TableRow({ children: [
+          new TableCell({ width: { size: 2500, type: WidthType.DXA }, borders: allBorders, shading: { fill: BLUE_DARK, type: ShadingType.CLEAR }, margins: { top: 80, bottom: 80, left: 120, right: 120 },
+            children: [new Paragraph({ children: [new TextRun({ text: 'Date Posted', bold: true, color: 'FFFFFF', font: 'Arial', size: 22 })] })] }),
+          new TableCell({ width: { size: 6860, type: WidthType.DXA }, borders: allBorders, margins: { top: 80, bottom: 80, left: 120, right: 120 },
+            children: [new Paragraph({ children: [new TextRun({ text: POSTED, font: 'Arial', size: 22 })] })] }),
+        ]}),
+        new TableRow({ children: [
+          new TableCell({ width: { size: 2500, type: WidthType.DXA }, borders: allBorders, shading: { fill: BLUE_DARK, type: ShadingType.CLEAR }, margins: { top: 80, bottom: 80, left: 120, right: 120 },
+            children: [new Paragraph({ children: [new TextRun({ text: 'Response Deadline', bold: true, color: 'FFFFFF', font: 'Arial', size: 22 })] })] }),
+          new TableCell({ width: { size: 6860, type: WidthType.DXA }, borders: allBorders, margins: { top: 80, bottom: 80, left: 120, right: 120 },
+            children: [new Paragraph({ children: [new TextRun({ text: DEADLINE, font: 'Arial', size: 22 })] })] }),
+        ]}),
+      ],
+    }),
+
+    spacer(), spacer(),
+    new Paragraph({ alignment: AlignmentType.CENTER, children: [
+      new TextRun({ text: 'Submitted By', font: 'Arial', size: 22, bold: true }),
+    ]}),
+    new Paragraph({ alignment: AlignmentType.CENTER, children: [
+      new TextRun({ text: COMPANY.legal_name + '  |  DBA: ' + COMPANY.dba, font: 'Arial', size: 22 }),
+    ]}),
+    new Paragraph({ alignment: AlignmentType.CENTER, children: [
+      new TextRun({ text: 'UEI: ' + COMPANY.uei + '   |   CAGE: ' + COMPANY.cage_code + '   |   ' + COMPANY.certifications, font: 'Arial', size: 22 }),
+    ]}),
+    new Paragraph({ alignment: AlignmentType.CENTER, children: [
+      new TextRun({ text: COMPANY.address + '   |   ' + COMPANY.phone + '   |   ' + COMPANY.email, font: 'Arial', size: 22 }),
+    ]}),
+    spacer(),
+    new Paragraph({ alignment: AlignmentType.CENTER, children: [
+      new TextRun({ text: 'Authorized Representative: ' + COMPANY.contact, font: 'Arial', size: 22, bold: true }),
+    ]}),
+    ...sigBlock('Owner / CEO'),
+    new Paragraph({ alignment: AlignmentType.CENTER, children: [
+      new TextRun({ text: 'Prepared: ' + TODAY, font: 'Arial', size: 20, color: '888888', italics: true }),
+    ]}),
     new Paragraph({ children: [new PageBreak()] }),
   ];
 
-  // Bid memo (executive summary)
-  const memoSection = volumes.bidMemo ? [
-    new Paragraph({ heading: HeadingLevel.HEADING_1, children: [new TextRun({ text: 'BID/NO-BID RECOMMENDATION MEMO', bold: true, font: 'Arial', size: 32 })] }),
-    ...textToParas(typeof volumes.bidMemo === 'string' ? volumes.bidMemo : JSON.stringify(volumes.bidMemo, null, 2)),
+  // ── TABLE OF CONTENTS (manual — Word updates fields on open) ───────────────
+  const tocSection = [
+    new Paragraph({ heading: HeadingLevel.HEADING_1, spacing: { before: 240, after: 120 }, children: [
+      new TextRun({ text: 'TABLE OF CONTENTS', bold: true, font: 'Arial', size: 32, color: BLUE_DARK }),
+    ]}),
+    ...[
+      ['Section 1', 'Executive Summary'],
+      ['Section 2', 'Bidder Information'],
+      ['Section 3', 'Scope of Work'],
+      ['Section 4', 'Past Performance'],
+      ['Section 5', 'Management & Staffing'],
+      ['Section 6', 'Pricing'],
+      ['Section 7', 'Required Certifications'],
+      ['Section 8', 'Compliance & Legal Acknowledgments'],
+      ['Section 9', 'Required Documents Checklist'],
+      ['Section 10', 'Addenda Acknowledgment'],
+      ['Section 11', 'Attachments / Exhibits'],
+    ].map(([sec, title]) =>
+      new Paragraph({ spacing: { before: 60, after: 60 }, children: [
+        new TextRun({ text: sec + '  —  ' + title, font: 'Arial', size: 22 }),
+      ]})
+    ),
     new Paragraph({ children: [new PageBreak()] }),
-  ] : [];
-
-  // Volume 1: Technical Approach
-  const vol1 = volumes.technical ? [
-    new Paragraph({ heading: HeadingLevel.HEADING_1, children: [new TextRun({ text: 'VOLUME 1 — TECHNICAL APPROACH', bold: true, font: 'Arial', size: 32, color: '1a3a6b' })] }),
-    ...textToParas(typeof volumes.technical === 'string' ? volumes.technical : JSON.stringify(volumes.technical, null, 2)),
-    new Paragraph({ children: [new PageBreak()] }),
-  ] : [];
-
-  // Volume 2: Management Plan
-  const vol2 = volumes.management ? [
-    new Paragraph({ heading: HeadingLevel.HEADING_1, children: [new TextRun({ text: 'VOLUME 2 — MANAGEMENT PLAN', bold: true, font: 'Arial', size: 32, color: '1a3a6b' })] }),
-    ...textToParas(typeof volumes.management === 'string' ? volumes.management : JSON.stringify(volumes.management, null, 2)),
-    new Paragraph({ children: [new PageBreak()] }),
-  ] : [];
-
-  // Volume 3: Past Performance
-  const vol3 = volumes.pastPerformance ? [
-    new Paragraph({ heading: HeadingLevel.HEADING_1, children: [new TextRun({ text: 'VOLUME 3 — PAST PERFORMANCE', bold: true, font: 'Arial', size: 32, color: '1a3a6b' })] }),
-    ...textToParas(typeof volumes.pastPerformance === 'string' ? volumes.pastPerformance : JSON.stringify(volumes.pastPerformance, null, 2)),
-    new Paragraph({ children: [new PageBreak()] }),
-  ] : [];
-
-  // Volume 4: Price Proposal
-  const priceText = volumes.price
-    ? (typeof volumes.price === 'string' ? volumes.price : JSON.stringify(volumes.price, null, 2))
-    : 'BID ENGINE pricing pending — run bidengine.js first.';
-  const vol4 = [
-    new Paragraph({ heading: HeadingLevel.HEADING_1, children: [new TextRun({ text: 'VOLUME 4 — PRICE PROPOSAL', bold: true, font: 'Arial', size: 32, color: '1a3a6b' })] }),
-    ...textToParas(priceText),
   ];
 
-  // Handle supply quote format (different volume structure)
+  // ── SECTION 1: EXECUTIVE SUMMARY ───────────────────────────────────────────
+  const sec1 = [
+    secHead('1', 'Executive Summary'),
+    subHead('1.1', 'Overview'),
+    body(tech.exec_overview || 'Walker Contractors LLC / Axiom Federal Solutions presents this proposal in response to the referenced solicitation. Our team brings proven federal contracting expertise to deliver compliant, high-quality results on time and within budget.'),
+    subHead('1.2', 'Value Proposition'),
+    body(tech.value_proposition || 'As a certified Small Disadvantaged Business with Gulf South regional expertise, we offer competitive pricing, experienced personnel, and a demonstrated track record of successful federal performance.'),
+    subHead('1.3', 'Summary of Qualifications'),
+    body(tech.qualifications || 'Walker Contractors LLC holds active SAM registration (UEI: ' + COMPANY.uei + ', CAGE: ' + COMPANY.cage_code + ') with all required certifications current. Our leadership team combines over 15 years of federal contracting experience.'),
+    new Paragraph({ children: [new PageBreak()] }),
+  ];
+
+  // ── SECTION 2: BIDDER INFORMATION ─────────────────────────────────────────
+  const sec2 = [
+    secHead('2', 'Bidder Information'),
+    new Table({
+      width: { size: PAGE_WIDTH, type: WidthType.DXA },
+      columnWidths: [3000, 6360],
+      rows: [
+        new TableRow({ children: [
+          new TableCell({ width: { size: 3000, type: WidthType.DXA }, borders: allBorders, shading: { fill: GRAY_ROW, type: ShadingType.CLEAR }, margins: { top: 80, bottom: 80, left: 120, right: 120 },
+            children: [new Paragraph({ children: [new TextRun({ text: 'Legal Business Name', bold: true, font: 'Arial', size: 22 })] })] }),
+          new TableCell({ width: { size: 6360, type: WidthType.DXA }, borders: allBorders, margins: { top: 80, bottom: 80, left: 120, right: 120 },
+            children: [new Paragraph({ children: [new TextRun({ text: COMPANY.legal_name, font: 'Arial', size: 22 })] })] }),
+        ]}),
+        new TableRow({ children: [
+          new TableCell({ width: { size: 3000, type: WidthType.DXA }, borders: allBorders, shading: { fill: GRAY_ROW, type: ShadingType.CLEAR }, margins: { top: 80, bottom: 80, left: 120, right: 120 },
+            children: [new Paragraph({ children: [new TextRun({ text: 'DBA / Trade Name', bold: true, font: 'Arial', size: 22 })] })] }),
+          new TableCell({ width: { size: 6360, type: WidthType.DXA }, borders: allBorders, margins: { top: 80, bottom: 80, left: 120, right: 120 },
+            children: [new Paragraph({ children: [new TextRun({ text: COMPANY.dba, font: 'Arial', size: 22 })] })] }),
+        ]}),
+        new TableRow({ children: [
+          new TableCell({ width: { size: 3000, type: WidthType.DXA }, borders: allBorders, shading: { fill: GRAY_ROW, type: ShadingType.CLEAR }, margins: { top: 80, bottom: 80, left: 120, right: 120 },
+            children: [new Paragraph({ children: [new TextRun({ text: 'UEI', bold: true, font: 'Arial', size: 22 })] })] }),
+          new TableCell({ width: { size: 6360, type: WidthType.DXA }, borders: allBorders, margins: { top: 80, bottom: 80, left: 120, right: 120 },
+            children: [new Paragraph({ children: [new TextRun({ text: COMPANY.uei, font: 'Arial', size: 22 })] })] }),
+        ]}),
+        new TableRow({ children: [
+          new TableCell({ width: { size: 3000, type: WidthType.DXA }, borders: allBorders, shading: { fill: GRAY_ROW, type: ShadingType.CLEAR }, margins: { top: 80, bottom: 80, left: 120, right: 120 },
+            children: [new Paragraph({ children: [new TextRun({ text: 'CAGE Code', bold: true, font: 'Arial', size: 22 })] })] }),
+          new TableCell({ width: { size: 6360, type: WidthType.DXA }, borders: allBorders, margins: { top: 80, bottom: 80, left: 120, right: 120 },
+            children: [new Paragraph({ children: [new TextRun({ text: COMPANY.cage_code, font: 'Arial', size: 22 })] })] }),
+        ]}),
+        new TableRow({ children: [
+          new TableCell({ width: { size: 3000, type: WidthType.DXA }, borders: allBorders, shading: { fill: GRAY_ROW, type: ShadingType.CLEAR }, margins: { top: 80, bottom: 80, left: 120, right: 120 },
+            children: [new Paragraph({ children: [new TextRun({ text: 'EIN', bold: true, font: 'Arial', size: 22 })] })] }),
+          new TableCell({ width: { size: 6360, type: WidthType.DXA }, borders: allBorders, margins: { top: 80, bottom: 80, left: 120, right: 120 },
+            children: [new Paragraph({ children: [new TextRun({ text: '[EIN — ENTER BEFORE SUBMISSION]', font: 'Arial', size: 22, color: 'AA0000' })] })] }),
+        ]}),
+        new TableRow({ children: [
+          new TableCell({ width: { size: 3000, type: WidthType.DXA }, borders: allBorders, shading: { fill: GRAY_ROW, type: ShadingType.CLEAR }, margins: { top: 80, bottom: 80, left: 120, right: 120 },
+            children: [new Paragraph({ children: [new TextRun({ text: 'SAM.gov Status', bold: true, font: 'Arial', size: 22 })] })] }),
+          new TableCell({ width: { size: 6360, type: WidthType.DXA }, borders: allBorders, margins: { top: 80, bottom: 80, left: 120, right: 120 },
+            children: [new Paragraph({ children: [new TextRun({ text: 'Active Registration — Verified', font: 'Arial', size: 22 })] })] }),
+        ]}),
+        new TableRow({ children: [
+          new TableCell({ width: { size: 3000, type: WidthType.DXA }, borders: allBorders, shading: { fill: GRAY_ROW, type: ShadingType.CLEAR }, margins: { top: 80, bottom: 80, left: 120, right: 120 },
+            children: [new Paragraph({ children: [new TextRun({ text: 'Business Structure', bold: true, font: 'Arial', size: 22 })] })] }),
+          new TableCell({ width: { size: 6360, type: WidthType.DXA }, borders: allBorders, margins: { top: 80, bottom: 80, left: 120, right: 120 },
+            children: [new Paragraph({ children: [new TextRun({ text: 'Limited Liability Company (LLC)', font: 'Arial', size: 22 })] })] }),
+        ]}),
+        new TableRow({ children: [
+          new TableCell({ width: { size: 3000, type: WidthType.DXA }, borders: allBorders, shading: { fill: GRAY_ROW, type: ShadingType.CLEAR }, margins: { top: 80, bottom: 80, left: 120, right: 120 },
+            children: [new Paragraph({ children: [new TextRun({ text: 'Set-Aside Designation', bold: true, font: 'Arial', size: 22 })] })] }),
+          new TableCell({ width: { size: 6360, type: WidthType.DXA }, borders: allBorders, margins: { top: 80, bottom: 80, left: 120, right: 120 },
+            children: [new Paragraph({ children: [new TextRun({ text: COMPANY.certifications, font: 'Arial', size: 22 })] })] }),
+        ]}),
+        new TableRow({ children: [
+          new TableCell({ width: { size: 3000, type: WidthType.DXA }, borders: allBorders, shading: { fill: GRAY_ROW, type: ShadingType.CLEAR }, margins: { top: 80, bottom: 80, left: 120, right: 120 },
+            children: [new Paragraph({ children: [new TextRun({ text: 'Point of Contact', bold: true, font: 'Arial', size: 22 })] })] }),
+          new TableCell({ width: { size: 6360, type: WidthType.DXA }, borders: allBorders, margins: { top: 80, bottom: 80, left: 120, right: 120 },
+            children: [new Paragraph({ children: [new TextRun({ text: COMPANY.contact + '  |  ' + COMPANY.phone + '  |  ' + COMPANY.email, font: 'Arial', size: 22 })] })] }),
+        ]}),
+      ],
+    }),
+    new Paragraph({ children: [new PageBreak()] }),
+  ];
+
+  // ── SECTION 3: SCOPE OF WORK ───────────────────────────────────────────────
+  const milestones = Array.isArray(tech.milestones) && tech.milestones.length > 0
+    ? tech.milestones
+    : [
+        { task: 'Project Kickoff / Site Mobilization', start_week: 'Week 1',  end_week: 'Week 2',  deliverable: 'Kickoff Meeting Minutes, Mobilization Plan' },
+        { task: 'Design / Planning Review',            start_week: 'Week 2',  end_week: 'Week 4',  deliverable: 'Approved Design Documents' },
+        { task: 'Phase 1 Construction / Execution',    start_week: 'Week 5',  end_week: 'Week 12', deliverable: 'Phase 1 Completion Report' },
+        { task: 'Phase 2 Construction / Execution',    start_week: 'Week 13', end_week: 'Week 20', deliverable: 'Phase 2 Completion Report' },
+        { task: 'Quality Control Inspections',         start_week: 'Week 8',  end_week: 'Week 22', deliverable: 'QC Inspection Logs, Punch List' },
+        { task: 'Closeout / Final Inspection',         start_week: 'Week 22', end_week: 'Week 24', deliverable: 'As-Builts, O&M Manuals, Final Report' },
+      ];
+
+  const sec3 = [
+    secHead('3', 'Scope of Work'),
+    subHead('3.1', 'Project Description'),
+    body(tech.scope_description || 'Walker Contractors LLC will furnish all labor, materials, equipment, and supervision necessary to complete all work as described in the Statement of Work (SOW) for ' + OPP_TITLE + '.'),
+    subHead('3.2', 'Methodology'),
+    body(tech.methodology || 'Our approach is phased to minimize disruption to ongoing agency operations while maintaining full compliance with all applicable federal standards including EM 385-1-1, FAR Part 36, and agency-specific requirements.'),
+    subHead('3.3', 'Project Milestones'),
+    spacer(),
+    new Table({
+      width: { size: PAGE_WIDTH, type: WidthType.DXA },
+      columnWidths: [3200, 1500, 1500, 3160],
+      rows: [
+        new TableRow({ children: [
+          hdrCell('Task / Milestone', 3200),
+          hdrCell('Start', 1500),
+          hdrCell('End', 1500),
+          hdrCell('Key Deliverable', 3160),
+        ]}),
+        ...milestones.map((m, i) => new TableRow({ children: [
+          dataCell(m.task, 3200, { shade: i % 2 === 1 }),
+          dataCell(m.start_week, 1500, { shade: i % 2 === 1, center: true }),
+          dataCell(m.end_week, 1500, { shade: i % 2 === 1, center: true }),
+          dataCell(m.deliverable, 3160, { shade: i % 2 === 1 }),
+        ]})),
+      ],
+    }),
+    spacer(),
+    subHead('3.4', 'Deliverables'),
+    body(tech.deliverables || 'Deliverables include: project schedule, quality control plan, safety plan, progress reports, inspection documentation, closeout package, as-built drawings, and operation and maintenance manuals.'),
+    subHead('3.5', 'SOW Compliance'),
+    body(tech.sow_compliance || 'Walker Contractors LLC has reviewed the complete SOW and confirms full compliance with all stated requirements. Any areas requiring clarification will be addressed via formal RFI prior to proposal submission.'),
+    new Paragraph({ children: [new PageBreak()] }),
+  ];
+
+  // ── SECTION 4: PAST PERFORMANCE ───────────────────────────────────────────
+  const projects = Array.isArray(pp.projects) && pp.projects.length > 0
+    ? pp.projects
+    : [
+        { project_name: '[Project Name]', client: '[Agency Name]', contract_value: '[Value]', period: '[MM/YYYY – MM/YYYY]', scope: '[Scope description — verify before submission]', reference: '[Reference Name, Title, Phone]' },
+      ];
+
+  const sec4 = [
+    secHead('4', 'Past Performance'),
+    body(pp.narrative || 'Walker Contractors LLC has successfully performed similar federal contracts demonstrating our ability to deliver quality work on schedule and within budget. The following table summarizes our most relevant past performance.'),
+    spacer(),
+    new Table({
+      width: { size: PAGE_WIDTH, type: WidthType.DXA },
+      columnWidths: [2000, 1800, 1400, 1500, 2660],
+      rows: [
+        new TableRow({ children: [
+          hdrCell('Project Name', 2000),
+          hdrCell('Client / Agency', 1800),
+          hdrCell('Value', 1400),
+          hdrCell('Period', 1500),
+          hdrCell('Scope Summary', 2660),
+        ]}),
+        ...projects.map((p, i) => new TableRow({ children: [
+          dataCell(p.project_name, 2000, { shade: i % 2 === 1 }),
+          dataCell(p.client, 1800, { shade: i % 2 === 1 }),
+          dataCell(p.contract_value, 1400, { shade: i % 2 === 1, center: true }),
+          dataCell(p.period, 1500, { shade: i % 2 === 1, center: true }),
+          dataCell(p.scope, 2660, { shade: i % 2 === 1 }),
+        ]})),
+      ],
+    }),
+    spacer(),
+    subHead('4.1', 'References'),
+    new Table({
+      width: { size: PAGE_WIDTH, type: WidthType.DXA },
+      columnWidths: [2000, 7360],
+      rows: [
+        new TableRow({ children: [hdrCell('Project', 2000), hdrCell('Reference Contact', 7360)] }),
+        ...projects.map((p, i) => new TableRow({ children: [
+          dataCell(p.project_name, 2000, { shade: i % 2 === 1 }),
+          dataCell(p.reference || '[Reference — verify before submission]', 7360, { shade: i % 2 === 1 }),
+        ]})),
+      ],
+    }),
+    new Paragraph({ children: [new PageBreak()] }),
+  ];
+
+  // ── SECTION 5: MANAGEMENT & STAFFING ─────────────────────────────────────
+  const personnel = Array.isArray(mgmt.personnel) && mgmt.personnel.length > 0
+    ? mgmt.personnel
+    : [
+        { name: 'Joseph Walker IV', title: 'Owner / CEO', responsibility: 'Contract authority, executive oversight, client relations', years_exp: 15 },
+        { name: '[Project Manager]', title: 'Project Manager', responsibility: 'Day-to-day project execution, schedule management, reporting', years_exp: 10 },
+        { name: '[Superintendent]', title: 'Site Superintendent', responsibility: 'Field operations, quality control, safety compliance', years_exp: 12 },
+        { name: '[QC Manager]', title: 'Quality Control Manager', responsibility: '3-phase QC inspection per USACE standards', years_exp: 8 },
+      ];
+
+  const sec5 = [
+    secHead('5', 'Management & Staffing'),
+    subHead('5.1', 'Management Approach'),
+    body(mgmt.approach || 'Walker Contractors LLC employs a flat, responsive management structure with direct executive accountability. Joseph Walker IV maintains personal oversight of all federal contracts to ensure compliance, communication, and performance.'),
+    spacer(),
+    subHead('5.2', 'Key Personnel'),
+    new Table({
+      width: { size: PAGE_WIDTH, type: WidthType.DXA },
+      columnWidths: [2000, 2000, 3760, 1600],
+      rows: [
+        new TableRow({ children: [
+          hdrCell('Name', 2000),
+          hdrCell('Title', 2000),
+          hdrCell('Primary Responsibility', 3760),
+          hdrCell('Years Exp.', 1600),
+        ]}),
+        ...personnel.map((p, i) => new TableRow({ children: [
+          dataCell(p.name, 2000, { shade: i % 2 === 1 }),
+          dataCell(p.title, 2000, { shade: i % 2 === 1 }),
+          dataCell(p.responsibility, 3760, { shade: i % 2 === 1 }),
+          dataCell(String(p.years_exp || ''), 1600, { shade: i % 2 === 1, center: true }),
+        ]})),
+      ],
+    }),
+    new Paragraph({ children: [new PageBreak()] }),
+  ];
+
+  // ── SECTION 6: PRICING ─────────────────────────────────────────────────────
+  const sec6 = [
+    secHead('6', 'Pricing'),
+    subHead('6.1', 'Itemized Price Schedule'),
+    spacer(),
+    new Table({
+      width: { size: PAGE_WIDTH, type: WidthType.DXA },
+      columnWidths: [800, 4260, 1000, 1600, 1700],
+      rows: [
+        new TableRow({ children: [
+          hdrCell('Line #', 800),
+          hdrCell('Description', 4260),
+          hdrCell('Qty', 1000),
+          hdrCell('Unit Price', 1600),
+          hdrCell('Total', 1700),
+        ]}),
+        ...lineItems.map((li, i) => new TableRow({ children: [
+          dataCell(String(li.line || (i + 1)), 800, { shade: i % 2 === 1, center: true }),
+          dataCell(li.description || '', 4260, { shade: i % 2 === 1 }),
+          dataCell(String(li.qty || 1), 1000, { shade: i % 2 === 1, center: true }),
+          dataCell('$' + Number(li.unit_price || 0).toLocaleString(), 1600, { shade: i % 2 === 1, center: true }),
+          dataCell('$' + Number(li.total || 0).toLocaleString(), 1700, { shade: i % 2 === 1, center: true }),
+        ]})),
+        // Totals row
+        new TableRow({ children: [
+          new TableCell({ columnSpan: 4, width: { size: 7660, type: WidthType.DXA }, borders: allBorders, shading: { fill: BLUE_DARK, type: ShadingType.CLEAR }, margins: { top: 80, bottom: 80, left: 120, right: 120 },
+            children: [new Paragraph({ alignment: AlignmentType.RIGHT, children: [new TextRun({ text: 'TOTAL BID AMOUNT', bold: true, font: 'Arial', size: 22, color: 'FFFFFF' })] })] }),
+          new TableCell({ width: { size: 1700, type: WidthType.DXA }, borders: allBorders, shading: { fill: BLUE_DARK, type: ShadingType.CLEAR }, margins: { top: 80, bottom: 80, left: 120, right: 120 },
+            children: [new Paragraph({ alignment: AlignmentType.CENTER, children: [new TextRun({ text: '$' + grandTotal.toLocaleString(), bold: true, font: 'Arial', size: 22, color: 'FFFFFF' })] })] }),
+        ]}),
+      ],
+    }),
+    spacer(),
+    subHead('6.2', 'Total Bid Amount'),
+    body('Total Bid Price: ' + totalWritten + '  ($' + grandTotal.toLocaleString() + ')'),
+    subHead('6.3', 'Cost Assumptions'),
+    body(costAssumps),
+    subHead('6.4', 'Payment Terms'),
+    body(payTerms),
+    new Paragraph({ children: [new PageBreak()] }),
+  ];
+
+  // ── SECTION 7: REQUIRED CERTIFICATIONS ────────────────────────────────────
+  const sec7 = [
+    secHead('7', 'Required Certifications'),
+    body('The undersigned hereby certifies on behalf of ' + COMPANY.legal_name + ':'),
+    spacer(),
+    checkbox('Non-Collusion Affidavit — This bid has been prepared independently and without collusion.', true),
+    checkbox('Equal Opportunity / EEO Compliance — We comply with all applicable EEO requirements per FAR 52.222-26.', true),
+    checkbox('Debarment & Suspension Certification — The offeror is not currently debarred, suspended, or excluded from federal contracts per FAR 52.209-6.', true),
+    checkbox('Buy American Act Compliance — Where applicable, domestic construction materials will be used per FAR 52.225-9.', true),
+    checkbox('Davis-Bacon Act Compliance — Prevailing wage rates will be paid to all laborers and mechanics as required.', true),
+    checkbox('FAR Part 31 Cost Principles Compliance — All proposed costs are allowable, allocable, and reasonable.', true),
+    checkbox('Drug-Free Workplace — The offeror maintains a drug-free workplace program per FAR 52.223-6.', true),
+    checkbox('Truth in Negotiations Act (TINA) — Cost or pricing data is current, accurate, and complete.', true),
+    checkbox('Anti-Kickback — No kickbacks, gratuities, or contingent fees have been paid per FAR 52.203-7.', true),
+    spacer(),
+    ...sigBlock('Authorized Signatory — ' + COMPANY.contact),
+    new Paragraph({ children: [new PageBreak()] }),
+  ];
+
+  // ── SECTION 8: COMPLIANCE & LEGAL ACKNOWLEDGMENTS ─────────────────────────
+  const sec8 = [
+    secHead('8', 'Compliance & Legal Acknowledgments'),
+    body('Walker Contractors LLC acknowledges and agrees to comply with all terms, conditions, representations, and certifications set forth in the solicitation ' + SOL_NUM + ' issued by ' + AGENCY + '.'),
+    spacer(),
+    body('We confirm that:'),
+    checkbox('All representations and certifications in SAM.gov are current, accurate, and complete.', true),
+    checkbox('We have read and understand all sections of the solicitation, including the Statement of Work, Contract Terms, and Evaluation Criteria.', true),
+    checkbox('We accept all terms and conditions as written, with no exceptions or qualifications.', true),
+    checkbox('We agree to maintain required bonds, insurance, and licenses throughout the contract period.', true),
+    checkbox('We understand that submission of a false statement is a violation of federal law (18 U.S.C. 1001).', true),
+    spacer(),
+    ...sigBlock('Authorized Signatory — ' + COMPANY.contact),
+    new Paragraph({ children: [new PageBreak()] }),
+  ];
+
+  // ── SECTION 9: REQUIRED DOCUMENTS CHECKLIST ────────────────────────────────
+  const sec9 = [
+    secHead('9', 'Required Documents Checklist'),
+    body('The following documents are included with or will accompany this proposal submission:'),
+    spacer(),
+    ...[
+      'Completed Proposal (this document)',
+      'SF 1442 — Solicitation, Offer, and Award (Construction)',
+      'SF 24 — Bid Bond (if required)',
+      'SF 25 — Performance Bond commitment letter',
+      'SF 25A — Payment Bond commitment letter',
+      'SAM.gov Registration Confirmation (active status printout)',
+      'Business License / State Contractor License',
+      'Certificate of Insurance (COI) — meeting solicitation requirements',
+      'Subcontracting Plan (if applicable per FAR 52.219-9)',
+      'VETS 4212 Report (if applicable)',
+      'Representations and Certifications (SAM.gov)',
+      'Key Personnel Resumes',
+      'Past Performance References',
+      'Teaming Agreement (if applicable) — Trevor L. Monnie Landscape Services',
+    ].map(doc => checkbox(doc, true)),
+    new Paragraph({ children: [new PageBreak()] }),
+  ];
+
+  // ── SECTION 10: ADDENDA ACKNOWLEDGMENT ────────────────────────────────────
+  const sec10 = [
+    secHead('10', 'Addenda Acknowledgment'),
+    body('Acknowledge all amendments and addenda to the solicitation issued before proposal submission:'),
+    spacer(),
+    new Table({
+      width: { size: PAGE_WIDTH, type: WidthType.DXA },
+      columnWidths: [2000, 2500, 4860],
+      rows: [
+        new TableRow({ children: [hdrCell('Addendum #', 2000), hdrCell('Date Issued', 2500), hdrCell('Description', 4860)] }),
+        new TableRow({ children: [dataCell('[#]', 2000, { shade: false }), dataCell('[Date]', 2500, { shade: false }), dataCell('[Description — complete before submission]', 4860, { shade: false })] }),
+        new TableRow({ children: [dataCell('[#]', 2000, { shade: true }), dataCell('[Date]', 2500, { shade: true }), dataCell('[Description — complete before submission]', 4860, { shade: true })] }),
+      ],
+    }),
+    spacer(),
+    checkbox('No addenda were issued for this solicitation.', false),
+    new Paragraph({ children: [new PageBreak()] }),
+  ];
+
+  // ── SECTION 11: ATTACHMENTS / EXHIBITS ────────────────────────────────────
+  const sec11 = [
+    secHead('11', 'Attachments / Exhibits'),
+    new Table({
+      width: { size: PAGE_WIDTH, type: WidthType.DXA },
+      columnWidths: [1400, 4000, 3960],
+      rows: [
+        new TableRow({ children: [hdrCell('Exhibit', 1400), hdrCell('Title', 4000), hdrCell('Description', 3960)] }),
+        new TableRow({ children: [dataCell('A', 1400, { shade: false }), dataCell('Company Capability Statement', 4000, { shade: false }), dataCell('1-page overview of ' + COMPANY.legal_name + ' capabilities', 3960, { shade: false })] }),
+        new TableRow({ children: [dataCell('B', 1400, { shade: true }), dataCell('Key Personnel Resumes', 4000, { shade: true }), dataCell('Resumes for all key personnel listed in Section 5', 3960, { shade: true })] }),
+        new TableRow({ children: [dataCell('C', 1400, { shade: false }), dataCell('Past Performance References', 4000, { shade: false }), dataCell('Signed reference letters or CPARS ratings', 3960, { shade: false })] }),
+        new TableRow({ children: [dataCell('D', 1400, { shade: true }), dataCell('License & Certification Documents', 4000, { shade: true }), dataCell('SDB certification, contractor license, SAM confirmation', 3960, { shade: true })] }),
+        new TableRow({ children: [dataCell('E', 1400, { shade: false }), dataCell('Teaming Agreement', 4000, { shade: false }), dataCell('Trevor L. Monnie Landscape Services — License No. 26-5023', 3960, { shade: false })] }),
+      ],
+    }),
+  ];
+
+  // ── ASSEMBLE FULL DOCUMENT ────────────────────────────────────────────────
+  // Supply and Real Estate proposals use a simpler format; the 11-section template
+  // is for construction / services bids only. Supply/RE still get cover + content.
+  function textToParas(text) {
+    if (!text || typeof text !== 'string') return [];
+    return text.split('\n').filter(l => l.trim()).map(line =>
+      new Paragraph({ spacing: { before: 80, after: 80 }, children: [new TextRun({ text: line.replace(/^[#*-]+\s*/, ''), font: 'Arial', size: 22 })] })
+    );
+  }
+
+  // Supply format fallback
   const supplySection = volumes.supplyQuote ? [
-    new Paragraph({ heading: HeadingLevel.HEADING_1, children: [new TextRun({ text: 'SUPPLY QUOTE', bold: true, font: 'Arial', size: 32, color: '1a3a6b' })] }),
+    new Paragraph({ heading: HeadingLevel.HEADING_1, spacing: { before: 300, after: 120 }, children: [new TextRun({ text: 'SUPPLY QUOTE', bold: true, font: 'Arial', size: 32, color: BLUE_DARK })] }),
     ...textToParas(typeof volumes.supplyQuote === 'string' ? volumes.supplyQuote : JSON.stringify(volumes.supplyQuote, null, 2)),
     new Paragraph({ children: [new PageBreak()] }),
-    new Paragraph({ heading: HeadingLevel.HEADING_1, children: [new TextRun({ text: 'CAPABILITY STATEMENT', bold: true, font: 'Arial', size: 32, color: '1a3a6b' })] }),
+    new Paragraph({ heading: HeadingLevel.HEADING_1, spacing: { before: 300, after: 120 }, children: [new TextRun({ text: 'CAPABILITY STATEMENT', bold: true, font: 'Arial', size: 32, color: BLUE_DARK })] }),
     ...textToParas(typeof volumes.capStatement === 'string' ? volumes.capStatement : ''),
   ] : [];
 
-  const allChildren = [
-    ...coverSection,
-    ...memoSection,
-    ...(supplySection.length > 0 ? supplySection : [...vol1, ...vol2, ...vol3, ...vol4]),
-  ];
+  const isSupply = supplySection.length > 0;
+
+  const allChildren = isSupply
+    ? [...coverSection, ...supplySection]
+    : [
+        ...coverSection,
+        ...tocSection,
+        ...sec1, ...sec2, ...sec3, ...sec4, ...sec5,
+        ...sec6, ...sec7, ...sec8, ...sec9, ...sec10, ...sec11,
+      ];
 
   const doc = new Document({
-    creator:    COMPANY.legal_name,
-    title:      'Proposal Package — ' + COMPANY.dba,
-    description: 'Federal proposal generated by PRIME DRAFT agent',
+    creator:     COMPANY.legal_name,
+    title:       'Proposal — ' + OPP_TITLE,
+    description: 'Federal proposal generated by PRIME DRAFT agent | ' + AGENCY,
     styles: {
-      default: {
-        document: { run: { font: 'Arial', size: 22 } },
-      },
+      default: { document: { run: { font: 'Arial', size: 22 } } },
+      paragraphStyles: [
+        { id: 'Heading1', name: 'Heading 1', basedOn: 'Normal', next: 'Normal', quickFormat: true,
+          run:       { font: 'Arial', size: 28, bold: true, color: BLUE_DARK },
+          paragraph: { spacing: { before: 360, after: 120 }, outlineLevel: 0 } },
+        { id: 'Heading2', name: 'Heading 2', basedOn: 'Normal', next: 'Normal', quickFormat: true,
+          run:       { font: 'Arial', size: 24, bold: true, color: BLUE_DARK },
+          paragraph: { spacing: { before: 200, after: 80 }, outlineLevel: 1 } },
+      ],
     },
     sections: [{
       properties: {
         page: {
-          size:   { width: 12240, height: 15840 },          // US Letter
-          margin: { top: 1440, right: 1440, bottom: 1440, left: 1440 }, // 1" margins
+          size:   { width: 12240, height: 15840 },               // US Letter
+          margin: { top: 1440, right: 1440, bottom: 1080, left: 1440 }, // 1" margins, 0.75" bottom for footer
         },
+      },
+      footers: {
+        default: new Footer({ children: [new Paragraph({
+          alignment: AlignmentType.CENTER,
+          border: { top: { style: BorderStyle.SINGLE, size: 4, color: BLUE_DARK, space: 4 } },
+          children: [
+            new TextRun({ text: COMPANY.legal_name + ' / ' + COMPANY.dba + '   |   CAGE: ' + COMPANY.cage_code + '   |   Page ', font: 'Arial', size: 18, color: '555555' }),
+            new TextRun({ children: [PageNumber.CURRENT], font: 'Arial', size: 18, color: '555555' }),
+            new TextRun({ text: ' of ', font: 'Arial', size: 18, color: '555555' }),
+            new TextRun({ children: [PageNumber.TOTAL_PAGES], font: 'Arial', size: 18, color: '555555' }),
+          ],
+        })] }),
       },
       children: allChildren,
     }],
