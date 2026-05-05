@@ -939,14 +939,16 @@ function _clearCommandSearch() {
   if (out) out.innerHTML = '';
 }
 
-// Stub — index.html should override with its own opp-detail open routine.
-// We keep a default so a click never silently fails.
+// 2026-05-03 BUG FIX: previously called openDetail/openOpp which don't exist
+// in index.html — the actual handler is showDetail(idx). Search rows clicked
+// silently with only a console warning. Now wired correctly.
 function _openOppFromSearch(oppId) {
   if (!oppId || typeof OPPS === 'undefined') return;
-  const opp = OPPS.find(o => String(o.id) === String(oppId));
-  if (!opp) return;
-  if (typeof openDetail === 'function') openDetail(OPPS.indexOf(opp));
-  else if (typeof openOpp === 'function') openOpp(opp);
+  const idx = OPPS.findIndex(o => String(o.id) === String(oppId));
+  if (idx < 0) return;
+  if (typeof showDetail === 'function')      showDetail(idx);          // index.html main handler
+  else if (typeof openDetail === 'function') openDetail(idx);          // legacy fallback
+  else if (typeof openOpp === 'function')    openOpp(OPPS[idx]);       // legacy fallback
   else console.warn('No opp-detail handler — wire renderCommandSearch to your detail panel');
 }
 

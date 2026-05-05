@@ -307,6 +307,7 @@ if(sessionStorage.getItem('prime_auth')==='1'){
   <button class="sb-btn" onclick="go('construction',this)">🏗️ Construction<span class="sb-dot" style="background:var(--green);box-shadow:0 0 6px var(--green)"></span></button>
   <button class="sb-btn" onclick="go('supply',this)">📦 Supply<span class="sb-dot" style="background:var(--cyan);box-shadow:0 0 6px var(--cyan)"></span></button>
   <button class="sb-btn" onclick="go('realestate',this)">🏢 Real Estate & Rental<span class="sb-dot" style="background:var(--rose);box-shadow:0 0 6px var(--rose)"></span></button>
+  <button class="sb-btn" onclick="go('sdvosb',this)">🎖️ SDVOSB<span class="sb-dot" style="background:var(--violet);box-shadow:0 0 6px var(--violet)"></span></button>
   <div class="sb-group">Win Work</div>
   <button class="sb-btn" onclick="go('bids',this)">📋 My Bids</button>
   <button class="sb-btn" onclick="go('passed',this)" id="sb-passed">🚫 Passed Archive<span id="sb-passed-count" class="sb-dot" style="background:var(--t3)"></span></button>
@@ -333,6 +334,7 @@ if(sessionStorage.getItem('prime_auth')==='1'){
   <div id="t-construction" class="tab" style="display:none"></div>
   <div id="t-supply" class="tab" style="display:none"></div>
   <div id="t-realestate" class="tab" style="display:none"></div>
+  <div id="t-sdvosb" class="tab" style="display:none"></div>
   <div id="t-bids" class="tab" style="display:none"></div>
   <div id="t-passed" class="tab" style="display:none"></div>
   <div id="t-active" class="tab" style="display:none"></div>
@@ -598,7 +600,7 @@ async function loadData(manual=false){
 }
 
 // ─── NAVIGATION ────────────────────────────────────────────────────────
-const TABS=['home','action','construction','supply','realestate','bids','active','money','compliance','intel','performance','events','briefs','system','help','passed'];
+const TABS=['home','action','construction','supply','realestate','sdvosb','bids','active','money','compliance','intel','performance','events','briefs','system','help','passed'];
 let activeTab='home';
 function go(id,btn){
   TABS.forEach(t=>{const el=document.getElementById('t-'+t);if(el)el.style.display=t===id?'block':'none';});
@@ -1455,6 +1457,7 @@ function renderAll(){
   renderVertical('construction');
   renderVertical('supply');
   renderVertical('realestate');
+  renderSdvosb();
   renderBids();
   renderActive();
   renderMoney();
@@ -2251,6 +2254,92 @@ function vtFilter(vt, tier){
     btn.style.color=isActive?'var(--cyan)':'var(--t2)';
     btn.style.borderColor=isActive?'var(--cyanBd)':'var(--bd)';
   });
+}
+
+// ─── SDVOSB CROSS-VERTICAL TAB ─────────────────────────────────────────
+// 2026-05-03: surfaces every opp with SDVOSB / Service-Disabled Veteran-Owned
+// set-asides regardless of vertical. Walker is SDB-certified (not SDVOSB) so
+// these opps require teaming with an SDVOSB-certified partner. Critical to
+// surface them across construction + supply + real estate in one view.
+function isSdvosbEligible(o){
+  const sa = (o.set_aside_type || o.set_aside || '').toUpperCase();
+  if (!sa) return false;
+  return /SDVOSB|VETERAN|SDV|VOSB|SERVICE.?DISABLED/i.test(sa);
+}
+
+let activeSdvosbTier = 'all';
+
+function renderSdvosb(){
+  const allSdvosb = OPPS.filter(o => isSdvosbEligible(o)
+    && (!o.status || o.status==='new' || o.status==='scored' || o.status==='reviewing' || o.status==='pursuing'));
+  const cCount = allSdvosb.filter(o => getVertical(o)==='construction').length;
+  const sCount = allSdvosb.filter(o => getVertical(o)==='supply').length;
+  const rCount = allSdvosb.filter(o => getVertical(o)==='realestate').length;
+  const totalVal = allSdvosb.reduce((a,o)=>a+(o.value||0), 0);
+
+  // Score-tier counts
+  const strongCount  = allSdvosb.filter(o=>scoreOf(o)>=85).length;
+  const bidCount     = allSdvosb.filter(o=>scoreOf(o)>=70 && scoreOf(o)<85).length;
+  const unscored     = allSdvosb.filter(o=>!o.prime_score && !o.acq_score && !o.lease_score).length;
+
+  // Apply current tier filter
+  let filtered = allSdvosb;
+  if (activeSdvosbTier === 'strong')   filtered = allSdvosb.filter(o=>scoreOf(o)>=85);
+  else if (activeSdvosbTier === 'bid') filtered = allSdvosb.filter(o=>scoreOf(o)>=70 && scoreOf(o)<85);
+  else if (activeSdvosbTier === 'pending') filtered = allSdvosb.filter(o=>!o.prime_score && !o.acq_score && !o.lease_score);
+
+  const el = document.getElementById('t-sdvosb');
+  if (!el) return;
+
+  el.innerHTML = `
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
+      <div>
+        <div style="font-size:16px;font-weight:700">🎖️ SDVOSB Opportunities — All Verticals</div>
+        <div style="font-size:10px;color:var(--t3);margin-top:2px">Service-Disabled Veteran-Owned Small Business set-asides across construction, supply, and real estate. Walker pursues these via SDVOSB teaming partners.</div>
+      </div>
+      <div class="kpi" style="border-left:3px solid var(--violet);min-width:auto">
+        <div class="kpi-val" style="color:var(--violet);font-size:18px">${fmt(totalVal)||'—'}</div>
+        <div class="kpi-lbl">${allSdvosb.length} active</div>
+      </div>
+    </div>
+
+    <!-- Cross-vertical breakdown -->
+    <div class="kpi-row" style="margin-bottom:14px">
+      <div class="kpi" style="border-left:3px solid var(--green)"><div class="kpi-val" style="color:var(--green)">${cCount}</div><div class="kpi-lbl">Construction</div></div>
+      <div class="kpi" style="border-left:3px solid var(--cyan)"><div class="kpi-val" style="color:var(--cyan)">${sCount}</div><div class="kpi-lbl">Supply</div></div>
+      <div class="kpi" style="border-left:3px solid var(--rose)"><div class="kpi-val" style="color:var(--rose)">${rCount}</div><div class="kpi-lbl">Real Estate</div></div>
+      <div class="kpi" style="border-left:3px solid var(--violet)"><div class="kpi-val" style="color:var(--violet)">${allSdvosb.length}</div><div class="kpi-lbl">Total SDVOSB</div></div>
+    </div>
+
+    <!-- Eligibility note -->
+    <div style="background:var(--card);border:1px solid var(--bd);border-radius:8px;padding:10px 14px;margin-bottom:14px">
+      <div style="font-size:11px;color:var(--t2);line-height:1.6">
+        <span style="color:var(--violet);font-weight:700">Walker is SDB-certified, not SDVOSB.</span> To pursue these opportunities, partner with an SDVOSB-certified contractor as prime (joint venture or sub-prime). Trevor Monnie partnership status: <span style="color:var(--amber)">pending review</span>. Add SDVOSB-certified partners in <code>teaming_agreements</code> table to unlock automated teaming candidate matching.
+      </div>
+    </div>
+
+    <!-- Score tier filter -->
+    <div style="display:flex;justify-content:space-between;align-items:center;margin:20px 0 8px;flex-wrap:wrap;gap:8px">
+      <div style="font-size:10px;font-weight:700;color:var(--t3);letter-spacing:.12em;text-transform:uppercase">Active SDVOSB Opportunities</div>
+      <div style="display:flex;gap:4px;flex-wrap:wrap">
+        <button onclick="sdvosbFilter('all')" id="sdvosb-f-all" style="padding:4px 10px;border-radius:5px;border:1px solid ${activeSdvosbTier==='all'?'var(--violetDim)':'var(--bd)'};background:${activeSdvosbTier==='all'?'rgba(167,139,250,.15)':'transparent'};color:${activeSdvosbTier==='all'?'var(--violet)':'var(--t2)'};font-family:'Outfit',sans-serif;font-size:9px;font-weight:700;cursor:pointer;letter-spacing:.06em">ALL · ${allSdvosb.length}</button>
+        <button onclick="sdvosbFilter('strong')" id="sdvosb-f-strong" style="padding:4px 10px;border-radius:5px;border:1px solid ${activeSdvosbTier==='strong'?'var(--violetDim)':'var(--bd)'};background:${activeSdvosbTier==='strong'?'rgba(167,139,250,.15)':'transparent'};color:${activeSdvosbTier==='strong'?'var(--violet)':'var(--t2)'};font-family:'Outfit',sans-serif;font-size:9px;font-weight:700;cursor:pointer;letter-spacing:.06em" title="Score above 85 — STRONG BID">🔥 ${strongCount} · Score above 85</button>
+        <button onclick="sdvosbFilter('bid')" id="sdvosb-f-bid" style="padding:4px 10px;border-radius:5px;border:1px solid ${activeSdvosbTier==='bid'?'var(--violetDim)':'var(--bd)'};background:${activeSdvosbTier==='bid'?'rgba(167,139,250,.15)':'transparent'};color:${activeSdvosbTier==='bid'?'var(--violet)':'var(--t2)'};font-family:'Outfit',sans-serif;font-size:9px;font-weight:700;cursor:pointer;letter-spacing:.06em" title="Score 70-84 — BID">✅ ${bidCount} · Score 70-84</button>
+        <button onclick="sdvosbFilter('pending')" id="sdvosb-f-pending" style="padding:4px 10px;border-radius:5px;border:1px solid ${activeSdvosbTier==='pending'?'var(--violetDim)':'var(--bd)'};background:${activeSdvosbTier==='pending'?'rgba(167,139,250,.15)':'transparent'};color:${activeSdvosbTier==='pending'?'var(--violet)':'var(--t2)'};font-family:'Outfit',sans-serif;font-size:9px;font-weight:700;cursor:pointer;letter-spacing:.06em">⏳ ${unscored} · Unscored</button>
+      </div>
+    </div>
+
+    <div id="sdvosb-opp-list">
+      ${filtered.length
+        ? filtered.map(o=>oppRow(o,OPPS.indexOf(o))).join('')
+        : emptyState('No active SDVOSB opportunities','Run SCOUT to pull fresh contracts. SDVOSB set-asides come up regularly across all verticals.')}
+    </div>
+  `;
+}
+
+function sdvosbFilter(tier){
+  activeSdvosbTier = tier;
+  renderSdvosb();
 }
 
 // ─── BIDS ──────────────────────────────────────────────────────────────
