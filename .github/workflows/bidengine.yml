@@ -11,8 +11,11 @@ on:
     workflows: ["SCOUT — SAM.gov Scanner"]
     types: [completed]
   schedule:
-    # Top of every hour — drains anything JUDGE leaves behind
-    - cron: '0 * * * *'
+    # Every 30 minutes — drains the pending_pricing queue.
+    # 2026-05-04: bumped from hourly to 30-min cadence because JUDGE now
+    # creates bids for CONDITIONAL tier too. With BATCH_LIMIT=30, this
+    # gives ~60 bids/hour throughput. Backfill of 500 opps takes ~9 hours.
+    - cron: '0,30 * * * *'
   workflow_dispatch:
     inputs:
       opportunity_id:

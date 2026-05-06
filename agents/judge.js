@@ -307,8 +307,13 @@ async function scoreOpportunity(opp) {
     return null;
   }
 
-  // If this is a Tier 1 bid (BID or STRONG_BID), trigger BID ENGINE
-  if (tier === 'BID' || tier === 'STRONG_BID') {
+  // 2026-05-04: previously only created bids for BID/STRONG_BID tier (score ≥70).
+  // CONDITIONAL (55-69) was excluded, so most opps never got priced — detail panel
+  // showed "Run BID ENGINE" placeholder forever. Now any non-NO_BID tier gets a
+  // bid record so BIDENGINE batch mode prices it. Pricing is cheap (math + DB write,
+  // no API calls) and the data is useful even for CONDITIONAL opps in case the user
+  // wants to bid via teaming.
+  if (tier !== 'NO_BID') {
     await triggerBidEngine(opp.id, score);
   }
 

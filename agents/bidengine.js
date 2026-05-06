@@ -20,7 +20,10 @@ const DOL_WAGE_URL = 'https://api.dol.gov/V1/SCA/wage-determination';
 
 // Max bids to price in a single batch run — keeps each invocation under
 // the GitHub Actions 10-minute timeout and keeps Anthropic spend bounded.
-const BATCH_LIMIT = 10;
+// 2026-05-04: bumped 10 -> 30 because JUDGE now creates bids for CONDITIONAL
+// tier (not just BID/STRONG_BID), so the queue grows much faster. Pricing
+// is pure math — no API calls — so 30 fits comfortably in the timeout.
+const BATCH_LIMIT = 30;
 
 // ----------------------------------------------------------
 // MAIN FUNCTION: Calculate the bid price for one opportunity (CLI mode)

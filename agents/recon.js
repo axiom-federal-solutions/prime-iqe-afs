@@ -98,88 +98,101 @@ async function runRecon() {
 async function scanFPDSCompetitors() {
   const foundCompetitors = [];
 
-  // Construction NAICS — Gulf South region focus
-  const CONSTRUCTION_NAICS_SCAN = ['236220', '238210', '237990'];
-
-  // Supply NAICS — all 8 dashboard categories
-  // Key supply categories: Fuel, Janitorial, PPE, Office, Food, Chemicals, Safety, Uniforms
-  const SUPPLY_NAICS_SCAN = [
-    '424710',  // Fuel / petroleum products
-    '561720',  // Janitorial services
-    '339113',  // PPE / surgical & medical instruments
-    '424120',  // Office supplies & stationery
-    '424490',  // Food & grocery distribution
-    '424690',  // Chemicals & allied products
-    '423450',  // Medical & safety equipment
-    '424310',  // Uniforms & apparel distribution
+  // 2026-05-04: dynamically pull every NAICS appearing in live opportunities
+  // instead of a hardcoded 11-NAICS list. Previously real-estate got zero
+  // FPDS coverage and many construction NAICS (e.g. 541330) were missed,
+  // so the detail panel's Market Comps + "Who Had This Contract Last" stayed
+  // empty for most opps.
+  const { data: liveOpps } = await supabase
+    .from('opportunities')
+    .select('naics')
+    .not('naics', 'is', null);
+  const naicsSet = new Set();
+  for (const r of (liveOpps || [])) {
+    const n = (r.naics || '').trim();
+    if (n) naicsSet.add(n);
+  }
+  // Always include the 32 SCOUT NAICS so we get coverage even before SCOUT
+  // pulls fresh opps. Plus 541330 (Engineering Services) as a known gap.
+  const SCOUT_NAICS = [
+    '236220','238210','237990','236116','561730','236210','238320','238910',
+    '238990','238220','238310','238330','238110','238160','237310','237110',
+    '562910','541330','561720','561210','238350',
+    '424710','424720','424130','424490','424120','424690','423440','424310',
+    '424410','311999','339113','423450','315990',
+    '531110','531120','531190','531210','531311','531312','531390','532120','532412',
   ];
+  SCOUT_NAICS.forEach(n => naicsSet.add(n));
 
-  // All NAICS to scan — construction first, then supply
-  const allNaics = [
-    ...CONSTRUCTION_NAICS_SCAN.map(n => ({ naics: n, vertical: 'construction' })),
-    ...SUPPLY_NAICS_SCAN.map(n => ({ naics: n, vertical: 'supply' })),
-  ];
+  const allNaics = [...naicsSet];
+  console.log('RECON FPDS: scanning ' + allNaics.length + ' unique NAICS codes');
+
+  // States — focus where Walker has license + reciprocal license + agency HQ states.
+  // We try multiple states per NAICS now (was previously just LA).
+  const STATES_TO_SCAN = ['LA','TX','MS','AL','GA','FL','TN','VA','DC','MD'];
 
   try {
-    for (const { naics, vertical } of allNaics) {
-      // Use all Gulf South states for supply (national distributors); LA-only for construction
-      const stateFilter = vertical === 'supply'
-        ? 'LA,MS,TX,AL,GA,FL,TN'
-        : 'LA';
-      const url = FPDS_API + '?NAICS_CODE:' + naics + '&PLACE_OF_PERFORMANCE_STATE_CODE:' + stateFilter.split(',')[0] + '&LAST_MODIFIED_DATE:[NOW-365DAYS TO NOW]&max-records=25';
+    for (const naics of allNaics) {
+      let perNaicsCount = 0;
 
-      try {
-        const text = await fetchText(url, {
-          headers: { 'Accept': 'application/atom+xml' },
-        });
+      for (const state of STATES_TO_SCAN) {
+        // Stop iterating states once we have 10 results for this NAICS
+        if (perNaicsCount >= 10) break;
 
-        // Parse basic info from the Atom XML response
-        const entries = extractFPDSEntries(text);
-        foundCompetitors.push(...entries);
+        const url = FPDS_API + '?NAICS_CODE:' + naics +
+                    '&PLACE_OF_PERFORMANCE_STATE_CODE:' + state +
+                    '&LAST_MODIFIED_DATE:[NOW-365DAYS TO NOW]&max-records=50';
 
-        // Save to competitor_intel (all verticals) + incumbents (supply only)
-        for (const entry of entries) {
-          // competitor_intel — who we're bidding against
-          await supabase.from('competitor_intel').upsert({
-            company_name:  entry.vendor,
-            naics:         naics,
-            award_value:   entry.value,
-            award_date:    entry.date,
-            agency:        entry.agency,
-            state:         entry.state || stateFilter.split(',')[0],
-            source:        'FPDS',
-            updated_at:    new Date().toISOString(),
-          }, { onConflict: 'company_name,naics,award_date' });
+        try {
+          const text = await fetchText(url, {
+            headers: { 'Accept': 'application/atom+xml' },
+          });
 
-          // incumbents — who held this contract before (supply opps only)
-          // This powers the "Who Had This Contract Last" panel in the dashboard
-          // DB column names: incumbent_name, contract_value, start_date, end_date
-          if (vertical === 'supply') {
-            // Award date = contract start; estimate 1-year base period term
+          const entries = extractFPDSEntries(text);
+          if (!entries.length) continue;
+          foundCompetitors.push(...entries);
+          perNaicsCount += entries.length;
+
+          for (const entry of entries) {
+            // competitor_intel — who's been awarded contracts in this NAICS
+            await supabase.from('competitor_intel').upsert({
+              company_name:  entry.vendor,
+              naics:         naics,
+              award_value:   entry.value,
+              award_date:    entry.date,
+              agency:        entry.agency,
+              state:         entry.state || state,
+              source:        'FPDS',
+              updated_at:    new Date().toISOString(),
+            }, { onConflict: 'company_name,naics,award_date' });
+
+            // 2026-05-04: incumbents now populated for ALL verticals, not just supply.
+            // The "Who Had This Contract Last" panel was empty for construction +
+            // real estate because of the old `if (vertical === 'supply')` gate.
             const startDate = entry.date ? new Date(entry.date) : new Date();
             const endDate   = new Date(startDate);
             endDate.setFullYear(endDate.getFullYear() + 1);
-
-            // solicitation_number is the unique key on incumbents — use PIID or generate one
-            const solNum = entry.piid || (naics + '-' + (entry.vendor || 'UNKNOWN').replace(/\s+/g, '-').toUpperCase() + '-' + startDate.getFullYear());
+            const solNum = entry.piid ||
+              (naics + '-' + (entry.vendor || 'UNKNOWN').replace(/\s+/g, '-').toUpperCase() + '-' + startDate.getFullYear());
 
             await supabase.from('incumbents').upsert({
               solicitation_number: solNum,
               incumbent_name:      entry.vendor || 'Unknown',
-              naics:               naics,         // Enables dashboard filtering by supply category
+              naics:               naics,
               contract_value:      entry.value  || null,
               start_date:          startDate.toISOString().split('T')[0],
               end_date:            endDate.toISOString().split('T')[0],
               agency:              entry.agency || null,
-              state:               entry.state  || stateFilter.split(',')[0],
+              state:               entry.state  || state,
               source:              'FPDS',
             }, { onConflict: 'solicitation_number' });
           }
+        } catch (err) {
+          console.warn('RECON: FPDS query failed for NAICS ' + naics + '/' + state + ' —', err.message);
         }
-
-      } catch (err) {
-        console.warn('RECON: FPDS query failed for NAICS ' + naics + ' —', err.message);
       }
+
+      console.log('RECON FPDS: NAICS ' + naics + ' — ' + perNaicsCount + ' awards captured');
     }
 
   } catch (err) {
